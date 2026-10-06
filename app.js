@@ -1,14 +1,13 @@
 /* PokeScan — identify Pokémon cards by their artwork.
  *
- * Pipeline:
- *   1. On start-up, load the card index (data/cards.json + data/index.bin): a colour
- *      fingerprint of every card, built once by tools/build-index.html.
- *   2. Grab a frame from the camera (or an uploaded photo) and crop the card using the
- *      on-screen guide.
- *   3. Fingerprint several slightly shifted / zoomed crops of it (see fingerprint.js).
- *   4. Compare against every card in the index; the closest artwork wins.
+ *   - data/cards.json (names, sets, numbers) is loaded here for results and search.
+ *   - Matching runs in a background worker (worker.js → matcher.js) against
+ *     data/index.bin: a colour fingerprint of every card, built by tools/build-index.html.
+ *   - While the camera is on, frames are scanned continuously. The whole camera view is
+ *     searched, so the card doesn't have to fill the frame. When the same card wins on
+ *     consecutive frames the result locks in until "Scan next card".
  *
- * Everything runs on the device — no text reading, no network calls while scanning.
+ * Everything runs on the device — no network calls while scanning.
  */
 
 const $ = (id) => document.getElementById(id);
@@ -18,12 +17,28 @@ const els = {
   still: $('stillPreview'),
   wrap: $('cameraWrap'),
   guide: $('guide'),
+  overlay: $('overlay'),
+  outline: $('outline'),
   camMsg: $('cameraMsg'),
   startCam: $('startCamBtn'),
+  stopCam: $('stopCamBtn'),
   scan: $('scanBtn'),
   file: $('fileInput'),
   status: $('status'),
+  dbNote: $('dbNote'),
+  resultPanel: $('resultPanel'),
+  resultTitle: $('resultTitle'),
+  hero: $('hero'),
+  heroImg: $('heroImg'),
+  heroName: $('heroName'),
+  heroSub: $('heroSub'),
+  heroTags: $('heroTags'),
+  addBtn: $('addBtn'),
+  altWrap: $('altWrap'),
+  altSummary: $('altSummary'),
   scanResults: $('scanResults'),
+  collectionCount: $('collectionCount'),
+  toast: $('toast'),
   searchForm: $('searchForm'),
   qName: $('qName'),
   qNumber: $('qNumber'),
@@ -36,19 +51,21 @@ const els = {
 };
 
 let stream = null;
-let busy = false;
 
 /* ------------------------------------------------------------------ */
 /* Tabs                                                                */
 /* ------------------------------------------------------------------ */
 
-document.querySelectorAll('.tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t === tab));
-    document.querySelectorAll('.view').forEach((v) =>
-      v.classList.toggle('active', v.id === `view-${tab.dataset.view}`));
-    if (tab.dataset.view === 'history') renderHistory();
-  });
+function showView(name) {
+  document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
+  document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
+  if (name === 'collection') renderHistory();
+  // Don't keep the camera busy while looking at other screens.
+  if (name !== 'scan' && stream) stopCamera();
+}
+
+document.querySelectorAll('.nav-btn').forEach((btn) => {
+  btn.addEventListener('click', () => showView(btn.dataset.view));
 });
 
 /* ------------------------------------------------------------------ */
@@ -58,25 +75,30 @@ document.querySelectorAll('.tab').forEach((tab) => {
 function setStatus(el, msg, kind = '') {
   if (!msg) { el.hidden = true; return; }
   el.hidden = false;
-  el.className = `status ${kind}`;
+  el.classList.remove('ok', 'err', 'busy');
+  if (kind) el.classList.add(kind);
   el.innerHTML = kind === 'busy' ? `<span class="spinner"></span>${msg}` : msg;
+}
+
+let toastTimer = null;
+function toast(msg) {
+  els.toast.textContent = msg;
+  els.toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { els.toast.hidden = true; }, 2200);
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 /* ------------------------------------------------------------------ */
-/* Card index                                                          */
+/* Card list (for results + search)                                    */
 /* ------------------------------------------------------------------ */
 
 const IMG = 'https://images.pokemontcg.io/';
-
-const db = {
-  cards: [],        // card objects, same order as the vectors
-  vectors: null,    // Int8Array, count * dim
-  norms: null,      // Float32Array, length of each stored vector
-  dim: 0,
-};
+const db = { cards: [] };
 
 function cardFromRow(row, sets) {
   const [id, name, number, setId, rarity, image] = row;
@@ -89,161 +111,144 @@ function cardFromRow(row, sets) {
   };
 }
 
-const dbReady = (async () => {
-  const [meta, bin] = await Promise.all([
-    fetch('data/cards.json').then((r) => {
-      if (!r.ok) throw new Error(`cards.json: HTTP ${r.status}`);
-      return r.json();
-    }),
-    fetch('data/index.bin').then((r) => {
-      if (!r.ok) throw new Error(`index.bin: HTTP ${r.status}`);
-      return r.arrayBuffer();
-    }),
-  ]);
-  if (meta.dim !== FP.DIM) throw new Error('Card index was built with different settings — rebuild it.');
-  db.dim = meta.dim;
-  db.cards = meta.cards.map((row) => cardFromRow(row, meta.sets));
-  db.vectors = new Int8Array(bin);
-  db.norms = new Float32Array(db.cards.length);
-  for (let c = 0; c < db.cards.length; c++) {
-    let s = 0;
-    for (let i = c * db.dim, end = i + db.dim; i < end; i++) s += db.vectors[i] * db.vectors[i];
-    db.norms[c] = Math.sqrt(s) || 1;
-  }
-  return db;
-})();
+const dbReady = fetch('data/cards.json')
+  .then((r) => {
+    if (!r.ok) throw new Error(`cards.json: HTTP ${r.status}`);
+    return r.json();
+  })
+  .then((meta) => {
+    if (meta.dim !== FP.DIM) throw new Error('Card index was built with different settings — rebuild it.');
+    db.cards = meta.cards.map((row) => cardFromRow(row, meta.sets));
+    return db;
+  });
 
-dbReady
+/* ------------------------------------------------------------------ */
+/* Matching worker                                                     */
+/* ------------------------------------------------------------------ */
+
+const worker = new Worker('worker.js');
+const pending = new Map();
+let msgId = 0;
+
+worker.onmessage = ({ data }) => {
+  const p = pending.get(data.id);
+  pending.delete(data.id);
+  if (data.error) p?.reject(new Error(data.error));
+  else p?.resolve(data);
+};
+
+function ask(msg, transfer = []) {
+  return new Promise((resolve, reject) => {
+    const id = ++msgId;
+    pending.set(id, { resolve, reject });
+    worker.postMessage({ ...msg, id }, transfer);
+  });
+}
+
+const ready = Promise.all([dbReady, ask({ type: 'warmup' })]);
+
+ready
   .then(() => {
-    if (!busy) setStatus(els.status, window.isSecureContext
-      ? `${db.cards.length.toLocaleString()} cards loaded. Start the camera or take a photo.`
-      : `${db.cards.length.toLocaleString()} cards loaded. Not on HTTPS, so the live camera is off — “Take / upload photo” still works.`);
+    els.dbNote.textContent = `${db.cards.length.toLocaleString()} cards`;
+    if (!window.isSecureContext) {
+      setStatus(els.status, 'Live camera needs HTTPS — uploading a photo still works.', 'err');
+    }
   })
   .catch((err) => setStatus(els.status, `Couldn't load the card database: ${esc(err.message)}`, 'err'));
 
-/* Score the given cards (indices into the index) against query fingerprints; each card
- * keeps its best-matching query. Returns the topN as { i, score }, best first. */
-function scoreCards(queries, indices, topN) {
-  const { vectors, norms, dim } = db;
-  const best = [];
-  let floor = -Infinity;
-  for (const c of indices) {
-    const base = c * dim;
-    let top = -Infinity;
-    for (const q of queries) {
-      let s = 0;
-      for (let k = 0; k < dim; k++) s += q[k] * vectors[base + k];
-      if (s > top) top = s;
-    }
-    const score = top / norms[c];
-    if (score > floor) {
-      best.push({ i: c, score });
-      // Trim occasionally; `floor` = the worst score that can still make the top N.
-      if (best.length >= topN * 2) {
-        best.sort((a, b) => b.score - a.score);
-        best.length = topN;
-        floor = best[topN - 1].score;
-      }
-    }
-  }
-  best.sort((a, b) => b.score - a.score);
-  return best.slice(0, topN);
+/* Ask the worker to identify the card in a captured region. */
+async function identify(region) {
+  const res = await ask({ type: 'scan', regions: [region] }, [region.data]);
+  return {
+    matches: res.matches.map(({ i, score }) => ({ card: db.cards[i], score })),
+    where: res.where,
+    ms: res.ms,
+  };
 }
 
-/* Glare-tolerant score: like the dot product, but ignores the grid cells that disagree
- * most (a glare spot or a finger only spoils a few cells). 1 = identical. */
-const ROBUST_KEEP = 0.85;
+/* ------------------------------------------------------------------ */
+/* Capturing frames                                                    */
+/* ------------------------------------------------------------------ */
 
-function robustScores(queries, indices, topN) {
-  const { vectors, norms, dim } = db;
-  const cells = dim / 3;
-  const keep = Math.round(cells * ROBUST_KEEP);
-  const err = new Float32Array(cells);
-  const out = [];
-  for (const c of indices) {
-    const base = c * dim;
-    const inv = 1 / norms[c];
-    let top = -Infinity;
-    for (const q of queries) {
-      for (let cell = 0, k = 0; cell < cells; cell++, k += 3) {
-        const d0 = q[k] - vectors[base + k] * inv;
-        const d1 = q[k + 1] - vectors[base + k + 1] * inv;
-        const d2 = q[k + 2] - vectors[base + k + 2] * inv;
-        err[cell] = d0 * d0 + d1 * d1 + d2 * d2;
-      }
-      const sorted = err.slice().sort();
-      let sum = 0;
-      for (let k = 0; k < keep; k++) sum += sorted[k];
-      // Scale to the full vector so it reads like a cosine similarity.
-      const score = 1 - (sum * cells / keep) / 2;
-      if (score > top) top = score;
-    }
-    out.push({ i: c, score: top });
-  }
-  out.sort((a, b) => b.score - a.score);
-  return out.slice(0, topN);
-}
+const REGION_WIDTH = 480;
 
-/* Two stages so lots of crops stay fast on a phone: a few "coarse" fingerprints against
- * every card to shortlist, then all the "fine" crops against just the shortlist. */
-function matchQueries({ coarse, fine }, topN = 12, { robust = true } = {}) {
-  const all = Array.from(db.cards.keys());
-  const shortlist = scoreCards(coarse, all, 300).map((r) => r.i);
-  const ranked = robust ? robustScores(fine, shortlist, topN) : scoreCards(fine, shortlist, topN);
-  return ranked.map(({ i, score }) => ({ card: db.cards[i], score }));
-}
-
-/* Copy a rectangle of the source (the guide area plus a margin around it) into a
- * ~480px-wide canvas. `rect` is the expected card position in source pixels. */
-function captureRegion(source, srcW, srcH, rect) {
-  const mx = rect.w * 0.16, my = rect.h * 0.16;
-  const x0 = Math.max(0, rect.x - mx), y0 = Math.max(0, rect.y - my);
-  const x1 = Math.min(srcW, rect.x + rect.w + mx), y1 = Math.min(srcH, rect.y + rect.h + my);
-  const scale = 480 / (x1 - x0);
+/* Copy `rect` (source pixels) of an image/video into a REGION_WIDTH-wide RGBA buffer, and
+ * express `guide` (source pixels: where a card filling the frame would be) in it. */
+function captureRegion(source, rect, guide) {
+  const scale = REGION_WIDTH / rect.w;
   const canvas = document.createElement('canvas');
-  canvas.width = 480;
-  canvas.height = Math.round((y1 - y0) * scale);
+  canvas.width = REGION_WIDTH;
+  canvas.height = Math.round(rect.h * scale);
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(source, x0, y0, x1 - x0, y1 - y0, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(source, rect.x, rect.y, rect.w, rect.h, 0, 0, canvas.width, canvas.height);
   return {
-    canvas,
-    data: ctx.getImageData(0, 0, canvas.width, canvas.height).data,
+    data: ctx.getImageData(0, 0, canvas.width, canvas.height).data.buffer,
     w: canvas.width,
     h: canvas.height,
     guide: {
-      x0: (rect.x - x0) * scale, y0: (rect.y - y0) * scale,
-      x1: (rect.x + rect.w - x0) * scale, y1: (rect.y + rect.h - y0) * scale,
+      x0: (guide.x - rect.x) * scale, y0: (guide.y - rect.y) * scale,
+      x1: (guide.x + guide.w - rect.x) * scale, y1: (guide.y + guide.h - rect.y) * scale,
     },
   };
 }
 
-/* All the fingerprints to try for one photo: crops around where the guide says the card
- * is, plus the card cut out along any outlines edge-detection found (un-tilted). */
-function buildQueries(region) {
-  const { guide } = region;
-  const gc = document.createElement('canvas');
-  gc.width = 300;
-  gc.height = Math.round(300 * 88 / 63);
-  const gctx = gc.getContext('2d', { willReadFrequently: true });
-  gctx.drawImage(region.canvas, guide.x0, guide.y0, guide.x1 - guide.x0, guide.y1 - guide.y0, 0, 0, gc.width, gc.height);
-  const gd = gctx.getImageData(0, 0, gc.width, gc.height).data;
+/* Video is shown with object-fit: cover — map on-screen boxes to video pixels. */
+function videoMapping() {
+  const v = els.video;
+  const box = els.wrap.getBoundingClientRect();
+  const scale = Math.max(box.width / v.videoWidth, box.height / v.videoHeight);
+  const offX = (box.width - v.videoWidth * scale) / 2;
+  const offY = (box.height - v.videoHeight * scale) / 2;
+  const toSource = (r) => ({
+    x: (r.left - box.left - offX) / scale, y: (r.top - box.top - offY) / scale,
+    w: r.width / scale, h: r.height / scale,
+  });
+  return { box, toSource };
+}
 
-  const coarse = [fpCrops(gd, gc.width, gc.height, [0.95], [0])[0]];
-  const fine = fpCrops(gd, gc.width, gc.height);
+/* The whole visible camera view, with the guide inside it. */
+function captureVideo() {
+  const { box, toSource } = videoMapping();
+  return captureRegion(els.video, toSource(box), toSource(els.guide.getBoundingClientRect()));
+}
 
-  const quads = detectCardQuads(region.data, region.w, region.h, guide);
-  for (const q of quads) {
-    const warped = warpQuad(region.data, region.w, region.h, q, 252, 352);
-    coarse.push(fpFromPixels(warped, 252, 352));
-    fine.push(...fpCrops(warped, 252, 352, [0.97, 1, 1.03], [0]));
+/* Uploaded photos: search the whole photo, guessing the card fills most of the middle. */
+function capturePhoto(img, w, h) {
+  const ratio = 63 / 88;
+  let gw = w, gh = h;
+  if (w / h > ratio) gw = h * ratio; else gh = w / ratio;
+  gw *= 0.85;
+  gh *= 0.85;
+  return captureRegion(img, { x: 0, y: 0, w, h }, { x: (w - gw) / 2, y: (h - gh) / 2, w: gw, h: gh });
+}
+
+/* Draw where the card was found (region pixels → screen). */
+function showOutline(where, region) {
+  if (!where || !stream) {
+    els.outline.setAttribute('points', '');
+    return;
   }
-  return { coarse, fine, outlines: quads.length };
+  const box = els.wrap.getBoundingClientRect();
+  const k = box.width / region.w;
+  const pts = Array.isArray(where)
+    ? where
+    : [{ x: where.x0, y: where.y0 }, { x: where.x1, y: where.y0 }, { x: where.x1, y: where.y1 }, { x: where.x0, y: where.y1 }];
+  els.overlay.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`);
+  els.outline.setAttribute('points', pts.map((p) => `${(p.x * k).toFixed(1)},${(p.y * k).toFixed(1)}`).join(' '));
 }
 
 /* ------------------------------------------------------------------ */
-/* Camera                                                              */
+/* Camera + auto-scan                                                  */
 /* ------------------------------------------------------------------ */
+
+const auto = {
+  state: 'off',      // off | scanning | locked
+  lastKey: null,     // what the previous frame saw
+  streak: 0,         // how many frames in a row
+  ignoreKey: null,   // card just confirmed — don't lock on it again straight away
+  lockedKey: null,
+};
 
 async function startCamera() {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -265,129 +270,187 @@ async function startCamera() {
     await els.video.play();
     els.still.hidden = true;
     els.video.hidden = false;
-    els.camMsg.hidden = true;
-    els.scan.disabled = false;
-    els.startCam.textContent = 'Stop camera';
-    setStatus(els.status, 'Fill the yellow frame with the card, then tap Scan.');
+    els.wrap.classList.remove('photo');
+    els.wrap.classList.add('live');
+    resumeScanning();
   } catch (err) {
-    setStatus(els.status, `Couldn't open camera: ${esc(err.message)}. Try “Take / upload photo”.`, 'err');
+    setStatus(els.status, `Couldn't open the camera: ${esc(err.message)}`, 'err');
   }
 }
 
 function stopCamera() {
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
+  auto.state = 'off';
   els.video.srcObject = null;
-  els.scan.disabled = true;
-  els.startCam.textContent = 'Start camera';
-  els.camMsg.hidden = false;
+  els.wrap.classList.remove('live', 'locked');
+  els.outline.setAttribute('points', '');
+  setStatus(els.status, '');
 }
 
-els.startCam.addEventListener('click', () => (stream ? stopCamera() : startCamera()));
+els.startCam.addEventListener('click', startCamera);
+els.stopCam.addEventListener('click', stopCamera);
 
-/* Map the on-screen guide rectangle onto source pixels of a video/img drawn with object-fit: cover. */
-function guideRectInSource(srcW, srcH) {
-  const box = els.wrap.getBoundingClientRect();
-  const g = els.guide.getBoundingClientRect();
-  const scale = Math.max(box.width / srcW, box.height / srcH);
-  const offX = (box.width - srcW * scale) / 2;
-  const offY = (box.height - srcH * scale) / 2;
-  const x = (g.left - box.left - offX) / scale;
-  const y = (g.top - box.top - offY) / scale;
-  const w = g.width / scale;
-  const h = g.height / scale;
-  return {
-    x: Math.max(0, x),
-    y: Math.max(0, y),
-    w: Math.min(srcW - Math.max(0, x), w),
-    h: Math.min(srcH - Math.max(0, y), h),
-  };
+function resumeScanning() {
+  hideResult();
+  if (!stream) {
+    startCamera();
+    return;
+  }
+  auto.ignoreKey = auto.lockedKey;
+  auto.lockedKey = null;
+  auto.lastKey = null;
+  auto.streak = 0;
+  auto.state = 'scanning';
+  els.wrap.classList.remove('locked');
+  setStatus(els.status, 'Looking for a card…', 'busy');
+  scanLoop();
 }
 
-/* Uploaded photos aren't lined up with the guide: assume the card is a card-shaped area
- * filling most of the middle (edge detection then finds where it really is). */
-function regionFromPhoto(img, w, h) {
-  const ratio = 63 / 88;
-  let cw = w, ch = h;
-  if (w / h > ratio) cw = h * ratio; else ch = w / ratio;
-  cw *= 0.85;
-  ch *= 0.85;
-  return captureRegion(img, w, h, { x: (w - cw) / 2, y: (h - ch) / 2, w: cw, h: ch });
+els.scan.addEventListener('click', resumeScanning);
+
+/* Start the camera straight away if permission was already given. */
+navigator.permissions?.query({ name: 'camera' })
+  .then((p) => { if (p.state === 'granted' && window.isSecureContext) startCamera(); })
+  .catch(() => { /* not supported in this browser */ });
+
+/* Confidence: a clear winner scores well and stands out from the runner-up.
+ * Tuned on simulated photos against the full index (tools/sim.js testMatch). */
+function isConfident([best, second]) {
+  return best && best.score >= 0.75 && best.score - (second?.score ?? 0) >= 0.015;
 }
 
-/* ------------------------------------------------------------------ */
-/* Scan flow                                                           */
-/* ------------------------------------------------------------------ */
+let loopRunning = false;
 
-async function runScan(region) {
-  if (busy) return;
-  busy = true;
-  els.scan.disabled = true;
-  els.scanResults.innerHTML = '';
-
+async function scanLoop() {
+  if (loopRunning) return;
+  loopRunning = true;
   try {
-    setStatus(els.status, 'Loading card database…', 'busy');
-    await dbReady;
-    setStatus(els.status, 'Matching artwork…', 'busy');
-    await new Promise((r) => setTimeout(r, 0)); // let the spinner paint
-
-    // One or several frames: pool all their fingerprints, best crop wins.
-    const queries = { coarse: [], fine: [] };
-    for (const r of Array.isArray(region) ? region : [region]) {
-      const q = buildQueries(r);
-      queries.coarse.push(...q.coarse);
-      queries.fine.push(...q.fine);
+    await ready;
+    while (auto.state === 'scanning' && stream) {
+      if (!els.video.videoWidth || document.hidden) {
+        await sleep(300);
+        continue;
+      }
+      const region = captureVideo();
+      const { w, h } = region;
+      const { matches, where } = await identify(region);
+      if (auto.state !== 'scanning') break;
+      onFrame(matches, where, { w, h });
+      await sleep(80);
     }
-    renderScanResults(matchQueries(queries));
   } catch (err) {
     console.error(err);
-    setStatus(els.status, `Something went wrong: ${esc(err.message)}`, 'err');
+    setStatus(els.status, `Scanning stopped: ${esc(err.message)}`, 'err');
   } finally {
-    busy = false;
-    els.scan.disabled = !stream;
+    loopRunning = false;
   }
 }
 
-/* Grab a few frames a moment apart, so one blurry or glary frame doesn't spoil the scan. */
-els.scan.addEventListener('click', async () => {
-  const v = els.video;
-  if (!v.videoWidth || busy) return;
-  const regions = [];
-  for (let k = 0; k < 3; k++) {
-    if (k) await new Promise((r) => setTimeout(r, 150));
-    regions.push(captureRegion(v, v.videoWidth, v.videoHeight, guideRectInSource(v.videoWidth, v.videoHeight)));
-  }
-  runScan(regions);
-});
+/* Decide, frame by frame, when a result is solid enough to show. */
+function onFrame(matches, where, region) {
+  const [best] = matches;
+  const confident = isConfident(matches);
+  // Confident → that exact card. Close call with a good score → probably a reprint of the
+  // same artwork, so track by name. Otherwise nothing.
+  const key = confident ? `id:${best.card.id}`
+    : best && best.score >= 0.75 ? `name:${best.card.name}` : null;
 
-els.file.addEventListener('change', () => {
+  if (key !== auto.ignoreKey) auto.ignoreKey = null; // moved on from the confirmed card
+  if (key && key === auto.lastKey) auto.streak++;
+  else auto.streak = key ? 1 : 0;
+  auto.lastKey = key;
+
+  const ignored = key && key === auto.ignoreKey;
+  showOutline(key && !ignored ? where : null, region);
+
+  if (!key || ignored) {
+    setStatus(els.status, ignored ? 'Got it — point at the next card' : 'Looking for a card…', 'busy');
+    return;
+  }
+  const needed = confident ? 2 : 4;
+  if (auto.streak < needed) {
+    setStatus(els.status, 'Hold still…', 'busy');
+    return;
+  }
+
+  // Locked in.
+  auto.state = 'locked';
+  auto.lockedKey = key;
+  els.wrap.classList.add('locked');
+  navigator.vibrate?.(60);
+  renderScanResults(matches);
+}
+
+/* ------------------------------------------------------------------ */
+/* Photo upload                                                        */
+/* ------------------------------------------------------------------ */
+
+els.file.addEventListener('change', async () => {
   const file = els.file.files?.[0];
   els.file.value = '';
   if (!file) return;
   if (stream) stopCamera();
   const url = URL.createObjectURL(file);
   const img = new Image();
-  img.onload = () => {
+  img.onload = async () => {
     els.still.src = url;
     els.still.hidden = false;
     els.video.hidden = true;
-    els.camMsg.hidden = true;
-    runScan(regionFromPhoto(img, img.naturalWidth, img.naturalHeight));
+    els.wrap.classList.add('photo');
+    hideResult();
+    setStatus(els.status, 'Matching artwork…', 'busy');
+    try {
+      await ready;
+      const { matches } = await identify(capturePhoto(img, img.naturalWidth, img.naturalHeight));
+      renderScanResults(matches);
+    } catch (err) {
+      setStatus(els.status, `Something went wrong: ${esc(err.message)}`, 'err');
+    }
   };
   img.onerror = () => setStatus(els.status, 'Could not open that image.', 'err');
   img.src = url;
 });
 
-/* Confidence: a clear winner scores well and stands out from the runner-up.
- * Tuned on simulated photos against the full index (tools/sim.js testMatch): at these
- * values ~90% of scans were "confident" and no confident answer was wrong. */
-function isConfident([best, second]) {
-  return best && best.score >= 0.75 && best.score - (second?.score ?? 0) >= 0.015;
+/* ------------------------------------------------------------------ */
+/* Results                                                             */
+/* ------------------------------------------------------------------ */
+
+let shownCard = null;
+
+function hideResult() {
+  els.resultPanel.hidden = true;
+  $('view-scan').classList.remove('has-result');
+  if (!stream) setStatus(els.status, '');
+  shownCard = null;
+}
+
+/* Fill the big result card with one card. */
+function showHero(card, score) {
+  shownCard = card;
+  els.hero.hidden = false;
+  els.addBtn.hidden = false;
+  els.heroImg.src = card.image;
+  els.heroImg.alt = card.name;
+  els.heroName.textContent = card.name;
+  els.heroSub.textContent = `${card.setName} · #${card.number}${card.setTotal ? '/' + card.setTotal : ''}`;
+  els.heroTags.innerHTML = [
+    score != null ? `<span class="tag match">${Math.round(Math.max(0, score) * 100)}% match</span>` : '',
+    card.rarity ? `<span class="tag">${esc(card.rarity)}</span>` : '',
+    card.releaseDate ? `<span class="tag">${esc(card.releaseDate.slice(0, 4))}</span>` : '',
+  ].join('');
 }
 
 function renderScanResults(matches) {
+  els.resultPanel.hidden = false;
+  $('view-scan').classList.add('has-result');
+  els.scanResults.innerHTML = '';
   if (!matches.length) {
-    setStatus(els.status, 'No match found. Try again with the card filling the frame.', 'err');
+    els.hero.hidden = true;
+    els.addBtn.hidden = true;
+    els.resultTitle.className = 'result-title';
+    els.resultTitle.textContent = 'No match found — try again closer, flat, and in good light.';
+    els.altWrap.hidden = true;
     return;
   }
   const confident = isConfident(matches);
@@ -395,22 +458,53 @@ function renderScanResults(matches) {
   const [best, second] = matches;
   const reprint = !confident && second && best.score >= 0.75
     && best.score - second.score < 0.015 && best.card.name === second.card.name;
-  setStatus(els.status,
-    confident
-      ? 'Found it! Tap the card to confirm.'
-      : reprint
-        ? `This artwork was printed in more than one set. Check the set symbol and number on your card and tap the right one.`
-        : 'Not sure — here are the closest matches. Tap the right one, or rescan with the card filling the frame and less glare.',
-    confident ? 'ok' : '');
 
-  els.scanResults.innerHTML = '';
-  matches.slice(0, confident ? 5 : 12).forEach(({ card, score }, i) => {
-    els.scanResults.appendChild(cardRow(card, { best: i === 0 && confident, score }));
+  setStatus(els.status, confident ? 'Found it!' : 'Pick the right card below', confident ? 'ok' : '');
+  els.resultTitle.className = `result-title${confident ? ' ok' : ''}`;
+  els.resultTitle.textContent = confident ? '✓ Found it'
+    : reprint ? 'Same artwork in more than one set — check the number on your card:'
+      : 'Not sure — is it one of these?';
+
+  if (confident) {
+    showHero(best.card, best.score);
+  } else {
+    els.hero.hidden = true;
+    els.addBtn.hidden = true;
+  }
+
+  // Alternatives: collapsed under "Not this card?" when confident, open otherwise.
+  els.altWrap.hidden = false;
+  els.altWrap.open = !confident;
+  els.altSummary.textContent = confident ? 'Not this card?' : 'Closest matches';
+  matches.slice(confident ? 1 : 0, 10).forEach(({ card, score }) => {
+    els.scanResults.appendChild(cardRow(card, {
+      score,
+      onClick: () => {
+        // Picking an alternative makes it the result.
+        showHero(card, score);
+        els.resultTitle.className = 'result-title ok';
+        els.resultTitle.textContent = '✓ Your pick';
+        els.altWrap.open = false;
+        els.resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      },
+    }));
   });
+  els.resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
+els.addBtn.addEventListener('click', () => {
+  if (!shownCard) return;
+  addHistory(shownCard);
+  toast(`Added ${shownCard.name} to your collection`);
+  // Straight on to the next card when using the camera.
+  if (stream) resumeScanning();
+  else hideResult();
+});
+
+els.heroImg.addEventListener('click', () => shownCard && openDetail(shownCard));
+
 /* ------------------------------------------------------------------ */
-/* Search (offline, over the downloaded index)                         */
+/* Search (offline, over the downloaded card list)                     */
 /* ------------------------------------------------------------------ */
 
 const normName = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -450,14 +544,14 @@ els.searchForm.addEventListener('submit', async (e) => {
 /* Card list + detail                                                  */
 /* ------------------------------------------------------------------ */
 
-function cardRow(card, { best = false, score = null, onClick = () => openDetail(card) } = {}) {
+function cardRow(card, { score = null, onClick = () => openDetail(card) } = {}) {
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = `card-row${best ? ' best' : ''}`;
+  btn.className = 'card-row';
   btn.innerHTML = `
     <img src="${esc(card.image)}" alt="" loading="lazy">
     <div class="meta">
-      <div class="name">${esc(card.name)}${best ? '<span class="badge">Best match</span>' : ''}</div>
+      <div class="name">${esc(card.name)}</div>
       <div class="sub">${esc(card.setName)} · #${esc(card.number)}${card.setTotal ? '/' + esc(card.setTotal) : ''}</div>
       <div class="sub">${esc([card.rarity, card.releaseDate?.slice(0, 4),
         score !== null ? `${Math.round(Math.max(0, score) * 100)}% match` : ''].filter(Boolean).join(' · '))}</div>
@@ -466,7 +560,8 @@ function cardRow(card, { best = false, score = null, onClick = () => openDetail(
   return btn;
 }
 
-function openDetail(card, { fromHistory = false } = {}) {
+/* Card details. `historyIndex` = position in the collection (to offer removing it). */
+function openDetail(card, { historyIndex = null } = {}) {
   const rows = [
     ['Set', card.setName],
     ['Series', card.setSeries],
@@ -483,13 +578,24 @@ function openDetail(card, { fromHistory = false } = {}) {
     <p class="detail-sub">${esc(card.setName)} · #${esc(card.number)}</p>
     <table class="detail-table">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>
     <div class="detail-actions">
-      ${fromHistory ? '' : '<button class="btn primary" id="confirmBtn">✓ This is my card</button>'}
+      ${historyIndex === null
+        ? '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'
+        : '<button class="btn ghost" id="detailRemove">Remove from collection</button>'}
     </div>`;
 
-  $('confirmBtn')?.addEventListener('click', () => {
+  $('detailAdd')?.addEventListener('click', () => {
     addHistory(card);
     els.detail.close();
-    setStatus(els.status, `Saved ${esc(card.name)} to History.`, 'ok');
+    toast(`Added ${card.name} to your collection`);
+    if (shownCard?.id === card.id && stream) resumeScanning();
+  });
+  $('detailRemove')?.addEventListener('click', () => {
+    const list = loadHistory();
+    list.splice(historyIndex, 1);
+    saveHistory(list);
+    els.detail.close();
+    renderHistory();
+    toast(`Removed ${card.name}`);
   });
 
   els.detail.showModal();
@@ -520,9 +626,15 @@ function addHistory(card) {
 
 function renderHistory() {
   const list = loadHistory();
-  els.historyList.innerHTML = list.length ? '' : '<p class="muted">Nothing yet — scan a card and tap “This is my card”.</p>';
-  list.forEach((card) => {
-    els.historyList.appendChild(cardRow(card, { onClick: () => openDetail(card, { fromHistory: true }) }));
+  els.collectionCount.textContent = list.length ? `(${list.length})` : '';
+  els.historyList.innerHTML = list.length ? '' : '<p class="empty">No cards yet — scan one and tap “Add to collection”.</p>';
+  list.forEach((card, i) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'grid-item';
+    item.innerHTML = `<img src="${esc(card.image)}" alt="" loading="lazy"><span>${esc(card.name)}</span>`;
+    item.addEventListener('click', () => openDetail(card, { historyIndex: i }));
+    els.historyList.appendChild(item);
   });
 }
 

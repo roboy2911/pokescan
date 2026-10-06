@@ -90,9 +90,15 @@ function detCandidateLines(pts, span, maxLines = 4) {
 
 /* Find likely card outlines inside an RGBA image (w x h). `guide` = expected card rect
  * {x0,y0,x1,y1} in the same pixels. Returns up to `maxQuads` corner lists
- * [TL, TR, BR, BL], most plausible first (may be empty). */
-function detectCardQuads(d, w, h, guide, maxQuads = 8, areaWeight = 0) {
-  const g = detGray(d, w, h);
+ * [TL, TR, BR, BL], most plausible first (may be empty). Pass `gray` (from detGray) to
+ * reuse it when searching many windows of the same image. */
+function detectCardQuads(d, w, h, guide, maxQuads = 8, areaWeight = 0, gray = null) {
+  return detectCardQuadsScored(d, w, h, guide, maxQuads, areaWeight, gray).map((x) => x.q);
+}
+
+/* Same, but returns { q, score } so outlines from different windows can be compared. */
+function detectCardQuadsScored(d, w, h, guide, maxQuads = 8, areaWeight = 0, gray = null) {
+  const g = gray || detGray(d, w, h);
   const gw = guide.x1 - guide.x0, gh = guide.y1 - guide.y0;
   const bandY = 0.16 * gh, bandX = 0.16 * gw;
   const ax0 = guide.x0 + 0.15 * gw, ax1 = guide.x1 - 0.15 * gw;
@@ -128,7 +134,7 @@ function detectCardQuads(d, w, h, guide, maxQuads = 8, areaWeight = 0) {
     quads.push({ q, score: support / 240 - 4 * aspectErr - 2 * skew + areaWeight * area / (gw * gh) });
   }
   quads.sort((a, b) => b.score - a.score);
-  return quads.slice(0, maxQuads).map((x) => x.q);
+  return quads.slice(0, maxQuads);
 }
 
 /* Perspective-warp the quad [TL, TR, BR, BL] from RGBA data into an outW x outH card. */

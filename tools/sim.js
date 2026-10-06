@@ -46,14 +46,23 @@ export async function imgData(url, W, H) {
   return { d: x.getImageData(0, 0, c.width, c.height).data, W: c.width, H: c.height };
 }
 
-/* A 480x600 "camera region": guide rect in the middle, card drawn as a tilted/perspective
- * quad roughly over it, `bgUrl` image behind, then blur / exposure / glare. */
-export async function simPhoto(cardUrl, bgUrl, rnd, { jitter = 0.05, shift = 0.05, rot = 0.06 } = {}) {
-  const W = 480, H = 600;
-  const gwid = W / 1.24, ghei = gwid * 88 / 63;
+/* A 480x640 "camera view" shaped like the app's (guide = 86% of the height, centred), with
+ * the card drawn as a tilted/perspective quad, `bgUrl` image behind, then blur / exposure /
+ * glare. `size` = card size range relative to the guide; `anywhere` = card can be anywhere
+ * in view (for far-away cards) instead of roughly centred. */
+export async function simPhoto(cardUrl, bgUrl, rnd,
+  { jitter = 0.05, shift = 0.05, rot = 0.06, size = [0.9, 1.04], anywhere = false } = {}) {
+  const W = 480, H = 640;
+  const ghei = H * 0.86, gwid = ghei * 63 / 88;
   const guide = { x0: (W - gwid) / 2, y0: (H - ghei) / 2, x1: (W + gwid) / 2, y1: (H + ghei) / 2 };
   const r = (a, b) => a + rnd() * (b - a);
-  const s = r(0.9, 1.04), cx = W / 2 + r(-shift, shift) * gwid, cy = H / 2 + r(-shift, shift) * ghei, ang = r(-rot, rot);
+  const s = r(size[0], size[1]), ang = r(-rot, rot);
+  let cx = W / 2 + r(-shift, shift) * gwid, cy = H / 2 + r(-shift, shift) * ghei;
+  if (anywhere) {
+    const mx = (gwid * s) / 2 + 12, my = (ghei * s) / 2 + 12;
+    cx = r(mx, Math.max(mx, W - mx));
+    cy = r(my, Math.max(my, H - my));
+  }
   const quad = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => {
     const x = u * gwid / 2 * s, y = v * ghei / 2 * s;
     return {
@@ -129,42 +138,31 @@ export async function testDetect(n = 40, seed = 7) {
   };
 }
 
-/* End-to-end accuracy against the loaded card index (run on the app page once it has loaded).
- * Compares guide crops alone vs guide crops + edge detection, and collects scores of
+/* End-to-end accuracy with the real matcher (matcher.js), on a page where `db` (card list)
+ * is loaded and fingerprint.js / detect.js / matcher.js are available. Collects scores of
  * right/wrong top answers for tuning the "confident" threshold. */
-export async function testMatch(n = 100, seed = 11, opts = {}) {
+let matcher = null;
+export async function testMatch(n = 60, seed = 11, opts = {}) {
+  matcher ??= createMatcher(await (await fetch('data/index.bin')).arrayBuffer());
   const rnd = mulberry(seed);
-  const res = { n, guideOnly: { top1: 0, top5: 0 }, withDetect: { top1: 0, top5: 0 }, detectNotRobust: { top1: 0, top5: 0 }, right: [], wrong: [], ms: 0 };
+  const res = { n, top1: 0, top5: 0, right: [], wrong: [], ms: 0, misses: [] };
   for (let i = 0; i < n; i++) {
     const card = db.cards[Math.floor(rnd() * db.cards.length)];
-    const bg = BACKGROUNDS[i % BACKGROUNDS.length];
     let P;
     try {
-      P = await simPhoto(card.imageLarge, bg, rnd, opts);
+      P = await simPhoto(card.imageLarge, opts.bg || BACKGROUNDS[i % BACKGROUNDS.length], rnd, opts);
     } catch {
       continue; // image missing
     }
-    const canvas = document.createElement('canvas');
-    canvas.width = P.W;
-    canvas.height = P.H;
-    canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(P.d), P.W, P.H), 0, 0);
-    const region = { canvas, data: P.d, w: P.W, h: P.H, guide: P.guide };
-
     const t0 = performance.now();
-    const q = buildQueries(region);
-    const withD = matchQueries(q);
+    const { matches } = matcher.match([{ data: P.d, w: P.W, h: P.H, guide: P.guide }], 12, opts.match || {});
     res.ms += performance.now() - t0;
-    const guideQ = { coarse: q.coarse.slice(0, 1), fine: q.fine.slice(0, 27) };
-    const guideOnly = matchQueries(guideQ);
-    const plain = matchQueries(q, 12, { robust: false });
-
-    for (const [key, list] of [['guideOnly', guideOnly], ['withDetect', withD], ['detectNotRobust', plain]]) {
-      const rank = list.findIndex((m) => m.card.id === card.id);
-      if (rank === 0) res[key].top1++;
-      if (rank >= 0 && rank < 5) res[key].top5++;
-    }
-    const gap = withD[0].score - (withD[1]?.score ?? 0);
-    (withD[0].card.id === card.id ? res.right : res.wrong).push([+withD[0].score.toFixed(3), +gap.toFixed(3)]);
+    const rank = matches.findIndex((m) => db.cards[m.i].id === card.id);
+    if (rank === 0) res.top1++;
+    if (rank >= 0 && rank < 5) res.top5++;
+    if (rank !== 0) res.misses.push(`${card.id}→${db.cards[matches[0].i].id}`);
+    const gap = matches[0].score - (matches[1]?.score ?? 0);
+    (rank === 0 ? res.right : res.wrong).push([+matches[0].score.toFixed(3), +gap.toFixed(3)]);
   }
   res.ms = Math.round(res.ms / n);
   return res;

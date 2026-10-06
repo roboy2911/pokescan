@@ -71,18 +71,47 @@ function fpFromPixels(d, W, H) {
 /* Fingerprints of several slightly zoomed / shifted crops of a photo. The card in a
  * photo is never perfectly lined up, so the scanner keeps whichever crop matches best. */
 function fpCrops(d, W, H, scales = [0.88, 0.95, 1.02], shifts = [-0.035, 0, 0.035]) {
+  return fpCropsRect(d, W, H, { x0: 0, y0: 0, x1: W, y1: H }, scales, shifts);
+}
+
+/* Same, for a card expected inside rectangle `r` (pixels) of a larger image. */
+function fpCropsRect(d, W, H, r, scales = [0.88, 0.95, 1.02], shifts = [-0.035, 0, 0.035]) {
   const out = [];
+  const rw = r.x1 - r.x0, rh = r.y1 - r.y0;
   for (const s of scales) {
     for (const dx of shifts) {
       for (const dy of shifts) {
-        const x0 = 0.5 + dx + (FP.X0 - 0.5) * s, x1 = 0.5 + dx + (FP.X1 - 0.5) * s;
-        const y0 = 0.5 + dy + (FP.Y0 - 0.5) * s, y1 = 0.5 + dy + (FP.Y1 - 0.5) * s;
+        const x0 = (r.x0 + (0.5 + dx + (FP.X0 - 0.5) * s) * rw) / W;
+        const x1 = (r.x0 + (0.5 + dx + (FP.X1 - 0.5) * s) * rw) / W;
+        const y0 = (r.y0 + (0.5 + dy + (FP.Y0 - 0.5) * s) * rh) / H;
+        const y1 = (r.y0 + (0.5 + dy + (FP.Y1 - 0.5) * s) * rh) / H;
         if (x0 < 0 || y0 < 0 || x1 > 1 || y1 > 1) continue;
         out.push(fpNormalise(fpBoxGrid(d, W, H, FP.GW, FP.GH, x0, y0, x1, y1)));
       }
     }
   }
   return out;
+}
+
+/* A coarser 4x5 version of a fingerprint (60 values instead of 264), used for a fast first
+ * pass over the whole index. Works on index vectors and photo fingerprints alike. */
+const FP_POOL_COLS = [[0, 1], [2, 3], [4, 5], [6, 7]];
+const FP_POOL_ROWS = [[0, 1], [2, 3], [4, 5, 6], [7, 8], [9, 10]];
+const FP_POOL_DIM = FP_POOL_COLS.length * FP_POOL_ROWS.length * 3;
+
+function fpPool(v) {
+  const out = new Float64Array(FP_POOL_DIM);
+  let o = 0;
+  for (const rows of FP_POOL_ROWS) {
+    for (const cols of FP_POOL_COLS) {
+      for (let ch = 0; ch < 3; ch++) {
+        let s = 0;
+        for (const r of rows) for (const c of cols) s += v[(r * FP.GW + c) * 3 + ch];
+        out[o++] = s / (rows.length * cols.length);
+      }
+    }
+  }
+  return fpNormalise(out);
 }
 
 /* Index storage: one signed byte per value (vectors are re-normalised on load). */
