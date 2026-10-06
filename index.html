@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111318">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>PokeScan</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>PokeScan</h1>
+    <nav class="tabs">
+      <button class="tab active" data-view="scan">Scan</button>
+      <button class="tab" data-view="search">Search</button>
+      <button class="tab" data-view="history">History</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- SCAN -->
+    <section id="view-scan" class="view active">
+      <div class="camera-wrap" id="cameraWrap">
+        <video id="video" playsinline muted autoplay></video>
+        <img id="stillPreview" alt="" hidden>
+        <div class="guide" id="guide">
+          <span class="guide-label top">Card name</span>
+          <span class="guide-label bottom">Card number (e.g. 025/198)</span>
+        </div>
+        <div class="camera-msg" id="cameraMsg">Tap “Start camera” or take a photo</div>
+      </div>
+
+      <div class="controls">
+        <button id="startCamBtn" class="btn secondary">Start camera</button>
+        <button id="scanBtn" class="btn primary" disabled>Scan card</button>
+        <label class="btn secondary file-btn">
+          Take / upload photo
+          <input id="fileInput" type="file" accept="image/*" capture="environment" hidden>
+        </label>
+      </div>
+
+      <div id="status" class="status" hidden></div>
+      <details id="ocrDebug" class="debug" hidden>
+        <summary>What the scanner read</summary>
+        <div class="debug-grid">
+          <div><img id="dbgTop" alt="name strip"><pre id="dbgTopText"></pre></div>
+          <div><img id="dbgBottom" alt="number strip"><pre id="dbgBottomText"></pre></div>
+        </div>
+      </details>
+
+      <div id="scanResults" class="results"></div>
+    </section>
+
+    <!-- SEARCH -->
+    <section id="view-search" class="view">
+      <form id="searchForm" class="search-form">
+        <input id="qName" type="text" placeholder="Card name (e.g. Charizard ex)" autocomplete="off">
+        <div class="row">
+          <input id="qNumber" type="text" placeholder="Number (e.g. 199)" inputmode="text" autocomplete="off">
+          <input id="qTotal" type="text" placeholder="Set total (e.g. 165)" inputmode="numeric" autocomplete="off">
+        </div>
+        <button class="btn primary" type="submit">Search</button>
+      </form>
+      <div id="searchStatus" class="status" hidden></div>
+      <div id="searchResults" class="results"></div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="view-history" class="view">
+      <div class="history-head">
+        <p class="muted">Cards you've confirmed. Saved on this device.</p>
+        <button id="clearHistory" class="btn ghost small">Clear</button>
+      </div>
+      <div id="historyList" class="results"></div>
+    </section>
+  </main>
+
+  <!-- Card detail sheet -->
+  <dialog id="detail" class="sheet">
+    <form method="dialog"><button class="close" aria-label="Close">✕</button></form>
+    <div id="detailBody"></div>
+  </dialog>
+
+  <canvas id="work" hidden></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
