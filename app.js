@@ -38,6 +38,12 @@ const els = {
   altSummary: $('altSummary'),
   scanResults: $('scanResults'),
   collectionCount: $('collectionCount'),
+  priceValue: $('priceValue'),
+  variantChips: $('variantChips'),
+  priceNote: $('priceNote'),
+  valueCard: $('valueCard'),
+  valueTotal: $('valueTotal'),
+  valueNote: $('valueNote'),
   toast: $('toast'),
   searchForm: $('searchForm'),
   qName: $('qName'),
@@ -315,9 +321,10 @@ navigator.permissions?.query({ name: 'camera' })
   .catch(() => { /* not supported in this browser */ });
 
 /* Confidence: a clear winner scores well and stands out from the runner-up.
- * Tuned on simulated photos against the full index (tools/sim.js testMatch). */
+ * Tuned on simulated photos and binder pages against the full index (tools/sim.js):
+ * at these values no confident answer was wrong. */
 function isConfident([best, second]) {
-  return best && best.score >= 0.75 && best.score - (second?.score ?? 0) >= 0.015;
+  return best && best.score >= 0.88 && best.score - (second?.score ?? 0) >= 0.015;
 }
 
 let loopRunning = false;
@@ -417,6 +424,47 @@ els.file.addEventListener('change', async () => {
 /* ------------------------------------------------------------------ */
 
 let shownCard = null;
+let shownVariant = null; // finish picked for the shown card (holofoil, reverseHolofoil, ...)
+let priceToken = 0;
+
+/* Load and show the AUD price of the result card, with a chip per finish. */
+async function showPrice(card) {
+  const token = ++priceToken;
+  shownVariant = null;
+  els.priceValue.textContent = 'Loading…';
+  els.priceValue.className = 'price-value none';
+  els.variantChips.innerHTML = '';
+  els.priceNote.textContent = '';
+  const [prices, rate] = await Promise.all([getTcgPrices([card.id]), getAudRate()]);
+  if (token !== priceToken) return; // another card is showing now
+  const info = prices[card.id];
+  const variants = priceVariants(info?.prices);
+  if (!variants.length) {
+    els.priceValue.textContent = info ? 'No price available' : "Couldn't load price";
+    return;
+  }
+  const pick = (v) => {
+    shownVariant = v.key;
+    els.priceValue.textContent = formatAud(v.usd, rate.rate);
+    els.priceValue.className = 'price-value';
+    els.variantChips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
+  };
+  if (variants.length > 1) {
+    for (const v of variants) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.dataset.key = v.key;
+      chip.textContent = v.label;
+      chip.addEventListener('click', () => pick(v));
+      els.variantChips.appendChild(chip);
+    }
+  }
+  pick(variants[0]);
+  els.priceNote.innerHTML = `TCGplayer (US) market price × ${rate.rate.toFixed(3)}${rate.approx ? ' (approx. rate)' : ''}`
+    + `${info.updatedAt ? ` · ${esc(info.updatedAt)}` : ''}`
+    + `${info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}`;
+}
 
 function hideResult() {
   els.resultPanel.hidden = true;
@@ -439,6 +487,7 @@ function showHero(card, score) {
     card.rarity ? `<span class="tag">${esc(card.rarity)}</span>` : '',
     card.releaseDate ? `<span class="tag">${esc(card.releaseDate.slice(0, 4))}</span>` : '',
   ].join('');
+  showPrice(card);
 }
 
 function renderScanResults(matches) {
@@ -494,7 +543,7 @@ function renderScanResults(matches) {
 
 els.addBtn.addEventListener('click', () => {
   if (!shownCard) return;
-  addHistory(shownCard);
+  addHistory({ ...shownCard, variant: shownVariant });
   toast(`Added ${shownCard.name} to your collection`);
   // Straight on to the next card when using the camera.
   if (stream) resumeScanning();
@@ -576,7 +625,8 @@ function openDetail(card, { historyIndex = null } = {}) {
          onerror="this.onerror=null;this.src='${esc(card.image)}'">
     <p class="detail-title">${esc(card.name)}</p>
     <p class="detail-sub">${esc(card.setName)} · #${esc(card.number)}</p>
-    <table class="detail-table">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>
+    <table class="detail-table">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}
+      <tbody id="detailPrices"><tr><td>Price (AUD)</td><td>Loading…</td></tr></tbody></table>
     <div class="detail-actions">
       ${historyIndex === null
         ? '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'
@@ -599,6 +649,16 @@ function openDetail(card, { historyIndex = null } = {}) {
   });
 
   els.detail.showModal();
+
+  // Prices for every finish of this card.
+  Promise.all([getTcgPrices([card.id]), getAudRate()]).then(([prices, rate]) => {
+    const body = $('detailPrices');
+    if (!body) return;
+    const variants = priceVariants(prices[card.id]?.prices);
+    body.innerHTML = variants.length
+      ? variants.map((v) => `<tr><td>${esc(v.label)}${v.key === card.variant ? ' ✓' : ''}</td><td>${formatAud(v.usd, rate.rate)}</td></tr>`).join('')
+      : '<tr><td>Price (AUD)</td><td>No price available</td></tr>';
+  });
 }
 
 /* Tap the dark backdrop to close the sheet. */
@@ -624,18 +684,47 @@ function addHistory(card) {
   saveHistory(list.slice(0, 500));
 }
 
-function renderHistory() {
+/* USD market price of a saved card, using the finish chosen when it was added. */
+function cardUsd(card, info) {
+  const variants = priceVariants(info?.prices);
+  return (variants.find((v) => v.key === card.variant) ?? variants[0])?.usd ?? null;
+}
+
+let historyToken = 0;
+
+async function renderHistory() {
+  const token = ++historyToken;
   const list = loadHistory();
   els.collectionCount.textContent = list.length ? `(${list.length})` : '';
   els.historyList.innerHTML = list.length ? '' : '<p class="empty">No cards yet — scan one and tap “Add to collection”.</p>';
-  list.forEach((card, i) => {
+  els.valueCard.hidden = !list.length;
+  const priceEls = list.map((card, i) => {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'grid-item';
-    item.innerHTML = `<img src="${esc(card.image)}" alt="" loading="lazy"><span>${esc(card.name)}</span>`;
+    item.innerHTML = `<img src="${esc(card.image)}" alt="" loading="lazy"><span>${esc(card.name)}</span><span class="price"></span>`;
     item.addEventListener('click', () => openDetail(card, { historyIndex: i }));
     els.historyList.appendChild(item);
+    return item.querySelector('.price');
   });
+  if (!list.length) return;
+
+  els.valueTotal.textContent = 'Loading…';
+  els.valueNote.textContent = '';
+  const [prices, rate] = await Promise.all([getTcgPrices([...new Set(list.map((c) => c.id))]), getAudRate()]);
+  if (token !== historyToken) return;
+  let total = 0;
+  let priced = 0;
+  list.forEach((card, i) => {
+    const usd = cardUsd(card, prices[card.id]);
+    if (usd == null) return;
+    total += usd;
+    priced++;
+    priceEls[i].textContent = formatAud(usd, rate.rate);
+  });
+  els.valueTotal.textContent = formatAud(total, rate.rate);
+  els.valueNote.textContent = `${priced} of ${list.length} cards priced · TCGplayer market prices in AUD`
+    + (rate.approx ? ' (approx. exchange rate)' : '');
 }
 
 els.clearHistory.addEventListener('click', () => {

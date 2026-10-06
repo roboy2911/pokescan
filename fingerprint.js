@@ -63,6 +63,22 @@ function fpNormalise(g) {
   return out;
 }
 
+/* How much light/dark variation an area has (std. dev. of brightness over the grid, 0–255).
+ * Cards have lots; a plain table or binder page has little — and the fingerprint's
+ * normalisation would otherwise blow that faint texture up into a random "match". */
+function fpContrast(d, W, H, x0 = FP.X0, y0 = FP.Y0, x1 = FP.X1, y1 = FP.Y1) {
+  const g = fpBoxGrid(d, W, H, FP.GW, FP.GH, x0, y0, x1, y1);
+  const n = g.length / 3;
+  let mean = 0, sq = 0;
+  for (let c = 0; c < n; c++) {
+    const v = 0.299 * g[c * 3] + 0.587 * g[c * 3 + 1] + 0.114 * g[c * 3 + 2];
+    mean += v;
+    sq += v * v;
+  }
+  mean /= n;
+  return Math.sqrt(Math.max(0, sq / n - mean * mean));
+}
+
 /* Fingerprint of a whole, tightly-cropped card image (used for the index). */
 function fpFromPixels(d, W, H) {
   return fpNormalise(fpBoxGrid(d, W, H, FP.GW, FP.GH, FP.X0, FP.Y0, FP.X1, FP.Y1));

@@ -237,7 +237,37 @@ main { max-width: 640px; margin: 0 auto; padding: 0 16px 24px; }
   gap: 2px;
 }
 .price-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
-.price-value { font-weight: 700; color: var(--muted); }
+.price-value { font-size: 1.35rem; font-weight: 800; color: var(--text); }
+.price-value.none { font-size: .95rem; font-weight: 600; color: var(--muted); }
+.price-note { font-size: .72rem; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+.price-note a { color: var(--muted); }
+
+.variant-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.variant-chips:empty { display: none; }
+.chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: .75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+.value-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.value-total { font-size: 1.8rem; font-weight: 800; }
+.grid-item .price { color: var(--accent); font-weight: 700; margin-top: 1px; }
 
 .result-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
 

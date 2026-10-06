@@ -1,7 +1,8 @@
 # PokeScan
 
-Scan a Pokémon card with your phone or computer camera and identify it **by its artwork**.
-One codebase: works in any browser and installs to your phone's home screen like an app (PWA).
+Point your phone at a Pokémon card and it identifies it **by its artwork** and shows its
+market price in AUD. One codebase: works in any browser and installs to your phone's home
+screen like an app (PWA).
 
 Live: https://roboy2911.github.io/pokescan/
 
@@ -12,18 +13,42 @@ Live: https://roboy2911.github.io/pokescan/
    fingerprint: the card averaged over an 8×11 grid, normalised for brightness and colour
    cast. The result is saved to `data/cards.json` (names, sets, numbers) and
    `data/index.bin` (fingerprints, 264 bytes per card).
-2. **Scanning:** the app crops the card using the yellow frame, fingerprints 27 slightly
-   shifted/zoomed crops (so imperfect framing doesn't matter), and compares them against
-   every card in the index. The closest artwork wins.
+2. **Auto-scan:** while the camera is on, frames are scanned continuously in a background
+   thread (`worker.js` → `matcher.js`):
+   - **Find the card:** edge detection (`detect.js`) looks for card outlines across the
+     whole camera view at several sizes, so the card doesn't have to fill the frame. Each
+     outline is un-tilted (perspective correction). Blank areas are ignored.
+   - **Quick pass:** a coarse fingerprint of each candidate is compared with all ~20k
+     cards to make a shortlist of 300.
+   - **Detailed pass:** many slightly shifted/zoomed crops of the best candidates are
+     compared with the shortlist, ignoring the worst-matching grid cells (glare,
+     reflections on sleeves). Off-centre cards and plain boxes without a detected outline
+     count for a bit less, so in a binder the card you're pointing at wins.
+   - **Lock in:** when the same card wins on consecutive frames, the result is shown.
 
-No text reading and no network calls while scanning: it all runs on the device, so it also
-works offline once the app has loaded. In testing against simulated phone photos (blur,
-glare, tilt, colour casts, sloppy framing), the exact card came first about 90% of the time
-and in the top 5 about 95% of the time.
+No text reading and no network calls while scanning. In tests on simulated photos
+(`tools/sim.js`) against the full index: card filling the frame ~97%, binder pages ~87%,
+far away (40–75% of the frame) ~85%. The app only says "Found it" when the match is
+clear; otherwise it shows the closest matches to pick from.
 
 **Variants:** every card with its own number (alt arts, full arts, secret rares, reprints in
-other sets) is in the index. Finish/stamp variants of the *same* number (reverse holo,
-1st Edition, Shadowless, stamped promos) share one image, so they can't be told apart yet.
+other sets) is in the index. Finishes of the *same* number (holo, reverse holo, 1st Edition)
+share one image, so you pick the finish on the result card (it changes the price).
+
+## Prices
+
+TCGplayer (US) market prices converted to AUD at the day's exchange rate
+([Frankfurter](https://frankfurter.dev), fallback [open.er-api.com](https://open.er-api.com)).
+
+- `data/prices.json` is a daily snapshot of every card's TCGplayer prices, built by
+  `tools/update-prices.mjs` and committed by the **Update prices** GitHub Action
+  (`.github/workflows/prices.yml`, daily at 04:30 AEST; can also be run by hand from the
+  repo's Actions tab).
+- Cards missing from the snapshot are looked up live on pokemontcg.io and cached on the device.
+- The Collection tab shows each card's price and the collection's total value.
+
+These are US market prices, not Australian sold prices. See the research notes in the
+project history for eBay AU options.
 
 ## Run it on your computer
 
@@ -51,7 +76,8 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 
 ## Tips for good scans
 
-- Fill the yellow frame with the card, held flat, in even light (avoid glare on holos).
+- Point at one card; it doesn't need to fill the frame. Hold steady for a moment.
+- In a binder, aim at the card you want. Tilt slightly to move reflections off it.
 - If it isn't sure, it shows the closest matches. Tap the right one.
 - The **Search** tab finds cards by name and/or number (`199` or `199/165`), offline.
 
@@ -59,15 +85,15 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 
 | File | What it is |
 |---|---|
-| `index.html` | Page layout (Scan / Search / History tabs) |
-| `app.js` | Camera, matching against the index, search, history |
-| `fingerprint.js` | The fingerprint maths, shared by the app and the index builder |
-| `data/` | The card index (built by `tools/build-index.html`) |
-| `style.css` | Styling (mobile-first, dark) |
+| `index.html`, `style.css` | Page layout and styling (Scan / Search / Collection) |
+| `app.js` | Camera, auto-scan, results, search, collection |
+| `worker.js`, `matcher.js` | Background matching: finding the card and identifying it |
+| `detect.js` | Card outline detection and perspective correction |
+| `fingerprint.js` | Fingerprint maths, shared by the app and the index builder |
+| `prices.js` | TCGplayer prices → AUD |
+| `data/` | Card index and price snapshot |
+| `tools/build-index.html` | Builds the card index |
+| `tools/update-prices.mjs` | Builds the price snapshot (run by GitHub Actions) |
+| `tools/sim.js` | Accuracy tests on simulated photos and binder pages |
 | `manifest.json`, `sw.js`, `icon.svg` | Makes it installable as a phone app |
 | `serve.ps1` | Tiny local web server for testing on Windows |
-
-## Next up: prices
-
-Confirmed scans are saved in **History** (on the device) with the card's set, number and ID,
-ready for a pricing step (eBay AU sold listings) later.

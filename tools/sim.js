@@ -167,3 +167,87 @@ export async function testMatch(n = 60, seed = 11, opts = {}) {
   res.ms = Math.round(res.ms / n);
   return res;
 }
+
+/* A binder page in view: 3x3 cards in plastic pockets, the target is the middle card.
+ * `size` = middle card height relative to the guide. Adds pocket seams, sleeve haze and a
+ * long reflection streak across the plastic, then the usual blur / exposure. */
+export async function simBinder(cardUrls, rnd, { size = [0.45, 0.9], shift = 0.06, rot = 0.05 } = {}) {
+  const W = 480, H = 640;
+  const ghei = H * 0.86, gwid = ghei * 63 / 88;
+  const guide = { x0: (W - gwid) / 2, y0: (H - ghei) / 2, x1: (W + gwid) / 2, y1: (H + ghei) / 2 };
+  const r = (a, b) => a + rnd() * (b - a);
+  const s = r(size[0], size[1]);
+  const ch = ghei * s, cw = ch * 63 / 88, gap = cw * 0.07;
+  const cards = await Promise.all(cardUrls.map((u) => fetch(u).then((x) => x.blob()).then(createImageBitmap)));
+
+  const c = new OffscreenCanvas(W, H);
+  const x = c.getContext('2d');
+  const shade = r(18, 45);
+  x.fillStyle = `rgb(${shade},${shade},${shade + 4})`;
+  x.fillRect(0, 0, W, H);
+  x.translate(W / 2 + r(-shift, shift) * W, H / 2 + r(-shift, shift) * H);
+  x.rotate(r(-rot, rot));
+  for (let i = 0; i < 9; i++) {
+    const col = (i % 3) - 1, row = Math.floor(i / 3) - 1;
+    const px = col * (cw + gap) - cw / 2, py = row * (ch + gap) - ch / 2;
+    x.drawImage(cards[i], px, py, cw, ch);
+    // Pocket: slightly hazy plastic with a lighter seam around it.
+    x.fillStyle = `rgba(255,255,255,${r(0.03, 0.09)})`;
+    x.fillRect(px - gap / 3, py - gap / 3, cw + gap * 2 / 3, ch + gap * 2 / 3);
+    x.strokeStyle = `rgba(255,255,255,${r(0.12, 0.3)})`;
+    x.lineWidth = 1.5;
+    x.strokeRect(px - gap / 2.2, py - gap / 2.2, cw + gap / 1.1, ch + gap / 1.1);
+  }
+  x.setTransform(1, 0, 0, 1, 0, 0);
+
+  const c2 = new OffscreenCanvas(W, H);
+  const y = c2.getContext('2d');
+  y.filter = `brightness(${r(0.7, 1.15)}) contrast(${r(0.85, 1.1)}) blur(${r(0.4, 1.4)}px)`;
+  y.drawImage(c, 0, 0);
+  y.filter = 'none';
+  // Reflection streak across the sleeve plastic.
+  y.globalCompositeOperation = 'screen';
+  y.save();
+  y.translate(r(0, W), r(0, H));
+  y.rotate(r(-1.2, 1.2));
+  const bw = r(30, 110);
+  const g = y.createLinearGradient(0, -bw, 0, bw);
+  const a = r(0.25, 0.65);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.5, `rgba(255,255,255,${a})`);
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  y.fillStyle = g;
+  y.fillRect(-2 * W, -bw, 4 * W, 2 * bw);
+  y.restore();
+  y.globalCompositeOperation = 'source-over';
+  return { d: y.getImageData(0, 0, W, H).data, W, H, guide };
+}
+
+/* Binder accuracy: is the middle card identified? */
+export async function testBinder(n = 40, seed = 61, opts = {}) {
+  matcher ??= createMatcher(await (await fetch('data/index.bin')).arrayBuffer());
+  const rnd = mulberry(seed);
+  const res = { n, top1: 0, top5: 0, neighbour: 0, right: [], wrong: [], ms: 0 };
+  for (let i = 0; i < n; i++) {
+    const picks = Array.from({ length: 9 }, () => db.cards[Math.floor(rnd() * db.cards.length)]);
+    let P;
+    try {
+      P = await simBinder(picks.map((p) => p.image), rnd, opts);
+      globalThis.BINDER_DONE = i + 1;
+    } catch {
+      continue;
+    }
+    const t0 = performance.now();
+    const { matches } = matcher.match([{ data: P.d, w: P.W, h: P.H, guide: P.guide }], 12, opts.match || {});
+    res.ms += performance.now() - t0;
+    const target = picks[4].id;
+    const rank = matches.findIndex((m) => db.cards[m.i].id === target);
+    if (rank === 0) res.top1++;
+    if (rank >= 0 && rank < 5) res.top5++;
+    if (rank !== 0 && picks.some((p, k) => k !== 4 && p.id === db.cards[matches[0].i].id)) res.neighbour++;
+    const gap = matches[0].score - (matches[1]?.score ?? 0);
+    (rank === 0 ? res.right : res.wrong).push([+matches[0].score.toFixed(3), +gap.toFixed(3)]);
+  }
+  res.ms = Math.round(res.ms / n);
+  return res;
+}

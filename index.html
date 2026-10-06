@@ -60,8 +60,10 @@
             <div class="hero-sub" id="heroSub"></div>
             <div class="hero-tags" id="heroTags"></div>
             <div class="price-slot">
-              <span class="price-label">eBay AU sold</span>
-              <span class="price-value">Prices coming soon</span>
+              <span class="price-label">Market price (AUD)</span>
+              <span class="price-value" id="priceValue">—</span>
+              <div class="variant-chips" id="variantChips"></div>
+              <span class="price-note" id="priceNote"></span>
             </div>
           </div>
         </div>
@@ -94,6 +96,11 @@
         <h2 class="view-title">Collection <span class="count" id="collectionCount"></span></h2>
         <button id="clearHistory" class="btn ghost small">Clear</button>
       </div>
+      <div class="value-card" id="valueCard" hidden>
+        <span class="price-label">Estimated value</span>
+        <span class="value-total" id="valueTotal">—</span>
+        <span class="price-note" id="valueNote"></span>
+      </div>
       <p class="muted">Saved on this device.</p>
       <div id="historyList" class="grid"></div>
     </section>
@@ -123,6 +130,7 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="fingerprint.js"></script>
+  <script src="prices.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
