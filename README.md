@@ -1,22 +1,29 @@
 # PokeScan
 
-Scan a Pokémon card with your phone or computer camera and identify it.
+Scan a Pokémon card with your phone or computer camera and identify it **by its artwork**.
 One codebase: works in any browser and installs to your phone's home screen like an app (PWA).
+
+Live: https://roboy2911.github.io/pokescan/
 
 ## How it identifies a card
 
-1. **Crop** the card using the yellow on-screen frame.
-2. **Read text** on-device with [Tesseract.js](https://tesseract.projectnaptha.com/):
-   the name (top) and the collector number (bottom corners, e.g. `025/198`).
-3. **Find candidates** in [pokemontcg.io](https://pokemontcg.io) by number + set size,
-   or by name. OCR misreads are corrected against the list of every Pokémon name
-   (from PokéAPI), e.g. "Chavizarvd" → Charizard. If pokemontcg.io is slow or down,
-   [TCGdex](https://tcgdex.dev) is used instead.
-4. **Compare artwork**: every candidate's image is shrunk to a tiny colour fingerprint
-   and compared to the photo. Best visual match wins. This is how commercial scanners
-   work too, and it's what makes full-art cards (unreadable text) work.
+1. **Card index (built once):** `tools/build-index.html` downloads every card image from
+   [pokemontcg.io](https://pokemontcg.io) (~20k cards) and turns each into a tiny colour
+   fingerprint: the card averaged over an 8×11 grid, normalised for brightness and colour
+   cast. The result is saved to `data/cards.json` (names, sets, numbers) and
+   `data/index.bin` (fingerprints, 264 bytes per card).
+2. **Scanning:** the app crops the card using the yellow frame, fingerprints 27 slightly
+   shifted/zoomed crops (so imperfect framing doesn't matter), and compares them against
+   every card in the index. The closest artwork wins.
 
-Nothing is uploaded anywhere: OCR and image matching run on the device.
+No text reading and no network calls while scanning: it all runs on the device, so it also
+works offline once the app has loaded. In testing against simulated phone photos (blur,
+glare, tilt, colour casts, sloppy framing), the exact card came first about 90% of the time
+and in the top 5 about 95% of the time.
+
+**Variants:** every card with its own number (alt arts, full arts, secret rares, reprints in
+other sets) is in the index. Finish/stamp variants of the *same* number (reverse holo,
+1st Edition, Shadowless, stamped promos) share one image, so they can't be told apart yet.
 
 ## Run it on your computer
 
@@ -24,35 +31,38 @@ Nothing is uploaded anywhere: OCR and image matching run on the device.
 powershell -ExecutionPolicy Bypass -File serve.ps1
 ```
 
-Then open http://localhost:8080. (Any static file server works. The app is plain HTML/JS, with no build step.)
+Then open http://localhost:8080. The app is plain HTML/JS, with no build step.
+
+## Updating the card index (new sets)
+
+1. Run `serve.ps1` (it accepts saves into `data/`).
+2. Open http://localhost:8080/tools/build-index.html and click **Build index**.
+   It downloads ~3.5 GB of images and takes roughly 15–30 minutes.
+3. Commit and push `data/cards.json` and `data/index.bin`.
+
+If you change anything in `fingerprint.js`, you must rebuild the index. The app and
+the index must fingerprint cards the same way.
 
 ## Get it on your phone
 
-The live camera only works over **HTTPS**, so host the folder somewhere free:
-
-- **Netlify Drop** (easiest): go to https://app.netlify.com/drop and drag this folder in.
-  You get an `https://…netlify.app` link. Open it on your phone, then
-  *Share → Add to Home Screen* (iPhone) or *⋮ → Install app* (Android).
-- Or GitHub Pages / Cloudflare Pages.
+Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
+*Share → Add to Home Screen* (iPhone) or *⋮ → Install app* (Android).
+(The live camera needs HTTPS, which GitHub Pages provides.)
 
 ## Tips for good scans
 
 - Fill the yellow frame with the card, held flat, in even light (avoid glare on holos).
-- If it isn't sure, it shows a list of best guesses. Tap the right one.
-- "What the scanner read" (under the buttons) shows the crops and raw text, which is handy for debugging.
-- The **Search** tab lets you look a card up by name/number manually.
-
-## Optional: pokemontcg.io API key
-
-Without a key, pokemontcg.io is rate-limited and sometimes slow. Get a free key at
-https://dev.pokemontcg.io and paste it into `PTCG_API_KEY` in `app.js`.
+- If it isn't sure, it shows the closest matches. Tap the right one.
+- The **Search** tab finds cards by name and/or number (`199` or `199/165`), offline.
 
 ## Files
 
 | File | What it is |
 |---|---|
 | `index.html` | Page layout (Scan / Search / History tabs) |
-| `app.js` | Camera, OCR, card lookup, artwork matching, history |
+| `app.js` | Camera, matching against the index, search, history |
+| `fingerprint.js` | The fingerprint maths, shared by the app and the index builder |
+| `data/` | The card index (built by `tools/build-index.html`) |
 | `style.css` | Styling (mobile-first, dark) |
 | `manifest.json`, `sw.js`, `icon.svg` | Makes it installable as a phone app |
 | `serve.ps1` | Tiny local web server for testing on Windows |

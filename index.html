@@ -29,8 +29,7 @@
         <video id="video" playsinline muted autoplay></video>
         <img id="stillPreview" alt="" hidden>
         <div class="guide" id="guide">
-          <span class="guide-label top">Card name</span>
-          <span class="guide-label bottom">Card number (e.g. 025/198)</span>
+          <span class="guide-label bottom">Fill the frame with the card</span>
         </div>
         <div class="camera-msg" id="cameraMsg">Tap “Start camera” or take a photo</div>
       </div>
@@ -45,13 +44,6 @@
       </div>
 
       <div id="status" class="status" hidden></div>
-      <details id="ocrDebug" class="debug" hidden>
-        <summary>What the scanner read</summary>
-        <div class="debug-grid">
-          <div><img id="dbgTop" alt="name strip"><pre id="dbgTopText"></pre></div>
-          <div><img id="dbgBottom" alt="number strip"><pre id="dbgBottomText"></pre></div>
-        </div>
-      </details>
 
       <div id="scanResults" class="results"></div>
     </section>
@@ -60,10 +52,7 @@
     <section id="view-search" class="view">
       <form id="searchForm" class="search-form">
         <input id="qName" type="text" placeholder="Card name (e.g. Charizard ex)" autocomplete="off">
-        <div class="row">
-          <input id="qNumber" type="text" placeholder="Number (e.g. 199)" inputmode="text" autocomplete="off">
-          <input id="qTotal" type="text" placeholder="Set total (e.g. 165)" inputmode="numeric" autocomplete="off">
-        </div>
+        <input id="qNumber" type="text" placeholder="Number (e.g. 199 or 199/165)" autocomplete="off">
         <button class="btn primary" type="submit">Search</button>
       </form>
       <div id="searchStatus" class="status" hidden></div>
@@ -86,9 +75,8 @@
     <div id="detailBody"></div>
   </dialog>
 
-  <canvas id="work" hidden></canvas>
-
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="fingerprint.js"></script>
+  <script src="detect.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

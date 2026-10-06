@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PokeScan Index Builder</title>
+  <style>
+    body { font: 15px system-ui, sans-serif; background: #111318; color: #f1f2f5; margin: 0; padding: 20px; }
+    h1 { color: #ffcb05; font-size: 1.3rem; margin-top: 0; }
+    button { background: #ffcb05; color: #1a1a1a; border: 0; border-radius: 10px; padding: 12px 18px; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .5; }
+    progress { width: 100%; height: 18px; margin: 12px 0; }
+    pre { background: #1b1e26; padding: 12px; border-radius: 10px; white-space: pre-wrap; max-height: 50vh; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>PokeScan index builder</h1>
+  <p>Reads the card list from the pokemontcg.io data on GitHub, downloads every card image once (~20k images, ~3.5&nbsp;GB),
+     fingerprints them, and saves <code>data/cards.json</code> + <code>data/index.bin</code>
+     via the local server (<code>serve.ps1</code>). Takes roughly 15–30 minutes.</p>
+  <button id="go">Build index</button>
+  <progress id="bar" value="0" max="1"></progress>
+  <div id="stat"></div>
+  <pre id="log"></pre>
+
+  <script src="../fingerprint.js"></script>
+  <script>
+    const DATA = 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master';
+    const IMG = 'https://images.pokemontcg.io/';
+    const CONCURRENCY = 12;
+    const $ = (id) => document.getElementById(id);
+    const log = (m) => { $('log').textContent += m + '\n'; console.log(m); };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    // Exposed so progress can be checked from the console.
+    window.BUILD = { phase: 'idle', done: 0, total: 0, failed: [], finished: false };
+
+    async function getJson(url) {
+      for (let attempt = 1; attempt <= 6; attempt++) {
+        try {
+          const res = await fetch(url);
+          if (res.ok) return await res.json();
+          log(`  HTTP ${res.status}, retrying…`);
+        } catch (err) {
+          log(`  ${err.message}, retrying…`);
+        }
+        await sleep(2000 * attempt);
+      }
+      throw new Error(`Gave up on ${url}`);
+    }
+
+    // pokemontcg.io publishes its whole database as JSON files on GitHub — much faster and
+    // more reliable than paging through the API.
+    async function fetchAllCards() {
+      const sets = await getJson(`${DATA}/sets/en.json`);
+      log(`${sets.length} sets`);
+      const cards = [];
+      let done = 0;
+      await Promise.all(Array.from({ length: 6 }, async () => {
+        while (sets.length) {
+          const set = sets.shift();
+          const setCards = await getJson(`${DATA}/cards/en/${set.id}.json`).catch((err) => {
+            log(`  skipped set ${set.id}: ${err.message}`);
+            return [];
+          });
+          for (const c of setCards) cards.push({ ...c, set });
+          $('stat').textContent = `Card list: ${++done} sets, ${cards.length} cards`;
+        }
+      }));
+      log(`${cards.length} cards`);
+      return cards;
+    }
+
+    async function fingerprintCard(card) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await fetch(card.images.small);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const bmp = await createImageBitmap(await res.blob());
+          const canvas = new OffscreenCanvas(bmp.width, bmp.height);
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(bmp, 0, 0);
+          const { data } = ctx.getImageData(0, 0, bmp.width, bmp.height);
+          return fpQuantise(fpFromPixels(data, bmp.width, bmp.height));
+        } catch (err) {
+          if (attempt === 3) throw err;
+          await sleep(1500 * attempt);
+        }
+      }
+    }
+
+    async function save(name, body) {
+      const res = await fetch(`../data/${name}`, { method: 'PUT', body });
+      if (!res.ok) throw new Error(`Saving ${name} failed: HTTP ${res.status}`);
+      log(`Saved data/${name} (${(body.size ?? body.byteLength ?? body.length).toLocaleString()} bytes)`);
+    }
+
+    async function build() {
+      $('go').disabled = true;
+      const t0 = Date.now();
+      BUILD.phase = 'listing';
+      const cards = await fetchAllCards();
+
+      BUILD.phase = 'fingerprinting';
+      BUILD.total = cards.length;
+      $('bar').max = cards.length;
+      const fps = new Array(cards.length);
+      let next = 0;
+      const worker = async () => {
+        while (next < cards.length) {
+          const i = next++;
+          try {
+            fps[i] = await fingerprintCard(cards[i]);
+          } catch (err) {
+            BUILD.failed.push(cards[i].id);
+            log(`  failed ${cards[i].id}: ${err.message}`);
+          }
+          BUILD.done++;
+          if (BUILD.done % 50 === 0) {
+            $('bar').value = BUILD.done;
+            const rate = BUILD.done / ((Date.now() - t0) / 1000);
+            $('stat').textContent = `${BUILD.done}/${cards.length} images · ${rate.toFixed(1)}/s · ` +
+              `~${Math.round((cards.length - BUILD.done) / rate / 60)} min left`;
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+
+      // Pack everything that worked. Card order in cards.json == vector order in index.bin.
+      BUILD.phase = 'saving';
+      const sets = {};
+      const rows = [];
+      const vectors = new Int8Array(cards.length * FP.DIM);
+      cards.forEach((c, i) => {
+        if (!fps[i]) return;
+        sets[c.set.id] ??= [c.set.name, c.set.series, c.set.printedTotal, c.set.releaseDate];
+        const row = [c.id, c.name, c.number, c.set.id, c.rarity ?? ''];
+        // Most images follow <set>/<number>.png; store the URL only when it doesn't.
+        if (c.images.small !== `${IMG}${c.set.id}/${c.number}.png`) row.push(c.images.small);
+        vectors.set(fps[i], rows.length * FP.DIM);
+        rows.push(row);
+      });
+      const meta = {
+        version: 1,
+        built: new Date().toISOString(),
+        grid: [FP.GW, FP.GH],
+        dim: FP.DIM,
+        count: rows.length,
+        sets,
+        cards: rows,
+      };
+      await save('cards.json', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+      await save('index.bin', new Blob([vectors.subarray(0, rows.length * FP.DIM)]));
+
+      log(`Done: ${rows.length} cards indexed, ${BUILD.failed.length} failed, ` +
+          `${Math.round((Date.now() - t0) / 60000)} min.`);
+      $('stat').textContent = 'Finished.';
+      BUILD.phase = 'done';
+      BUILD.finished = true;
+    }
+
+    $('go').addEventListener('click', () => build().catch((err) => {
+      log(`ERROR: ${err.message}`);
+      BUILD.phase = 'error';
+      BUILD.finished = true;
+      $('go').disabled = false;
+    }));
+  </script>
+</body>
+</html>
