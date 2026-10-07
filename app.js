@@ -35,6 +35,7 @@ const els = {
   heroTags: $('heroTags'),
   addBtn: $('addBtn'),
   altWrap: $('altWrap'),
+  altStrip: $('altStrip'),
   altSummary: $('altSummary'),
   scanResults: $('scanResults'),
   collectionCount: $('collectionCount'),
@@ -99,6 +100,51 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { els.toast.hidden = true; }, 2200);
 }
+
+/* The finish last picked for each card (so a reverse holo you scan often stays picked). */
+const FINISH_KEY = 'pokescan.lastFinish';
+function lastFinish(id) {
+  try { return JSON.parse(localStorage.getItem(FINISH_KEY))?.[id] ?? null; } catch { return null; }
+}
+function rememberFinish(id, key) {
+  try {
+    const all = JSON.parse(localStorage.getItem(FINISH_KEY)) || {};
+    all[id] = key;
+    localStorage.setItem(FINISH_KEY, JSON.stringify(all));
+  } catch { /* storage unavailable */ }
+}
+
+/* Optional beep when a card is found (toggle on the camera; off by default). */
+const SOUND_KEY = 'pokescan.sound';
+let audioCtx = null;
+let soundOn = false;
+try { soundOn = localStorage.getItem(SOUND_KEY) === '1'; } catch { /* no storage */ }
+function showSound() {
+  const btn = $('soundBtn');
+  btn.setAttribute('aria-pressed', String(soundOn));
+  btn.classList.toggle('on', soundOn);
+}
+function beep() {
+  if (!soundOn) return;
+  try {
+    audioCtx ??= new AudioContext();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 1200;
+    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+    o.connect(g).connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + 0.12);
+  } catch { /* no audio */ }
+}
+$('soundBtn').addEventListener('click', () => {
+  soundOn = !soundOn;
+  try { localStorage.setItem(SOUND_KEY, soundOn ? '1' : '0'); } catch { /* no storage */ }
+  showSound();
+  if (soundOn) { audioCtx ??= new AudioContext(); audioCtx.resume?.(); beep(); } // unlock audio on this tap
+  toast(soundOn ? 'Beep on when a card is found' : 'Beep off');
+});
+showSound();
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -430,6 +476,7 @@ function onFrame(matches, where, region) {
   auto.lockedKey = key;
   els.wrap.classList.add('locked');
   navigator.vibrate?.(60);
+  beep();
   auto.recent = [];
   renderScanResults(matches, { found: confident });
 }
@@ -488,8 +535,9 @@ async function showPrice(card) {
     els.priceValue.textContent = info ? 'No price available' : "Couldn't load price";
     return;
   }
-  const pick = (v) => {
+  const pick = (v, remember = false) => {
     shownVariant = v.key;
+    if (remember) rememberFinish(card.id, v.key);
     els.priceValue.textContent = formatAud(v.usd, rate.rate);
     els.priceValue.className = 'price-value';
     els.variantChips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
@@ -501,11 +549,11 @@ async function showPrice(card) {
       chip.className = 'chip';
       chip.dataset.key = v.key;
       chip.textContent = v.label;
-      chip.addEventListener('click', () => pick(v));
+      chip.addEventListener('click', () => pick(v, true));
       els.variantChips.appendChild(chip);
     }
   }
-  pick(variants[0]);
+  pick(variants.find((v) => v.key === lastFinish(card.id)) ?? variants[0]);
   els.priceNote.innerHTML = `TCGplayer (US) market price × ${rate.rate.toFixed(3)}${rate.approx ? ' (approx. rate)' : ''}`
     + `${info.updatedAt ? ` · ${esc(info.updatedAt)}` : ''}`
     + `${info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}`;
@@ -564,6 +612,30 @@ function renderScanResults(matches, { found = null } = {}) {
   } else {
     els.hero.hidden = true;
     els.addBtn.hidden = true;
+  }
+
+  // Quick swap: the next few matches as thumbnails right under the result.
+  els.altStrip.innerHTML = '';
+  els.altStrip.hidden = !confident || matches.length < 2;
+  if (confident) {
+    const label = document.createElement('span');
+    label.className = 'alt-strip-label';
+    label.textContent = 'Not it? Tap the right one:';
+    els.altStrip.appendChild(label);
+    for (const { card, score } of matches.slice(1, 5)) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'alt-thumb';
+      b.setAttribute('aria-label', `${card.name}, ${card.setName} #${card.number}`);
+      b.innerHTML = `<img src="${esc(card.image)}" alt="" loading="lazy"><span>${esc(card.setName)}</span>`;
+      b.addEventListener('click', () => {
+        showHero(card, score);
+        els.resultTitle.className = 'result-title ok';
+        els.resultTitle.textContent = '✓ Your pick';
+        els.altStrip.hidden = true;
+      });
+      els.altStrip.appendChild(b);
+    }
   }
 
   // Alternatives: collapsed under "Not this card?" when confident, open otherwise.
@@ -765,6 +837,7 @@ function openDetail(card, { entryKey = null } = {}) {
       priceEl.textContent = formatAud(v.usd, rate.rate);
       priceEl.className = 'price-value';
       $('detailChips').querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
+      if (save) rememberFinish(card.id, v.key);
       if (save && inCollection) {
         entryKey = setEntryVariant(entryKey, v.key);
         showQty();
@@ -782,7 +855,7 @@ function openDetail(card, { entryKey = null } = {}) {
         $('detailChips').appendChild(chip);
       }
     }
-    pick(variants.find((v) => v.key === variant) ?? variants[0], false);
+    pick(variants.find((v) => v.key === variant) ?? variants.find((v) => v.key === lastFinish(card.id)) ?? variants[0], false);
     $('detailNote').innerHTML = `TCGplayer (US) market price in AUD`
       + `${info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}`;
   });

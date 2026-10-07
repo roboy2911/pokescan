@@ -43,6 +43,9 @@
           <button id="stopCamBtn" class="icon-btn" aria-label="Stop camera">
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
           </button>
+          <button id="soundBtn" class="icon-btn" aria-label="Beep when a card is found" aria-pressed="false">
+            <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="wave" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="mute" d="M16 9l6 6M22 9l-6 6"/></svg>
+          </button>
           <label class="icon-btn" for="fileInput" aria-label="Upload a photo">
             <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>
           </label>
@@ -71,6 +74,7 @@
           <button id="addBtn" class="btn primary">＋ Add to collection</button>
           <button id="scanBtn" class="btn secondary">Scan next card</button>
         </div>
+        <div class="alt-strip" id="altStrip" hidden></div>
         <details id="altWrap" class="alt-wrap">
           <summary id="altSummary">Not this card?</summary>
           <div id="scanResults" class="results"></div>
