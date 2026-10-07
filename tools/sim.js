@@ -70,7 +70,7 @@ export async function simPhoto(cardUrl, bgUrl, rnd,
       y: cy + x * Math.sin(ang) + y * Math.cos(ang) + r(-jitter, jitter) * gwid,
     };
   });
-  const card = await imgData(cardUrl, 315, 440);
+  const card = typeof cardUrl === 'string' ? await imgData(cardUrl, 315, 440) : cardUrl;
   const bg = await imgData(bgUrl, W, H);
   const Hm = inv3(sq2quad(quad));
   const c = new OffscreenCanvas(W, H);
@@ -250,4 +250,195 @@ export async function testBinder(n = 40, seed = 61, opts = {}) {
   }
   res.ms = Math.round(res.ms / n);
   return res;
+}
+
+/* ------------------------------------------------------------------ */
+/* Hard conditions: glare, sleeves, toploaders, fingers                */
+/* ------------------------------------------------------------------ */
+
+/* A stand-in card image (315x440) rebuilt from card `i`'s index fingerprint: its 8x11
+ * colour grid, smoothly upscaled, with fine texture and a plain border. Lets the tests run
+ * offline (no card image downloads); for final checks use real images. */
+let indexVecs = null;
+export async function synthCard(i, rnd = Math.random) {
+  indexVecs ??= new Int8Array(await (await fetch('data/index.bin')).arrayBuffer());
+  const v = indexVecs.subarray(i * FP.DIM, (i + 1) * FP.DIM);
+  const W = 315, H = 440;
+  // Each channel back to a 0–255 range (the fingerprint only keeps relative colour).
+  const grid = new Float32Array(FP.DIM);
+  for (let k = 0; k < 3; k++) {
+    let s = 0;
+    for (let c = 0; c < FP.GW * FP.GH; c++) s += v[c * 3 + k] ** 2;
+    const sd = Math.sqrt(s / (FP.GW * FP.GH)) || 1;
+    for (let c = 0; c < FP.GW * FP.GH; c++) grid[c * 3 + k] = 128 + (v[c * 3 + k] / sd) * 42;
+  }
+  const border = [200 + rnd() * 40, 170 + rnd() * 40, 40 + rnd() * 60];
+  const d = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const u = (x / W - FP.X0) / (FP.X1 - FP.X0), t = (y / H - FP.Y0) / (FP.Y1 - FP.Y0);
+      const o = (y * W + x) * 4;
+      d[o + 3] = 255;
+      if (u < 0 || u >= 1 || t < 0 || t >= 1) {
+        d[o] = border[0]; d[o + 1] = border[1]; d[o + 2] = border[2];
+        continue;
+      }
+      // Bilinear between cell centres, plus texture.
+      const gx = Math.min(FP.GW - 1, Math.max(0, u * FP.GW - 0.5)), gy = Math.min(FP.GH - 1, Math.max(0, t * FP.GH - 0.5));
+      const x0 = Math.floor(gx), y0 = Math.floor(gy), x1 = Math.min(FP.GW - 1, x0 + 1), y1 = Math.min(FP.GH - 1, y0 + 1);
+      const fx = gx - x0, fy = gy - y0;
+      const tex = 14 * Math.sin(x * 0.37 + y * 0.11) * Math.cos(y * 0.29 - x * 0.07);
+      for (let k = 0; k < 3; k++) {
+        const g = (yy, xx) => grid[(yy * FP.GW + xx) * 3 + k];
+        d[o + k] = (g(y0, x0) * (1 - fx) + g(y0, x1) * fx) * (1 - fy) + (g(y1, x0) * (1 - fx) + g(y1, x1) * fx) * fy + tex;
+      }
+    }
+  }
+  return { d, W, H };
+}
+
+/* Put a card image in a sleeve (slightly bigger, hazy plastic) or a toploader (much bigger,
+ * card sitting low). Returns a new image whose outline is the sleeve/toploader's. */
+function encase(card, kind, rnd) {
+  const r = (a, b) => a + rnd() * (b - a);
+  const W = card.W, H = card.H;
+  const [sx, sy, oy] = kind === 'toploader' ? [r(0.8, 0.85), r(0.84, 0.88), r(0.3, 0.9)] : [r(0.93, 0.96), r(0.94, 0.97), r(0.3, 0.7)];
+  const cw = W * sx, ch = H * sy;
+  const ox = (W - cw) / 2, oyPx = (H - ch) * oy;
+  const haze = r(0.04, 0.12), tint = [r(0.9, 1), r(0.92, 1), r(0.9, 1)];
+  const plastic = r(150, 210);
+  const d = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const o = (y * W + x) * 4;
+      const u = (x - ox) / cw, v = (y - oyPx) / ch;
+      let px;
+      if (u >= 0 && u < 1 && v >= 0 && v < 1) {
+        const si = (Math.floor(v * H) * W + Math.floor(u * W)) * 4;
+        px = [card.d[si], card.d[si + 1], card.d[si + 2]];
+      } else {
+        px = [plastic, plastic, plastic + 6];
+      }
+      for (let k = 0; k < 3; k++) d[o + k] = (px[k] * (1 - haze) + 255 * haze) * tint[k];
+      d[o + 3] = 255;
+    }
+  }
+  return { d, W, H };
+}
+
+/* Simulated photo with hard conditions. `conditions` (any mix):
+ *   glare     — 1–3 bright, blown-out reflections on the card
+ *   streak    — a long reflection band across the card
+ *   sleeve    — card in a penny sleeve (outline slightly bigger, hazy, tinted)
+ *   toploader — card in a toploader (outline much bigger, card sits low)
+ *   finger    — a finger over one edge / corner
+ *   dim       — dark, low-contrast lighting */
+export async function simHard(card, bgUrl, rnd, conditions = [], opts = {}) {
+  const r = (a, b) => a + rnd() * (b - a);
+  let img = card;
+  if (conditions.includes('sleeve')) img = encase(img, 'sleeve', rnd);
+  if (conditions.includes('toploader')) img = encase(img, 'toploader', rnd);
+  const P = await simPhoto(img, bgUrl, rnd, opts);
+  const c = new OffscreenCanvas(P.W, P.H);
+  const x = c.getContext('2d');
+  x.putImageData(new ImageData(new Uint8ClampedArray(P.d), P.W, P.H), 0, 0);
+  // Points inside the card (bilinear in the quad).
+  const [p0, p1, p2, p3] = P.quad;
+  const at = (u, v) => ({
+    x: (p0.x * (1 - u) + p1.x * u) * (1 - v) + (p3.x * (1 - u) + p2.x * u) * v,
+    y: (p0.y * (1 - u) + p1.y * u) * (1 - v) + (p3.y * (1 - u) + p2.y * u) * v,
+  });
+  const cardW = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+  if (conditions.includes('dim')) {
+    x.fillStyle = `rgba(0,0,0,${r(0.35, 0.55)})`;
+    x.fillRect(0, 0, P.W, P.H);
+  }
+  if (conditions.includes('glare')) {
+    x.globalCompositeOperation = 'screen';
+    const n = 1 + Math.floor(rnd() * 3);
+    for (let i = 0; i < n; i++) {
+      const p = at(r(0.15, 0.85), r(0.1, 0.9));
+      const rad = cardW * r(0.12, 0.3);
+      const g = x.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(r(0.3, 0.6), `rgba(255,255,255,${r(0.75, 0.95)})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = g;
+      x.beginPath();
+      x.ellipse(p.x, p.y, rad, rad * r(0.5, 1), r(0, Math.PI), 0, 2 * Math.PI);
+      x.fill();
+    }
+    x.globalCompositeOperation = 'source-over';
+  }
+  if (conditions.includes('streak')) {
+    x.globalCompositeOperation = 'screen';
+    const p = at(r(0.2, 0.8), r(0.2, 0.8));
+    x.save();
+    x.translate(p.x, p.y);
+    x.rotate(r(-1.3, 1.3));
+    const bw = cardW * r(0.08, 0.2);
+    const g = x.createLinearGradient(0, -bw, 0, bw);
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.5, `rgba(255,255,255,${r(0.6, 0.95)})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g;
+    x.fillRect(-2 * P.W, -bw, 4 * P.W, 2 * bw);
+    x.restore();
+    x.globalCompositeOperation = 'source-over';
+  }
+  if (conditions.includes('finger')) {
+    // A finger reaching in from outside over one side.
+    const side = Math.floor(rnd() * 4);
+    const along = r(0.15, 0.85);
+    const [u, v] = [[along, 0], [1, along], [along, 1], [0, along]][side];
+    const tip = at(u + (side === 1 ? -1 : side === 3 ? 1 : 0) * r(0.1, 0.28), v + (side === 0 ? 1 : side === 2 ? -1 : 0) * r(0.08, 0.2));
+    const base = at(u + (side === 1 ? 1 : side === 3 ? -1 : 0) * 0.6, v + (side === 0 ? -1 : side === 2 ? 1 : 0) * 0.6);
+    const fw = cardW * r(0.16, 0.24);
+    const skin = [r(190, 235), r(140, 180), r(110, 150)];
+    x.save();
+    x.lineCap = 'round';
+    x.lineWidth = fw;
+    const g = x.createLinearGradient(tip.x, tip.y, base.x, base.y);
+    g.addColorStop(0, `rgb(${skin.map((s) => s * 1.05).join(',')})`);
+    g.addColorStop(1, `rgb(${skin.map((s) => s * 0.75).join(',')})`);
+    x.strokeStyle = g;
+    x.beginPath();
+    x.moveTo(base.x, base.y);
+    x.lineTo(tip.x, tip.y);
+    x.stroke();
+    x.restore();
+  }
+  return { ...P, d: x.getImageData(0, 0, P.W, P.H).data };
+}
+
+/* Accuracy under hard conditions, with stand-in cards (see synthCard). Returns, per
+ * condition set, how often the right card is first / in the top 5, and how often the app
+ * would have said "Found it" for a wrong card (wrongConfident — should stay 0). */
+export async function testHard(n = 40, seed = 5, sets = [[], ['glare'], ['streak'], ['sleeve', 'streak'],
+  ['toploader'], ['finger'], ['dim', 'glare'], ['sleeve', 'glare', 'finger']], opts = {}) {
+  matcher ??= createMatcher(await (await fetch('data/index.bin')).arrayBuffer());
+  const confident = opts.confident ?? ((m) => m[0].score >= 0.88 && m[0].score - (m[1]?.score ?? 0) >= 0.015);
+  const out = {};
+  for (const conds of sets) {
+    const rnd = mulberry(seed);
+    const res = { top1: 0, top5: 0, confident: 0, wrongConfident: 0, ms: 0 };
+    for (let k = 0; k < n; k++) {
+      const i = Math.floor(rnd() * matcher.count);
+      const card = await synthCard(i, rnd);
+      const P = await simHard(card, BACKGROUNDS[k % 2 ? 0 : 0], rnd, conds, opts.photo || {});
+      const t0 = performance.now();
+      const { matches } = matcher.match([{ data: P.d, w: P.W, h: P.H, guide: P.guide }], 12, opts.match || {});
+      res.ms += performance.now() - t0;
+      const rank = matches.findIndex((m) => m.i === i);
+      if (rank === 0) res.top1++;
+      if (rank >= 0 && rank < 5) res.top5++;
+      if (confident(matches)) {
+        if (rank === 0) res.confident++;
+        else res.wrongConfident++;
+      }
+    }
+    res.ms = Math.round(res.ms / n);
+    out[conds.join('+') || 'clean'] = res;
+  }
+  return out;
 }

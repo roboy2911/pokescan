@@ -24,6 +24,11 @@ Live: https://roboy2911.github.io/pokescan/
      compared with the shortlist, ignoring the worst-matching grid cells (glare,
      reflections on sleeves). Off-centre cards and plain boxes without a detected outline
      count for a bit less, so in a binder the card you're pointing at wins.
+   - **Glare and sleeves:** blown-out reflections (and the faint halo around them) are
+     found pixel by pixel and left out; the rest of the card is compared on its own, so a
+     reflection can't skew the colours of the whole card. Pale, washed-out patches
+     (reflection streaks, sleeve haze) are also tried with those patches left out. A
+     match that relies on only part of the card counts for a bit less.
    - **Lock in:** when the same card wins on consecutive frames, the result is shown.
 
 No text reading and no network calls while scanning. In tests on simulated photos

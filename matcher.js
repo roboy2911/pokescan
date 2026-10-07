@@ -10,6 +10,10 @@
  *    (= where the card actually is).
  * 3. Fine pass: many slightly shifted crops of those few candidates, full fingerprints,
  *    glare-tolerant scoring, against the shortlist only.
+ *
+ * Fingerprints with glare cells (`q.w`, see fingerprint.js) are compared on their usable
+ * cells only: the index card is re-standardised over those same cells first, so the score
+ * means the same as for a glare-free photo.
  */
 
 /* Sizes (fraction of the guide) and position spacing (fraction of window size). */
@@ -20,6 +24,9 @@ const WARP_W = 168, WARP_H = 235;
 // Areas with less brightness variation than this (0–255) are blank, not cards.
 const MIN_CONTRAST = 6;
 const MATCH_ROBUST_KEEP = 0.85;
+// Score taken off per fraction of the card hidden by glare: a few visible cells can look
+// like many cards, so a heavily masked match must not seem as sure as a clear one.
+const MASK_PENALTY = 0.1;
 
 function createMatcher(indexBuffer) {
   const dim = FP.DIM;
@@ -79,7 +86,7 @@ function createMatcher(indexBuffer) {
       // As found, and zoomed in a little in case the outline is a sleeve / binder pocket.
       cands.push({
         kind: 'outline', q, warped,
-        coarse: [fpFromPixels(warped, WARP_W, WARP_H), fpCrops(warped, WARP_W, WARP_H, [0.91], [0])[0]],
+        coarse: [...fpQueries(warped, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1), ...fpCrops(warped, WARP_W, WARP_H, [0.91], [0])],
       });
     }
     // Plain windows too (centred, every size), in case no outline is found.
@@ -102,14 +109,14 @@ function createMatcher(indexBuffer) {
     const pq = queries.map((q) => fpPool(q));
     const cardBest = new Float32Array(count).fill(-Infinity);
     const queryBest = new Float32Array(pq.length).fill(-Infinity);
+    const masked = pq.map((q) => !!q.w);
     if (!drop) {
-      // Plain dot product — fastest.
+      // Plain dot product — fastest. With glare: correlation over the usable blocks.
       for (let c = 0; c < count; c++) {
         const base = c * FP_POOL_DIM;
         for (let qi = 0; qi < pq.length; qi++) {
           const q = pq[qi];
-          let s = 0;
-          for (let k = 0; k < FP_POOL_DIM; k++) s += q[k] * pooled[base + k];
+          const s = masked[qi] ? maskedDot(q, pooled, base, FP_POOL_DIM / 3) : plainDot(q, pooled, base);
           if (s > cardBest[c]) cardBest[c] = s;
           if (s > queryBest[qi]) queryBest[qi] = s;
         }
@@ -147,34 +154,110 @@ function createMatcher(indexBuffer) {
     return { cardBest, queryBest };
   }
 
+  function plainDot(q, arr, base) {
+    let s = 0;
+    for (let k = 0; k < FP_POOL_DIM; k++) s += q[k] * arr[base + k];
+    return s;
+  }
+
+  /* Correlation of a glare-masked query `q` (standardised over its usable cells, 0
+   * elsewhere) with arr[base…], each colour channel standardised over the usable cells only.
+   * Same scale as a plain dot product of two unit vectors. */
+  function maskedDot(q, arr, base, cells) {
+    const w = q.w;
+    let used = 0;
+    let s = 0;
+    for (let ch = 0; ch < 3; ch++) {
+      let sx = 0, sxx = 0, sqx = 0, sqq = 0;
+      for (let cell = 0, k = ch; cell < cells; cell++, k += 3) {
+        if (!w[cell]) continue;
+        const x = arr[base + k];
+        sx += x; sxx += x * x; sqx += q[k] * x; sqq += q[k] * q[k];
+        if (ch === 0) used++;
+      }
+      // q sums to 0 over the usable cells, so the mean of x drops out of the numerator.
+      const vx = sxx - sx * sx / (used || 1);
+      if (vx > 1e-12 && sqq > 0) s += sqx / Math.sqrt(vx * sqq);
+    }
+    return s / 3;
+  }
+
+  /* Index card c, re-standardised over the usable cells `w` and scaled to unit length
+   * there (0 elsewhere) — directly comparable with a glare-masked query. */
+  function maskedCard(c, w, out) {
+    const cells = dim / 3;
+    const base = c * dim;
+    let used = 0;
+    for (let cell = 0; cell < cells; cell++) used += w[cell];
+    for (let ch = 0; ch < 3; ch++) {
+      let sx = 0, sxx = 0;
+      for (let cell = 0, k = ch; cell < cells; cell++, k += 3) {
+        if (!w[cell]) continue;
+        const x = vectors[base + k];
+        sx += x; sxx += x * x;
+      }
+      const mean = sx / used;
+      const sd = Math.sqrt(Math.max(1e-12, sxx / used - mean * mean));
+      const scale = 1 / (sd * Math.sqrt(3 * used));
+      for (let cell = 0, k = ch; cell < cells; cell++, k += 3) {
+        out[k] = w[cell] ? (vectors[base + k] - mean) * scale : 0;
+      }
+    }
+    return out;
+  }
+
   /* Glare-tolerant score: ignores the grid cells that disagree most. 1 = identical. */
-  function robustScores(queries, indices, topN, keepFrac = MATCH_ROBUST_KEEP) {
+  function robustScores(queries, indices, topN, keepFrac = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY) {
     const cells = dim / 3;
     const keep = Math.round(cells * keepFrac);
     const drop = cells - keep;
     const worst = new Float64Array(drop); // largest errors so far, descending
     const out = [];
+    // Crops often share a glare mask: re-standardise each card once per distinct mask.
+    const maskIds = new Map();
+    const qInfo = queries.map((q) => {
+      if (!q.w) return { m: -1, used: cells, qDrop: drop };
+      const key = q.w.join('');
+      if (!maskIds.has(key)) maskIds.set(key, maskIds.size);
+      const used = q.w.reduce((a, b) => a + b, 0);
+      return { m: maskIds.get(key), used, qDrop: Math.round(used * (1 - keepFrac)) };
+    });
+    const maskBufs = Array.from(maskIds, () => new Float32Array(dim));
+    const maskDone = new Int32Array(maskBufs.length).fill(-1);
     for (const c of indices) {
       const base = c * dim;
       const inv = 1 / norms[c];
       let top = -Infinity;
-      for (const q of queries) {
+      for (let qi = 0; qi < queries.length; qi++) {
+        const q = queries[qi];
+        // Glare-masked query: compare its usable cells with the card re-standardised there.
+        const w = q.w;
+        const { m, used, qDrop } = qInfo[qi];
+        let x = null;
+        if (w) {
+          x = maskBufs[m];
+          if (maskDone[m] !== c) {
+            maskedCard(c, w, x);
+            maskDone[m] = c;
+          }
+        }
         let sum = 0;
         worst.fill(0);
         for (let cell = 0, k = 0; cell < cells; cell++, k += 3) {
-          const d0 = q[k] - vectors[base + k] * inv;
-          const d1 = q[k + 1] - vectors[base + k + 1] * inv;
-          const d2 = q[k + 2] - vectors[base + k + 2] * inv;
+          if (w && !w[cell]) continue;
+          const d0 = q[k] - (x ? x[k] : vectors[base + k] * inv);
+          const d1 = q[k + 1] - (x ? x[k + 1] : vectors[base + k + 1] * inv);
+          const d2 = q[k + 2] - (x ? x[k + 2] : vectors[base + k + 2] * inv);
           const e = d0 * d0 + d1 * d1 + d2 * d2;
           sum += e;
-          if (drop && e > worst[drop - 1]) {
-            let j = drop - 1;
+          if (qDrop && e > worst[qDrop - 1]) {
+            let j = qDrop - 1;
             while (j > 0 && worst[j - 1] < e) { worst[j] = worst[j - 1]; j--; }
             worst[j] = e;
           }
         }
-        for (let j = 0; j < drop; j++) sum -= worst[j];
-        const score = 1 - (sum * cells / keep) / 2;
+        for (let j = 0; j < qDrop; j++) sum -= worst[j];
+        const score = 1 - (sum * used / (used - qDrop)) / 2 - maskPenalty * (1 - used / cells);
         if (score > top) top = score;
       }
       out.push({ i: c, score: top });
@@ -203,7 +286,7 @@ function createMatcher(indexBuffer) {
    * can't be recognised: each candidate position is scored on its own, minus a penalty
    * for being off-centre. */
   function match(regions, topN = 12,
-    { fineTop = 8, shortlistSize = 300, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16 } = {}) {
+    { fineTop = 8, shortlistSize = 300, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16 } = {}) {
     const t0 = performance.now();
     const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines }).map((c) => ({ ...c, region: r })));
     if (!cands.length) return { matches: [], where: null };
@@ -245,14 +328,14 @@ function createMatcher(indexBuffer) {
       const fine = c.kind === 'outline'
         ? fpCrops(c.warped, WARP_W, WARP_H, [0.91, 0.96, 1], [-0.015, 0, 0.015])
         : fpCropsRect(c.region.data, c.region.w, c.region.h, c.rect);
-      const ranked = robustScores(fine, shortlist, topN, keep);
+      const ranked = robustScores(fine, shortlist, topN, keep, maskPenalty);
       const score = ranked[0].score - c.penalty;
       if (!best || score > best.score) best = { score, ranked, c };
       debug?.cands.push({
         kind: c.kind === 'outline' ? 'outline' : `win${c.rect.s}`,
         dist: +c.dist.toFixed(2),
         top: +ranked[0].score.toFixed(3),
-        target: +robustScores(fine, [debugIdx], 1, keep)[0].score.toFixed(3),
+        target: +robustScores(fine, [debugIdx], 1, keep, maskPenalty)[0].score.toFixed(3),
       });
     }
     return {
