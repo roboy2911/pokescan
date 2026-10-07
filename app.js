@@ -68,7 +68,11 @@ let stream = null;
 /* ------------------------------------------------------------------ */
 
 function showView(name) {
-  document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
+  document.querySelectorAll('.nav-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.view === name);
+    if (b.dataset.view === name) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
   if (name === 'collection') refreshCollection();
   if (name === 'sets') showSets();
@@ -145,6 +149,9 @@ $('soundBtn').addEventListener('click', () => {
   toast(soundOn ? 'Beep on when a card is found' : 'Beep off');
 });
 showSound();
+
+const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const scrollBehavior = reduceMotion ? 'auto' : 'smooth';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -651,11 +658,11 @@ function renderScanResults(matches, { found = null } = {}) {
         els.resultTitle.className = 'result-title ok';
         els.resultTitle.textContent = '✓ Your pick';
         els.altWrap.open = false;
-        els.resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        els.resultPanel.scrollIntoView({ behavior: scrollBehavior, block: 'nearest' });
       },
     }));
   });
-  els.resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  els.resultPanel.scrollIntoView({ behavior: scrollBehavior, block: 'nearest' });
 }
 
 els.addBtn.addEventListener('click', () => {
@@ -1361,7 +1368,10 @@ setsEls.back.addEventListener('click', () => {
 
 setsEls.show.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
   setShowMode = b.dataset.v;
-  setsEls.show.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+  setsEls.show.querySelectorAll('button').forEach((x) => {
+    x.classList.toggle('active', x === b);
+    x.setAttribute('aria-pressed', String(x === b));
+  });
   renderSetPage();
 }));
 
@@ -1440,7 +1450,10 @@ const market = { window: '1', kind: 'cards' };
 for (const [el, key] of [[marketEls.window, 'window'], [marketEls.kind, 'kind']]) {
   el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     market[key] = b.dataset.v;
-    el.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+    el.querySelectorAll('button').forEach((x) => {
+      x.classList.toggle('active', x === b);
+      x.setAttribute('aria-pressed', String(x === b));
+    });
     renderMarket();
   }));
 }

@@ -28,7 +28,7 @@
         <div class="guide" id="guide"></div>
         <svg class="overlay" id="overlay" aria-hidden="true"><polygon id="outline" points=""></polygon></svg>
 
-        <div id="status" class="pill" hidden></div>
+        <div id="status" class="pill" role="status" aria-live="polite" hidden></div>
 
         <div class="camera-msg" id="cameraMsg">
           <div class="camera-msg-icon" aria-hidden="true">
@@ -86,11 +86,11 @@
     <section id="view-search" class="view">
       <h2 class="view-title">Search cards &amp; sealed</h2>
       <form id="searchForm" class="search-form">
-        <input id="qName" type="search" placeholder="Card or product, e.g. Charizard ex" autocomplete="off" enterkeyhint="search">
-        <input id="qNumber" type="text" placeholder="Number, e.g. 199 or 199/165" autocomplete="off" enterkeyhint="search">
+        <input id="qName" type="search" aria-label="Card or product name" placeholder="Card or product, e.g. Charizard ex" autocomplete="off" enterkeyhint="search">
+        <input id="qNumber" type="text" aria-label="Card number" placeholder="Number, e.g. 199 or 199/165" autocomplete="off" enterkeyhint="search">
         <button class="btn primary" type="submit">Search</button>
       </form>
-      <div id="searchStatus" class="status" hidden></div>
+      <div id="searchStatus" class="status" role="status" aria-live="polite" hidden></div>
       <div id="searchResults" class="results"></div>
     </section>
 
@@ -98,17 +98,17 @@
     <section id="view-sets" class="view">
       <div id="setsList">
         <h2 class="view-title">Sets</h2>
-        <input id="setsFilter" class="field" type="search" placeholder="Find a set, e.g. 151 or Evolving Skies" autocomplete="off" enterkeyhint="search">
+        <input id="setsFilter" class="field" type="search" aria-label="Find a set" placeholder="Find a set, e.g. 151 or Evolving Skies" autocomplete="off" enterkeyhint="search">
         <div id="setsGroups"></div>
       </div>
       <div id="setPage" hidden>
         <button id="setBack" class="btn ghost small back">‹ All sets</button>
         <div class="set-head" id="setHead"></div>
         <div class="set-tools">
-          <div class="seg" id="setShow" role="tablist">
-            <button type="button" data-v="all" class="active">All</button>
-            <button type="button" data-v="owned">Owned</button>
-            <button type="button" data-v="missing">Missing</button>
+          <div class="seg" id="setShow" role="group" aria-label="Show">
+            <button type="button" data-v="all" class="active" aria-pressed="true">All</button>
+            <button type="button" data-v="owned" aria-pressed="false">Owned</button>
+            <button type="button" data-v="missing" aria-pressed="false">Missing</button>
           </div>
         </div>
         <h3 class="sub-title" id="setSealedTitle" hidden>Sealed product</h3>
@@ -122,14 +122,14 @@
     <section id="view-market" class="view">
       <h2 class="view-title">Market</h2>
       <div class="market-tools">
-        <div class="seg" id="marketWindow">
-          <button type="button" data-v="1" class="active">1 day</button>
-          <button type="button" data-v="7">7 days</button>
-          <button type="button" data-v="30">30 days</button>
+        <div class="seg" id="marketWindow" role="group" aria-label="Period">
+          <button type="button" data-v="1" class="active" aria-pressed="true">1 day</button>
+          <button type="button" data-v="7" aria-pressed="false">7 days</button>
+          <button type="button" data-v="30" aria-pressed="false">30 days</button>
         </div>
-        <div class="seg" id="marketKind">
-          <button type="button" data-v="cards" class="active">Cards</button>
-          <button type="button" data-v="sealed">Sealed</button>
+        <div class="seg" id="marketKind" role="group" aria-label="Cards or sealed">
+          <button type="button" data-v="cards" class="active" aria-pressed="true">Cards</button>
+          <button type="button" data-v="sealed" aria-pressed="false">Sealed</button>
         </div>
       </div>
       <p class="muted" id="marketNote"></p>
@@ -160,7 +160,7 @@
         </details>
       </div>
       <div class="collection-tools" id="collectionTools" hidden>
-        <input id="collectionSearch" type="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
+        <input id="collectionSearch" type="search" aria-label="Search your collection" placeholder="Search" autocomplete="off" enterkeyhint="search">
         <select id="collectionSort" aria-label="Sort by">
           <option value="recent">Recently added</option>
           <option value="value">Value: high → low</option>
@@ -178,8 +178,8 @@
     </section>
   </main>
 
-  <nav class="bottom-nav">
-    <button class="nav-btn active" data-view="scan">
+  <nav class="bottom-nav" aria-label="Sections">
+    <button class="nav-btn active" data-view="scan" aria-current="page">
       <svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8.5" y="7" width="7" height="10" rx="1"/></svg>
       Scan
     </button>
@@ -207,7 +207,7 @@
     <div id="detailBody"></div>
   </dialog>
 
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="fingerprint.js"></script>
   <script src="prices.js"></script>
