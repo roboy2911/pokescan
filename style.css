@@ -14,6 +14,8 @@
 }
 
 * { box-sizing: border-box; }
+/* `hidden` must win over display rules like .hero { display: flex } or .btn. */
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -249,9 +251,10 @@ main { max-width: 640px; margin: 0 auto; padding: 0 16px 24px; }
   background: transparent;
   color: var(--muted);
   border-radius: 999px;
-  padding: 4px 10px;
+  padding: 7px 12px;
+  min-height: 34px;
   font: inherit;
-  font-size: .75rem;
+  font-size: .78rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -547,7 +550,6 @@ main { max-width: 640px; margin: 0 auto; padding: 0 16px 24px; }
   width: 100%; min-height: 56px; padding: 8px 12px; margin-bottom: 6px;
   background: var(--panel); border: 0; border-radius: 12px; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
-.set-row[hidden], .set-group[hidden] { display: none; }
 .set-icon { width: 40px; height: 32px; display: flex; align-items: center; justify-content: center; }
 .set-icon img { max-width: 36px; max-height: 30px; }
 .set-meta { min-width: 0; display: flex; flex-direction: column; }
@@ -592,3 +594,5 @@ button.detail-price { width: 100%; border: 0; color: inherit; font: inherit; tex
 
 /* Five tabs: keep labels on one line on small phones */
 .nav-btn { font-size: .68rem; min-width: 0; }
+/* Only one action left (no result to add): let it fill the row. */
+#addBtn[hidden] + #scanBtn { grid-column: 1 / -1; }

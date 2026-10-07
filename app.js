@@ -596,6 +596,10 @@ els.searchForm.addEventListener('submit', async (e) => {
     sealed.length ? `${sealed.length} sealed product${sealed.length === 1 ? '' : 's'}${sealed.length > 40 ? ' (showing 40)' : ''}` : '',
   ].filter(Boolean);
   setStatus(els.searchStatus, parts.length ? parts.join(' · ') : 'Nothing found.', parts.length ? 'ok' : 'err');
+  // Sealed product goes first when the search is clearly for it (or no card matched).
+  const sealedFirst = !found.length || /\b(box|tin|pack|bundle|collection|blister|etb|deck|display|case|premium)\b/i.test(els.qName.value);
+  const showCards = () => found.slice(0, 100).forEach((c) => els.searchResults.appendChild(cardRow(c)));
+  if (!sealedFirst) showCards();
   if (sealed.length) {
     const h = document.createElement('h3');
     h.className = 'sub-title';
@@ -609,14 +613,14 @@ els.searchForm.addEventListener('submit', async (e) => {
         extra: sp.usd != null ? formatAud(sp.usd, rate.rate) : '',
       }));
     }
-    if (found.length) {
+    if (found.length && sealedFirst) {
       const h2 = document.createElement('h3');
       h2.className = 'sub-title';
       h2.textContent = 'Cards';
       els.searchResults.appendChild(h2);
     }
   }
-  found.slice(0, 100).forEach((c) => els.searchResults.appendChild(cardRow(c)));
+  if (sealedFirst) showCards();
 });
 
 /* ------------------------------------------------------------------ */
@@ -1304,7 +1308,9 @@ async function renderMarket() {
 
 /* Search also finds sealed product (every word must appear in its name or set). */
 async function searchSealed(query) {
-  const words = normName(query).split(/\s+/).filter(Boolean);
+  const words = normName(query)
+    .replace(/\betb\b/g, 'elite trainer box').replace(/\bupc\b/g, 'ultra-premium collection')
+    .replace(/\bpc\b/g, 'pokemon center').split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const sealed = await getSealed();
   return sealed.items.filter((s) => {
