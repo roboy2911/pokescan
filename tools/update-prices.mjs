@@ -12,6 +12,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const API = 'https://api.pokemontcg.io/v2/cards';
 const PAGE_SIZE = 250;
+// pokemontcg.io can be slow and error-prone; stop asking it after this long (the Action has
+// 30 minutes in all) and use TCGCSV and the previous snapshot for the rest.
+const PTCG_BUDGET_MS = 12 * 60 * 1000;
 const SETS_URL = 'https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/sets/en.json';
 const CARDS_URL = (setId) => `https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/${setId}.json`;
 const TCGCSV = 'https://tcgcsv.com/tcgplayer/3'; // 3 = Pokémon (English)
@@ -44,6 +47,18 @@ const GROUP_ALIASES = {
   base1: 'Base Set',
   sm1: 'SM Base Set',
   sv3pt5: 'SV: Scarlet & Violet 151',
+  basep: 'WoTC Promo',
+  bp: 'Best of Promos',
+  dpp: 'Diamond and Pearl Promos',
+  bwp: 'Black and White Promos',
+  swshp: 'SWSH: Sword & Shield Promo Cards',
+  ru1: 'Rumble',
+  tk1a: 'EX Trainer Kit 1: Latias & Latios',
+  tk1b: 'EX Trainer Kit 1: Latias & Latios',
+  tk2a: 'EX Trainer Kit 2: Plusle & Minun',
+  tk2b: 'EX Trainer Kit 2: Plusle & Minun',
+  mcd21: "McDonald's 25th Anniversary Promos",
+  ...Object.fromEntries([11, 12, 14, 15, 16, 17, 18, 19, 22].map((y) => [`mcd${y}`, `McDonald's Promos 20${y}`])),
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -80,10 +95,15 @@ async function fromPokemonTcg(cards) {
   const headers = process.env.PTCG_API_KEY ? { 'X-Api-Key': process.env.PTCG_API_KEY } : {};
   let total = Infinity;
   let updated = '';
+  const deadline = Date.now() + PTCG_BUDGET_MS;
   for (let page = 1; (page - 1) * PAGE_SIZE < total; page++) {
+    if (Date.now() > deadline) {
+      console.warn(`pokemontcg.io: out of time, stopped before page ${page}`);
+      break;
+    }
     let json;
     try {
-      json = await getJson(`${API}?page=${page}&pageSize=${PAGE_SIZE}&select=id,tcgplayer&orderBy=id`, { headers });
+      json = await getJson(`${API}?page=${page}&pageSize=${PAGE_SIZE}&select=id,tcgplayer&orderBy=id`, { headers, attempts: 5 });
     } catch (err) {
       if (page === 1) throw err; // no total yet
       console.warn(`pokemontcg.io: skipped page ${page} (${err.message})`);
