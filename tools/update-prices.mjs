@@ -9,6 +9,7 @@
 //      printings TCGplayer lists as their own products, like Poké Ball / Master Ball
 //      pattern reverse holos. Matched to our card ids by set name and card number.
 import { readFile, writeFile } from 'node:fs/promises';
+import { updateMarket } from './market.mjs';
 
 const API = 'https://api.pokemontcg.io/v2/cards';
 const PAGE_SIZE = 250;
@@ -165,13 +166,42 @@ function splitProductName(name) {
 
 const prettyLabel = (s) => s.replace(/\bPoke\b/g, 'Poké').replace(/\bPokemon\b/g, 'Pokémon');
 
-async function fromTcgcsv(cards) {
+/* Kind of sealed product, from its TCGplayer name. Order matters (most specific first).
+ * The app's Australian RRP table (prices.js) is keyed by these names. */
+const SEALED_TYPES = [
+  [/\bcase\b/i, 'Case'],
+  [/display/i, 'Display'],
+  [/booster box/i, 'Booster Box'],
+  [/pokemon center elite trainer box/i, 'Pokémon Center Elite Trainer Box'],
+  [/elite trainer box/i, 'Elite Trainer Box'],
+  [/booster bundle/i, 'Booster Bundle'],
+  [/art bundle/i, 'Booster Pack Art Bundle'],
+  [/sleeved booster/i, 'Sleeved Booster Pack'],
+  [/booster pack|booster$/i, 'Booster Pack'],
+  [/3-pack blister|three[- ]pack|3 pack/i, '3-Pack Blister'],
+  [/2-pack blister/i, '2-Pack Blister'],
+  [/blister/i, 'Blister'],
+  [/ultra[- ]premium collection/i, 'Ultra-Premium Collection'],
+  [/super[- ]premium collection/i, 'Super-Premium Collection'],
+  [/premium collection/i, 'Premium Collection'],
+  [/mini tin/i, 'Mini Tin'],
+  [/\btin\b/i, 'Tin'],
+  [/build & battle stadium/i, 'Build & Battle Stadium'],
+  [/build & battle/i, 'Build & Battle Box'],
+  [/battle deck|theme deck|league battle deck/i, 'Deck'],
+  [/surprise box/i, 'Surprise Box'],
+  [/collection|\bbox\b/i, 'Collection Box'],
+];
+const sealedType = (name) => SEALED_TYPES.find(([re]) => re.test(name))?.[1] ?? 'Other';
+
+async function fromTcgcsv(cards, sealed, setsOut) {
   const headers = { 'User-Agent': 'PokeScan price snapshot (github.com/roboy2911/pokescan)' };
   const [{ results: groups }, sets] = await Promise.all([
     getJson(`${TCGCSV}/groups`, { headers }),
     getJson(SETS_URL),
   ]);
   console.log(`TCGCSV: ${groups.length} groups, ${sets.length} of our sets`);
+  for (const set of sets) setsOut[set.id] = { logo: set.images?.logo || '', symbol: set.images?.symbol || '' };
 
   // Match our sets to TCGplayer groups: exact name, then looser name, then set code
   // (only where the code is unique on both sides).
@@ -228,6 +258,21 @@ async function fromTcgcsv(cards) {
       if (!pricesById.has(p.productId)) pricesById.set(p.productId, []);
       pricesById.get(p.productId).push({ sub: p.subTypeName, usd });
     }
+    // Sealed product: no card number, not a code card.
+    for (const prod of products) {
+      const ext = prod.extendedData ?? [];
+      if (ext.some((d) => d.name === 'Number' || d.name === 'Rarity') || /^code card/i.test(prod.name)) continue;
+      const usd = pricesById.get(prod.productId)?.[0]?.usd;
+      if (usd == null || sealed.has(prod.productId)) continue;
+      sealed.set(prod.productId, {
+        id: prod.productId,
+        name: prod.name.replace(/\s+/g, ' ').trim(),
+        set: set.id,
+        type: sealedType(prod.name),
+        usd: cents(usd),
+      });
+    }
+
     const productsByNumber = new Map();
     for (const prod of products) {
       const number = prod.extendedData?.find((d) => d.name === 'Number')?.value;
@@ -278,13 +323,16 @@ async function fromTcgcsv(cards) {
       }
     }
   });
-  console.log(`TCGCSV: priced ${filled} more cards, added ${extras} extra printings`);
+  console.log(`TCGCSV: priced ${filled} more cards, added ${extras} extra printings, ${sealed.size} sealed products`);
 }
 
 /* ------------------------------------------------------------------ */
 
 const SNAPSHOT = new URL('../data/prices.json', import.meta.url);
+const dataFile = (name) => new URL(`../data/${name}`, import.meta.url);
 const cards = {};
+const sealed = new Map();
+const setsInfo = {};
 let tcgUpdated = '';
 try {
   tcgUpdated = await fromPokemonTcg(cards);
@@ -292,7 +340,7 @@ try {
   console.warn(`pokemontcg.io failed: ${err.message}`);
 }
 try {
-  await fromTcgcsv(cards);
+  await fromTcgcsv(cards, sealed, setsInfo);
 } catch (err) {
   console.warn(`TCGCSV failed: ${err.message}`);
 }
@@ -321,3 +369,13 @@ const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
 const out = { built: new Date().toISOString(), tcgplayerUpdated: tcgUpdated || today, currency: 'USD', cards };
 await writeFile(SNAPSHOT, JSON.stringify(out));
 console.log(`Wrote data/prices.json: ${Object.keys(cards).length} cards`);
+
+// Sealed product and set logos (only replaced when TCGCSV worked today).
+if (sealed.size > 500) {
+  const items = [...sealed.values()].sort((a, b) => a.set.localeCompare(b.set) || a.name.localeCompare(b.name));
+  await writeFile(dataFile('sealed.json'), JSON.stringify({ built: out.built, currency: 'USD', items }));
+  console.log(`Wrote data/sealed.json: ${items.length} products`);
+}
+if (Object.keys(setsInfo).length) await writeFile(dataFile('sets.json'), JSON.stringify(setsInfo));
+
+await updateMarket(cards, sealed.size > 500 ? [...sealed.values()] : null);

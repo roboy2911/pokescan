@@ -411,7 +411,8 @@ export async function simHard(card, bgUrl, rnd, conditions = [], opts = {}) {
   return { ...P, d: x.getImageData(0, 0, P.W, P.H).data };
 }
 
-/* Accuracy under hard conditions, with stand-in cards (see synthCard). Returns, per
+/* Accuracy under hard conditions, with stand-in cards (see synthCard), or the real card
+ * images with opts.real = true. Returns, per
  * condition set, how often the right card is first / in the top 5, and how often the app
  * would have said "Found it" for a wrong card (wrongConfident — should stay 0). */
 export async function testHard(n = 40, seed = 5, sets = [[], ['glare'], ['streak'], ['sleeve', 'streak'],
@@ -421,10 +422,17 @@ export async function testHard(n = 40, seed = 5, sets = [[], ['glare'], ['streak
   const out = {};
   for (const conds of sets) {
     const rnd = mulberry(seed);
-    const res = { top1: 0, top5: 0, confident: 0, wrongConfident: 0, ms: 0 };
+    const res = { top1: 0, top5: 0, confident: 0, wrongConfident: 0, ms: 0, skipped: 0 };
     for (let k = 0; k < n; k++) {
       const i = Math.floor(rnd() * matcher.count);
-      const card = await synthCard(i, rnd);
+      let card;
+      try {
+        // opts.real: the card's actual image (needs network; `db` from the app page).
+        card = opts.real ? await imgData(db.cards[i].imageLarge, 315, 440) : await synthCard(i, rnd);
+      } catch {
+        res.skipped++;
+        continue;
+      }
       const P = await simHard(card, BACKGROUNDS[k % 2 ? 0 : 0], rnd, conds, opts.photo || {});
       const t0 = performance.now();
       const { matches } = matcher.match([{ data: P.d, w: P.W, h: P.H, guide: P.guide }], 12, opts.match || {});
