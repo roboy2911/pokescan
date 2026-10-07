@@ -19,7 +19,7 @@ Live: https://roboy2911.github.io/pokescan/
      whole camera view at several sizes, so the card doesn't have to fill the frame. Each
      outline is un-tilted (perspective correction). Blank areas are ignored.
    - **Quick pass:** a coarse fingerprint of each candidate is compared with all ~20k
-     cards to make a shortlist of 300.
+     cards to make a shortlist of 800.
    - **Detailed pass:** many slightly shifted/zoomed crops of the best candidates are
      compared with the shortlist, ignoring the worst-matching grid cells (glare,
      reflections on sleeves). Off-centre cards and plain boxes without a detected outline
@@ -35,6 +35,21 @@ No text reading and no network calls while scanning. In tests on simulated photo
 (`tools/sim.js`) against the full index: card filling the frame ~97%, binder pages ~87%,
 far away (40–75% of the frame) ~85%. The app only says "Found it" when the match is
 clear; otherwise it shows the closest matches to pick from.
+
+Hard conditions (`testHard` in `tools/sim.js`, 60 photos each; run offline on stand-in
+cards rebuilt from the index, so treat them as relative, not absolute):
+
+| Condition | Right card first, before → now |
+|---|---|
+| Clean | 59 → 59 |
+| Bright glare spots | 21 → 55 |
+| Reflection streak | 24 → 49 |
+| Sleeve + streak | 16 → 43 |
+| Dim light + glare | 4 → 49 |
+| Sleeve + glare + finger | 10 → 51 |
+| Toploader / finger over an edge | 56 / 54 (unchanged) |
+
+Matching a frame also got about twice as fast (≈230 ms vs ≈430 ms on a desktop).
 
 **Variants:** every card with its own number (alt arts, full arts, secret rares, reprints in
 other sets) is in the index — all English sets, including 30th Celebration and its Classic

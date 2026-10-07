@@ -6,7 +6,7 @@
  *    filling the guide down to ~40% of it — and positions, so far-away / off-centre cards
  *    are covered. Edge detection runs in each window to find real card outlines.
  * 2. Quick pass: a coarse 60-value fingerprint of the best candidates against all ~20k
- *    cards → shortlist of 300 cards, and the few candidates that look most like *some* card
+ *    cards → shortlist of 800 cards, and the few candidates that look most like *some* card
  *    (= where the card actually is).
  * 3. Fine pass: many slightly shifted crops of those few candidates, full fingerprints,
  *    glare-tolerant scoring, against the shortlist only.
@@ -305,7 +305,7 @@ function createMatcher(indexBuffer) {
    * can't be recognised: each candidate position is scored on its own, minus a penalty
    * for being off-centre. */
   function match(regions, topN = 12,
-    { fineTop = 8, shortlistSize = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16 } = {}) {
+    { fineTop = 8, shortlistSize = 800, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16 } = {}) {
     const t0 = performance.now();
     const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines }).map((c) => ({ ...c, region: r })));
     if (!cands.length) return { matches: [], where: null };
