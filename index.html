@@ -136,12 +136,24 @@
     <section id="view-collection" class="view">
       <div class="collection-head">
         <h2 class="view-title">Collection <span class="count" id="collectionCount"></span></h2>
-        <button id="clearHistory" class="btn ghost small">Clear</button>
+        <details class="menu" id="collectionMenu">
+          <summary class="btn ghost small" aria-label="Collection options">•••</summary>
+          <div class="menu-list">
+            <button type="button" id="exportBtn">Back up (save a file)</button>
+            <label for="importFile">Restore from a backup…</label>
+            <button type="button" id="clearHistory" class="danger">Remove everything</button>
+          </div>
+        </details>
+        <input id="importFile" type="file" accept="application/json,.json" hidden>
       </div>
       <div class="value-card" id="valueCard" hidden>
         <span class="price-label">Estimated value</span>
         <span class="value-total" id="valueTotal">—</span>
         <span class="price-note" id="valueNote"></span>
+        <details class="by-set" id="valueBySet" hidden>
+          <summary>Value by set</summary>
+          <div id="valueBySetList"></div>
+        </details>
       </div>
       <div class="collection-tools" id="collectionTools" hidden>
         <input id="collectionSearch" type="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
@@ -153,9 +165,12 @@
           <option value="set">Set (newest first)</option>
           <option value="qty">Quantity</option>
         </select>
+        <select id="collectionSet" aria-label="Show set" class="span2">
+          <option value="">All sets</option>
+        </select>
       </div>
       <div id="historyList" class="grid"></div>
-      <p class="muted small-note">Saved on this device. Tap a card to change its finish or quantity.</p>
+      <p class="muted small-note">Saved on this device only — use ••• → Back up now and then. Tap a card to change its finish or quantity.</p>
     </section>
   </main>
 

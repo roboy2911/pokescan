@@ -55,6 +55,7 @@ const els = {
   collectionTools: $('collectionTools'),
   collectionSearch: $('collectionSearch'),
   collectionSort: $('collectionSort'),
+  collectionSet: $('collectionSet'),
   detail: $('detail'),
   detailBody: $('detailBody'),
 };
@@ -943,8 +944,12 @@ function renderCollection() {
     els.valueNote.textContent = '';
   }
 
+  renderSetFilter(list);
+  renderValueBySet(list, rate);
   const q = normName(els.collectionSearch.value.trim());
+  const onlySet = els.collectionSet.value;
   const shown = list
+    .filter((e) => !onlySet || e.setId === onlySet)
     .filter((e) => !q || normName(`${e.name} ${e.setName} ${e.number} ${variantLabel(e.variant)}`).includes(q))
     .sort(SORTS[els.collectionSort.value] ?? SORTS.recent);
 
@@ -999,10 +1004,90 @@ els.collectionSort.addEventListener('change', () => {
 });
 
 els.clearHistory.addEventListener('click', () => {
-  if (confirm('Remove every card from your collection on this device?')) {
+  $('collectionMenu').open = false;
+  if (confirm('Remove everything from your collection on this device? (Back it up first if you might want it again.)')) {
     saveCollection([]);
     renderCollection();
   }
+});
+
+/* Set filter: the sets that are in the collection, newest first. */
+function renderSetFilter(list) {
+  const sets = new Map();
+  for (const e of list) if (e.setId && !sets.has(e.setId)) sets.set(e.setId, e);
+  const want = [...sets.values()].sort((a, b) => (b.releaseDate || '').localeCompare(a.releaseDate || ''));
+  const key = want.map((e) => e.setId).join(',');
+  if (els.collectionSet.dataset.key === key) return;
+  const current = els.collectionSet.value;
+  els.collectionSet.innerHTML = '<option value="">All sets</option>'
+    + want.map((e) => `<option value="${esc(e.setId)}">${esc(e.setName)}</option>`).join('');
+  els.collectionSet.value = sets.has(current) ? current : '';
+  els.collectionSet.dataset.key = key;
+  els.collectionSet.hidden = want.length < 2;
+}
+els.collectionSet.addEventListener('change', renderCollection);
+
+/* Value per set (biggest first), under the total. */
+function renderValueBySet(list, rate) {
+  const box = $('valueBySet');
+  const bySet = new Map();
+  for (const e of list) {
+    const s = bySet.get(e.setId) ?? { name: e.setName, count: 0, usd: 0 };
+    s.count += e.qty;
+    s.usd += e.total ?? 0;
+    bySet.set(e.setId, s);
+  }
+  box.hidden = !rate || bySet.size < 2;
+  if (box.hidden) return;
+  $('valueBySetList').innerHTML = [...bySet.values()].sort((a, b) => b.usd - a.usd).map((s) => `
+    <div class="by-set-row"><span>${esc(s.name)} <small>×${s.count}</small></span><b>${formatAud(s.usd, rate.rate)}</b></div>`).join('');
+}
+
+/* Backup: the collection as a JSON file, and restoring one. */
+$('exportBtn').addEventListener('click', () => {
+  $('collectionMenu').open = false;
+  const list = loadCollection();
+  const blob = new Blob([JSON.stringify({ app: 'PokeScan', version: 2, saved: new Date().toISOString(), collection: list }, null, 1)],
+    { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `pokescan-collection-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast(`Saved a backup of ${list.length} entr${list.length === 1 ? 'y' : 'ies'}`);
+});
+
+$('importFile').addEventListener('change', async () => {
+  const file = $('importFile').files?.[0];
+  $('importFile').value = '';
+  $('collectionMenu').open = false;
+  if (!file) return;
+  let incoming;
+  try {
+    const j = JSON.parse(await file.text());
+    incoming = Array.isArray(j) ? j : j.collection;
+    if (!Array.isArray(incoming)) throw new Error('not a PokeScan backup');
+    incoming = incoming.filter((e) => e && typeof e.id === 'string' && typeof e.name === 'string');
+  } catch (err) {
+    toast(`Couldn’t read that file: ${err.message}`);
+    return;
+  }
+  // Merge: the same card + finish keeps the larger quantity (restoring a backup twice, or
+  // onto the phone it came from, doesn't double anything).
+  const list = loadCollection();
+  let added = 0;
+  for (const e of incoming) {
+    const entry = { ...pickCard(e), key: entryKeyOf(e.id, e.variant), variant: e.variant ?? null,
+      qty: Math.max(1, Math.floor(Number(e.qty) || 1)), addedAt: e.addedAt || e.scannedAt || '' };
+    const have = list.find((x) => x.key === entry.key);
+    if (have) have.qty = Math.max(have.qty, entry.qty);
+    else { list.push(entry); added++; }
+  }
+  saveCollection(list);
+  refreshCollection();
+  toast(`Restored ${incoming.length} entr${incoming.length === 1 ? 'y' : 'ies'} (${added} new)`);
 });
 
 /* ------------------------------------------------------------------ */

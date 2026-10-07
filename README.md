@@ -126,3 +126,20 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 | `tools/sim.js` | Accuracy tests on simulated photos and binder pages |
 | `manifest.json`, `sw.js`, `icon.svg` | Makes it installable as a phone app |
 | `serve.ps1` | Tiny local web server for testing on Windows |
+
+## Ideas
+
+**Australian sold prices.** TCGplayer is a US market, and Australian sold prices (mostly on
+eBay.com.au) can differ a lot. Options, best first:
+
+1. *eBay Marketplace Insights API* — official sold-item data (up to 90 days). It's a Limited
+   Release API: apply through the eBay developer program and explain the app; many
+   applications are declined or waitlisted. Check it covers the EBAY_AU marketplace.
+   (eBay's normal Browse API only returns active listings.)
+2. *Paid aggregators* — e.g. PokemonPriceTracker (TCGplayer + eBay sold + Cardmarket,
+   graded prices, history) or tcgapi.net (PriceCharting + eBay comps). Check whether they
+   can filter eBay sales to Australia before paying.
+3. *Scraping eBay AU sold listings* — works technically but is against eBay's terms and
+   gets blocked; not suitable for the public app.
+4. *Stopgap* — hand-check eBay AU sold prices for a sample of cards in a few price bands
+   and apply the typical AU ÷ TCGplayer ratio per band.
