@@ -52,6 +52,9 @@ const els = {
   searchResults: $('searchResults'),
   historyList: $('historyList'),
   clearHistory: $('clearHistory'),
+  collectionTools: $('collectionTools'),
+  collectionSearch: $('collectionSearch'),
+  collectionSort: $('collectionSort'),
   detail: $('detail'),
   detailBody: $('detailBody'),
 };
@@ -65,7 +68,7 @@ let stream = null;
 function showView(name) {
   document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
-  if (name === 'collection') renderHistory();
+  if (name === 'collection') refreshCollection();
   // Don't keep the camera busy while looking at other screens.
   if (name !== 'scan' && stream) stopCamera();
 }
@@ -543,14 +546,14 @@ function renderScanResults(matches) {
 
 els.addBtn.addEventListener('click', () => {
   if (!shownCard) return;
-  addHistory({ ...shownCard, variant: shownVariant });
-  toast(`Added ${shownCard.name} to your collection`);
+  const qty = addToCollection(shownCard, shownVariant);
+  toast(qty > 1 ? `Added ${shownCard.name} — you have ${qty}` : `Added ${shownCard.name} to your collection`);
   // Straight on to the next card when using the camera.
   if (stream) resumeScanning();
   else hideResult();
 });
 
-els.heroImg.addEventListener('click', () => shownCard && openDetail(shownCard));
+els.heroImg.addEventListener('click', () => shownCard && openDetail({ ...shownCard, variant: shownVariant }));
 
 /* ------------------------------------------------------------------ */
 /* Search (offline, over the downloaded card list)                     */
@@ -609,8 +612,10 @@ function cardRow(card, { score = null, onClick = () => openDetail(card) } = {}) 
   return btn;
 }
 
-/* Card details. `historyIndex` = position in the collection (to offer removing it). */
-function openDetail(card, { historyIndex = null } = {}) {
+/* Card details. `entryKey` = the collection entry being shown (to edit or remove it). */
+function openDetail(card, { entryKey = null } = {}) {
+  const inCollection = entryKey !== null;
+  let variant = card.variant ?? null; // finish picked in this sheet
   const rows = [
     ['Set', card.setName],
     ['Series', card.setSeries],
@@ -625,39 +630,92 @@ function openDetail(card, { historyIndex = null } = {}) {
          onerror="this.onerror=null;this.src='${esc(card.image)}'">
     <p class="detail-title">${esc(card.name)}</p>
     <p class="detail-sub">${esc(card.setName)} · #${esc(card.number)}</p>
-    <table class="detail-table">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}
-      <tbody id="detailPrices"><tr><td>Price (AUD)</td><td>Loading…</td></tr></tbody></table>
+    <div class="detail-price">
+      <span class="price-label">Market price (AUD)</span>
+      <span class="price-value none" id="detailPrice">Loading…</span>
+      <div class="variant-chips" id="detailChips"></div>
+      <span class="price-note" id="detailNote"></span>
+    </div>
+    <table class="detail-table">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>
     <div class="detail-actions">
-      ${historyIndex === null
-        ? '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'
-        : '<button class="btn ghost" id="detailRemove">Remove from collection</button>'}
+      ${inCollection
+        ? `<div class="qty-row">
+             <span>Quantity</span>
+             <div class="stepper">
+               <button type="button" class="step" id="qtyDown" aria-label="One less">−</button>
+               <span id="qtyValue"></span>
+               <button type="button" class="step" id="qtyUp" aria-label="One more">＋</button>
+             </div>
+           </div>
+           <button class="btn ghost" id="detailRemove">Remove from collection</button>`
+        : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
     </div>`;
 
+  const showQty = () => {
+    const entry = loadCollection().find((e) => e.key === entryKey);
+    if (!entry) return;
+    $('qtyValue').textContent = entry.qty;
+    $('qtyDown').disabled = entry.qty <= 1;
+  };
+  const changeQty = (delta) => {
+    updateEntry(entryKey, (e) => { e.qty = Math.max(1, e.qty + delta); });
+    showQty();
+    renderCollection();
+  };
+
   $('detailAdd')?.addEventListener('click', () => {
-    addHistory(card);
+    const qty = addToCollection(card, variant);
     els.detail.close();
-    toast(`Added ${card.name} to your collection`);
+    toast(qty > 1 ? `Added ${card.name} — you have ${qty}` : `Added ${card.name} to your collection`);
     if (shownCard?.id === card.id && stream) resumeScanning();
   });
   $('detailRemove')?.addEventListener('click', () => {
-    const list = loadHistory();
-    list.splice(historyIndex, 1);
-    saveHistory(list);
+    saveCollection(loadCollection().filter((e) => e.key !== entryKey));
     els.detail.close();
-    renderHistory();
+    renderCollection();
     toast(`Removed ${card.name}`);
   });
+  $('qtyDown')?.addEventListener('click', () => changeQty(-1));
+  $('qtyUp')?.addEventListener('click', () => changeQty(1));
+  if (inCollection) showQty();
 
   els.detail.showModal();
 
-  // Prices for every finish of this card.
+  // Price, with a chip per finish (picking one changes the saved card's finish).
   Promise.all([getTcgPrices([card.id]), getAudRate()]).then(([prices, rate]) => {
-    const body = $('detailPrices');
-    if (!body) return;
-    const variants = priceVariants(prices[card.id]?.prices);
-    body.innerHTML = variants.length
-      ? variants.map((v) => `<tr><td>${esc(v.label)}${v.key === card.variant ? ' ✓' : ''}</td><td>${formatAud(v.usd, rate.rate)}</td></tr>`).join('')
-      : '<tr><td>Price (AUD)</td><td>No price available</td></tr>';
+    const priceEl = $('detailPrice');
+    if (!priceEl) return;
+    const info = prices[card.id];
+    const variants = priceVariants(info?.prices);
+    if (!variants.length) {
+      priceEl.textContent = info ? 'No price available' : "Couldn't load price";
+      return;
+    }
+    const pick = (v, save) => {
+      variant = v.key;
+      priceEl.textContent = formatAud(v.usd, rate.rate);
+      priceEl.className = 'price-value';
+      $('detailChips').querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
+      if (save && inCollection) {
+        entryKey = setEntryVariant(entryKey, v.key);
+        showQty();
+        renderCollection();
+      }
+    };
+    if (variants.length > 1) {
+      for (const v of variants) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip';
+        chip.dataset.key = v.key;
+        chip.textContent = `${v.label} · ${formatAud(v.usd, rate.rate)}`;
+        chip.addEventListener('click', () => pick(v, true));
+        $('detailChips').appendChild(chip);
+      }
+    }
+    pick(variants.find((v) => v.key === variant) ?? variants[0], false);
+    $('detailNote').innerHTML = `TCGplayer (US) market price in AUD`
+      + `${info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}`;
   });
 }
 
@@ -665,72 +723,209 @@ function openDetail(card, { historyIndex = null } = {}) {
 els.detail.addEventListener('click', (e) => { if (e.target === els.detail) els.detail.close(); });
 
 /* ------------------------------------------------------------------ */
-/* History (per-device)                                                */
+/* Collection (per-device)                                             */
 /* ------------------------------------------------------------------ */
 
-const HISTORY_KEY = 'pokescan.history.v1';
+/* One entry per card + finish: { key, ...card, variant, qty, addedAt }. */
+const COLLECTION_KEY = 'pokescan.collection.v2';
+const OLD_HISTORY_KEY = 'pokescan.history.v1'; // one row per scan, no quantities
+const SORT_KEY = 'pokescan.collectionSort';
+const CARD_FIELDS = ['id', 'name', 'number', 'rarity', 'setId', 'setName', 'setSeries', 'setTotal',
+  'releaseDate', 'image', 'imageLarge'];
 
-function loadHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; }
+const entryKeyOf = (id, variant) => `${id}|${variant || ''}`;
+
+function loadCollection() {
+  try {
+    const saved = localStorage.getItem(COLLECTION_KEY);
+    if (saved) return JSON.parse(saved) || [];
+    // First run after the update: turn the old scan list into entries with quantities.
+    const old = JSON.parse(localStorage.getItem(OLD_HISTORY_KEY)) || [];
+    const list = [];
+    for (const card of old) {
+      const key = entryKeyOf(card.id, card.variant);
+      const entry = list.find((e) => e.key === key);
+      if (entry) {
+        entry.qty++;
+      } else {
+        list.push({ ...pickCard(card), key, variant: card.variant ?? null, qty: 1, addedAt: card.scannedAt || '' });
+      }
+    }
+    saveCollection(list);
+    return list;
+  } catch {
+    return [];
+  }
 }
 
-function saveHistory(list) {
-  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch { /* storage unavailable */ }
+function saveCollection(list) {
+  try { localStorage.setItem(COLLECTION_KEY, JSON.stringify(list)); } catch { /* storage unavailable */ }
 }
 
-function addHistory(card) {
-  const list = loadHistory();
-  list.unshift({ ...card, scannedAt: new Date().toISOString() });
-  saveHistory(list.slice(0, 500));
+const pickCard = (card) => Object.fromEntries(CARD_FIELDS.map((f) => [f, card[f]]));
+
+/* Add one copy of a card in a finish. Returns how many of it you now have. */
+function addToCollection(card, variant) {
+  const list = loadCollection();
+  const key = entryKeyOf(card.id, variant);
+  let entry = list.find((e) => e.key === key);
+  if (entry) {
+    entry.qty++;
+    entry.addedAt = new Date().toISOString();
+  } else {
+    entry = { ...pickCard(card), key, variant: variant ?? null, qty: 1, addedAt: new Date().toISOString() };
+    list.push(entry);
+  }
+  saveCollection(list);
+  return entry.qty;
 }
 
-/* USD market price of a saved card, using the finish chosen when it was added. */
-function cardUsd(card, info) {
+function updateEntry(key, fn) {
+  const list = loadCollection();
+  const entry = list.find((e) => e.key === key);
+  if (entry) fn(entry);
+  saveCollection(list);
+}
+
+/* Change an entry's finish, merging it into an existing entry of that finish. Returns the new key. */
+function setEntryVariant(key, variant) {
+  const list = loadCollection();
+  const entry = list.find((e) => e.key === key);
+  if (!entry) return key;
+  const newKey = entryKeyOf(entry.id, variant);
+  if (newKey === key) return key;
+  const other = list.find((e) => e.key === newKey);
+  if (other) {
+    other.qty += entry.qty;
+    list.splice(list.indexOf(entry), 1);
+  } else {
+    Object.assign(entry, { key: newKey, variant });
+  }
+  saveCollection(list);
+  return newKey;
+}
+
+/* USD market price of one copy, using the entry's finish. */
+function cardUsd(entry, info) {
   const variants = priceVariants(info?.prices);
-  return (variants.find((v) => v.key === card.variant) ?? variants[0])?.usd ?? null;
+  return (variants.find((v) => v.key === entry.variant) ?? variants[0])?.usd ?? null;
 }
 
-let historyToken = 0;
+/* "12", "TG05", "SV001" → sortable by number, then text. */
+const numberKey = (n) => {
+  const m = String(n).match(/(\d+)/);
+  return [m ? Number(m[1]) : Infinity, String(n)];
+};
+const byNumber = (a, b) => {
+  const [na, sa] = numberKey(a.number);
+  const [nb, sb] = numberKey(b.number);
+  return na - nb || sa.localeCompare(sb);
+};
 
-async function renderHistory() {
-  const token = ++historyToken;
-  const list = loadHistory();
-  els.collectionCount.textContent = list.length ? `(${list.length})` : '';
-  els.historyList.innerHTML = list.length ? '' : '<p class="empty">No cards yet — scan one and tap “Add to collection”.</p>';
+const SORTS = {
+  recent: (a, b) => (b.addedAt || '').localeCompare(a.addedAt || ''),
+  value: (a, b) => (b.total ?? -1) - (a.total ?? -1),
+  valueAsc: (a, b) => (a.total ?? Infinity) - (b.total ?? Infinity),
+  name: (a, b) => a.name.localeCompare(b.name) || (b.releaseDate || '').localeCompare(a.releaseDate || ''),
+  set: (a, b) => (b.releaseDate || '').localeCompare(a.releaseDate || '')
+    || (a.setName || '').localeCompare(b.setName || '') || byNumber(a, b),
+  qty: (a, b) => b.qty - a.qty || a.name.localeCompare(b.name),
+};
+
+try { els.collectionSort.value = localStorage.getItem(SORT_KEY) || 'recent'; } catch { /* no storage */ }
+if (!SORTS[els.collectionSort.value]) els.collectionSort.value = 'recent';
+
+/* Latest prices for the collection: { prices, rate } once loaded. */
+let collectionPrices = null;
+let collectionToken = 0;
+
+/* Draw the collection from storage + the last loaded prices (no network). */
+function renderCollection() {
+  const list = loadCollection();
+  const count = list.reduce((n, e) => n + e.qty, 0);
+  els.collectionCount.textContent = count ? `(${count})` : '';
   els.valueCard.hidden = !list.length;
-  const priceEls = list.map((card, i) => {
+  els.collectionTools.hidden = !list.length;
+  els.clearHistory.hidden = !list.length;
+
+  const { prices, rate } = collectionPrices ?? {};
+  let total = 0;
+  let pricedCards = 0;
+  for (const e of list) {
+    const usd = prices ? cardUsd(e, prices[e.id]) : null;
+    e.unit = usd;
+    e.total = usd == null ? null : usd * e.qty;
+    if (usd != null) {
+      total += e.total;
+      pricedCards += e.qty;
+    }
+  }
+  if (!list.length) {
+    els.valueTotal.textContent = '—';
+  } else if (prices) {
+    els.valueTotal.textContent = formatAud(total, rate.rate);
+    els.valueNote.textContent = `${count} card${count === 1 ? '' : 's'} (${list.length} different) · `
+      + `${pricedCards} priced · TCGplayer market prices in AUD${rate.approx ? ' (approx. exchange rate)' : ''}`;
+  } else {
+    els.valueTotal.textContent = 'Loading…';
+    els.valueNote.textContent = '';
+  }
+
+  const q = normName(els.collectionSearch.value.trim());
+  const shown = list
+    .filter((e) => !q || normName(`${e.name} ${e.setName} ${e.number} ${variantLabel(e.variant)}`).includes(q))
+    .sort(SORTS[els.collectionSort.value] ?? SORTS.recent);
+
+  els.historyList.innerHTML = '';
+  if (!list.length) {
+    els.historyList.innerHTML = '<p class="empty">No cards yet — scan one and tap “Add to collection”.</p>';
+    return;
+  }
+  if (!shown.length) {
+    els.historyList.innerHTML = '<p class="empty">No cards match your search.</p>';
+    return;
+  }
+  for (const e of shown) {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'grid-item';
-    item.innerHTML = `<img src="${esc(card.image)}" alt="" loading="lazy"><span>${esc(card.name)}</span><span class="price"></span>`;
-    item.addEventListener('click', () => openDetail(card, { historyIndex: i }));
+    const finish = e.variant ? variantLabel(e.variant) : '';
+    const price = e.unit == null ? ''
+      : e.qty > 1 ? `${formatAud(e.total, rate.rate)} <small>(${e.qty} × ${formatAud(e.unit, rate.rate)})</small>`
+        : formatAud(e.unit, rate.rate);
+    item.innerHTML = `
+      <div class="thumb"><img src="${esc(e.image)}" alt="" loading="lazy">${e.qty > 1 ? `<span class="qty">×${e.qty}</span>` : ''}</div>
+      <span class="name">${esc(e.name)}</span>
+      <span class="sub">${esc(e.setName)} · #${esc(e.number)}</span>
+      ${finish ? `<span class="sub finish">${esc(finish)}</span>` : ''}
+      <span class="price">${price}</span>`;
+    item.addEventListener('click', () => openDetail(e, { entryKey: e.key }));
     els.historyList.appendChild(item);
-    return item.querySelector('.price');
-  });
-  if (!list.length) return;
-
-  els.valueTotal.textContent = 'Loading…';
-  els.valueNote.textContent = '';
-  const [prices, rate] = await Promise.all([getTcgPrices([...new Set(list.map((c) => c.id))]), getAudRate()]);
-  if (token !== historyToken) return;
-  let total = 0;
-  let priced = 0;
-  list.forEach((card, i) => {
-    const usd = cardUsd(card, prices[card.id]);
-    if (usd == null) return;
-    total += usd;
-    priced++;
-    priceEls[i].textContent = formatAud(usd, rate.rate);
-  });
-  els.valueTotal.textContent = formatAud(total, rate.rate);
-  els.valueNote.textContent = `${priced} of ${list.length} cards priced · TCGplayer market prices in AUD`
-    + (rate.approx ? ' (approx. exchange rate)' : '');
+  }
 }
 
+/* Load prices for everything in the collection, then redraw. */
+async function refreshCollection() {
+  const token = ++collectionToken;
+  renderCollection();
+  const ids = [...new Set(loadCollection().map((e) => e.id))];
+  if (!ids.length) return;
+  const [prices, rate] = await Promise.all([getTcgPrices(ids), getAudRate()]);
+  if (token !== collectionToken) return;
+  collectionPrices = { prices, rate };
+  renderCollection();
+}
+
+els.collectionSearch.addEventListener('input', renderCollection);
+els.collectionSort.addEventListener('change', () => {
+  try { localStorage.setItem(SORT_KEY, els.collectionSort.value); } catch { /* no storage */ }
+  renderCollection();
+});
+
 els.clearHistory.addEventListener('click', () => {
-  if (confirm('Clear all scanned cards from this device?')) {
-    saveHistory([]);
-    renderHistory();
+  if (confirm('Remove every card from your collection on this device?')) {
+    saveCollection([]);
+    renderCollection();
   }
 });
 

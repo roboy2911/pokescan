@@ -32,8 +32,10 @@ far away (40–75% of the frame) ~85%. The app only says "Found it" when the mat
 clear; otherwise it shows the closest matches to pick from.
 
 **Variants:** every card with its own number (alt arts, full arts, secret rares, reprints in
-other sets) is in the index. Finishes of the *same* number (holo, reverse holo, 1st Edition)
-share one image, so you pick the finish on the result card (it changes the price).
+other sets) is in the index — all English sets, including 30th Celebration and its Classic
+Collection. Finishes of the *same* number (holo, reverse holo, 1st Edition, Poké Ball /
+Master Ball pattern reverse holos) share one image, so you pick the finish on the result
+card (it changes the price).
 
 ## Prices
 
@@ -44,8 +46,15 @@ TCGplayer (US) market prices converted to AUD at the day's exchange rate
   `tools/update-prices.mjs` and committed by the **Update prices** GitHub Action
   (`.github/workflows/prices.yml`, daily at 04:30 AEST; can also be run by hand from the
   repo's Actions tab).
+- The snapshot merges two sources: pokemontcg.io's API, and [TCGCSV](https://tcgcsv.com)
+  (a daily dump of TCGplayer). TCGCSV prices the newest sets that pokemontcg.io doesn't
+  (e.g. 30th Celebration) and adds printings TCGplayer sells as separate products, like
+  pattern reverse holos. They're matched to our cards by set name and card number; the
+  Action's log lists any sets it couldn't match (fix with `GROUP_ALIASES` in the script).
 - Cards missing from the snapshot are looked up live on pokemontcg.io and cached on the device.
-- The Collection tab shows each card's price and the collection's total value.
+- The Collection tab keeps one entry per card + finish with a quantity, shows each
+  card's price and the collection's total value, and can be searched and sorted (recently
+  added, value, name, set, quantity). Tap a card to change its finish or quantity.
 
 These are US market prices, not Australian sold prices. See the research notes in the
 project history for eBay AU options.

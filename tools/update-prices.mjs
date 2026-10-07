@@ -113,11 +113,12 @@ const normNumber = (n) => String(n ?? '').split('/')[0].trim().toUpperCase()
 
 // "Eevee (Poke Ball Pattern)" → ['Eevee', 'Poke Ball Pattern']; "Pikachu - 025/165" → ['Pikachu', ''].
 function splitProductName(name) {
-  let base = name.replace(/\s+-\s+[A-Z]*\d+[A-Z]*(\/[A-Z]*\d+)?\s*$/i, '');
+  const dropNumber = (s) => s.replace(/\s+-\s+[A-Z]*\d+[A-Z]*(\/[A-Z]*\d+)?\s*$/i, '');
+  let base = dropNumber(name);
   let extra = '';
   const m = base.match(/^(.*?)\s*\(([^()]+)\)\s*$/);
   if (m) [, base, extra] = m;
-  return [base.trim(), extra.trim()];
+  return [dropNumber(base).trim(), extra.trim()];
 }
 
 const prettyLabel = (s) => s.replace(/\bPoke\b/g, 'Poké').replace(/\bPokemon\b/g, 'Pokémon');

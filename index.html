@@ -101,8 +101,19 @@
         <span class="value-total" id="valueTotal">—</span>
         <span class="price-note" id="valueNote"></span>
       </div>
-      <p class="muted">Saved on this device.</p>
+      <div class="collection-tools" id="collectionTools" hidden>
+        <input id="collectionSearch" type="search" placeholder="Search your cards" autocomplete="off" enterkeyhint="search">
+        <select id="collectionSort" aria-label="Sort by">
+          <option value="recent">Recently added</option>
+          <option value="value">Value: high → low</option>
+          <option value="valueAsc">Value: low → high</option>
+          <option value="name">Name A–Z</option>
+          <option value="set">Set (newest first)</option>
+          <option value="qty">Quantity</option>
+        </select>
+      </div>
       <div id="historyList" class="grid"></div>
+      <p class="muted small-note">Saved on this device. Tap a card to change its finish or quantity.</p>
     </section>
   </main>
 

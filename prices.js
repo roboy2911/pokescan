@@ -91,10 +91,16 @@ function getSnapshot() {
   return snapshotPromise;
 }
 
-/* Expand a snapshot row ({ h: 12.3, r: 4.5 }) into TCGplayer-style prices. */
+/* Extra printings TCGplayer sells as their own product (Poké Ball pattern, Master Ball
+ * pattern, ...) are keyed 'x:<label>' — e.g. 'x:Poké Ball Pattern'. */
+const EXTRA_PREFIX = 'x:';
+
+/* Expand a snapshot row ({ h: 12.3, r: 4.5, v: { 'Poké Ball Pattern': 2.1 } }) into
+ * TCGplayer-style prices. */
 function expandRow(row) {
   const prices = {};
   for (const [key, short] of VARIANTS) if (row[short] != null) prices[key] = { market: row[short] };
+  for (const [label, usd] of Object.entries(row.v || {})) prices[EXTRA_PREFIX + label] = { market: usd };
   return prices;
 }
 
@@ -120,7 +126,7 @@ async function getTcgPrices(ids) {
     if (row) {
       out[id] = {
         prices: expandRow(row),
-        url: `https://prices.pokemontcg.io/tcgplayer/${id}`,
+        url: row.p ? `https://www.tcgplayer.com/product/${row.p}` : `https://prices.pokemontcg.io/tcgplayer/${id}`,
         updatedAt: snap.tcgplayerUpdated || '',
       };
     } else if (cache[id] && now - cache[id].at < PRICE_MAX_AGE) {
@@ -153,12 +159,27 @@ async function getTcgPrices(ids) {
   return out;
 }
 
-/* The finishes a card has a price for: [{ key, label, usd }], main one first. */
+/* The finishes a card has a price for: [{ key, label, usd }], main one first, then any
+ * extra printings (pattern reverse holos etc.). */
 function priceVariants(prices) {
   if (!prices) return [];
-  return VARIANTS
-    .filter(([key]) => prices[key] && (prices[key].market ?? prices[key].mid) != null)
-    .map(([key, , label]) => ({ key, label, usd: prices[key].market ?? prices[key].mid }));
+  const usdOf = (p) => p?.market ?? p?.mid;
+  const out = VARIANTS
+    .filter(([key]) => usdOf(prices[key]) != null)
+    .map(([key, , label]) => ({ key, label, usd: usdOf(prices[key]) }));
+  for (const [key, p] of Object.entries(prices)) {
+    if (key.startsWith(EXTRA_PREFIX) && usdOf(p) != null) {
+      out.push({ key, label: key.slice(EXTRA_PREFIX.length), usd: usdOf(p) });
+    }
+  }
+  return out;
+}
+
+/* Display name of a finish key (also for keys with no price). */
+function variantLabel(key) {
+  if (!key) return '';
+  if (key.startsWith(EXTRA_PREFIX)) return key.slice(EXTRA_PREFIX.length);
+  return VARIANTS.find(([k]) => k === key)?.[2] ?? key;
 }
 
 const audFormat = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
