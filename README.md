@@ -1,8 +1,28 @@
 # PokeScan
 
 Point your phone at a Pokémon card and it identifies it **by its artwork** and shows its
-market price in AUD. One codebase: works in any browser and installs to your phone's home
-screen like an app (PWA).
+market price in AUD. Track your collection (cards and sealed product), browse every set,
+and see what's moving in the market. One codebase: works in any browser and installs to
+your phone's home screen like an app (PWA), and works offline after the first visit.
+
+## What's in the app
+
+- **Scan** — auto-scans while the camera is on; shows the card, its price per finish
+  (holo, reverse holo, Poké Ball / Master Ball pattern, 1st Edition…) and lets you add it.
+  The finish you pick is remembered per card. "Not it?" thumbnails swap in one tap.
+  Optional beep when a card is found.
+- **Search** — cards by name and/or number, and sealed product by name (ETB, UPC and PC
+  shorthands work), all offline.
+- **Sets** — every English set by series; open one to see all its cards in number order
+  with prices, which you own (All / Owned / Missing), your progress and its sealed product.
+- **Collection** — cards and sealed product with quantities and finishes; search, sort,
+  filter by set, value by set, and back up / restore as a file (••• menu). It's stored on
+  the phone only, so back it up now and then.
+- **Market** — biggest risers and fallers over 1, 7 and 30 days, and items at their
+  highest / lowest since tracking began (6 Oct 2026), for cards and sealed product.
+- **Sealed product** — tap the market price to compare it with the Australian RRP
+  (table in `prices.js`: pack $8.50, booster bundle $50, ETB $100, booster box $300;
+  other types are marked estimates — edit them there).
 
 Live: https://roboy2911.github.io/pokescan/
 
@@ -19,7 +39,9 @@ Live: https://roboy2911.github.io/pokescan/
      whole camera view at several sizes, so the card doesn't have to fill the frame. Each
      outline is un-tilted (perspective correction). Blank areas are ignored.
    - **Quick pass:** a coarse fingerprint of each candidate is compared with all ~20k
-     cards to make a shortlist of 800.
+     cards to make a shortlist of 800; each candidate position also keeps its own 300
+     best matches (so junk outlines along a reflection's edges can't crowd the real card
+     out).
    - **Detailed pass:** many slightly shifted/zoomed crops of the best candidates are
      compared with the shortlist, ignoring the worst-matching grid cells (glare,
      reflections on sleeves). Off-centre cards and plain boxes without a detected outline
@@ -29,27 +51,35 @@ Live: https://roboy2911.github.io/pokescan/
      reflection can't skew the colours of the whole card. Pale, washed-out patches
      (reflection streaks, sleeve haze) are also tried with those patches left out. A
      match that relies on only part of the card counts for a bit less.
-   - **Lock in:** when the same card wins on consecutive frames, the result is shown.
+   - **Lock in:** when the same card wins clearly on two frames in a row — or wins most of
+     the last 5 frames with a clear lead on average (glare moves as the phone moves) — the
+     result is shown.
 
-No text reading and no network calls while scanning. In tests on simulated photos
-(`tools/sim.js`) against the full index: card filling the frame ~97%, binder pages ~87%,
-far away (40–75% of the frame) ~85%. The app only says "Found it" when the match is
-clear; otherwise it shows the closest matches to pick from.
+No text reading and no network calls while scanning. The app only says "Found it" when the
+match is clear; otherwise it shows the closest matches to pick from.
 
-Hard conditions (`testHard` in `tools/sim.js`, 60 photos each; run offline on stand-in
-cards rebuilt from the index, so treat them as relative, not absolute):
+Accuracy on simulated photos of **real card images** (`tools/sim.js`, 60 random cards each,
+right card first; Oct 2026):
 
-| Condition | Right card first, before → now |
+| Test | Before glare work → now |
 |---|---|
-| Clean | 59 → 59 |
-| Bright glare spots | 21 → 55 |
-| Reflection streak | 24 → 49 |
-| Sleeve + streak | 16 → 43 |
-| Dim light + glare | 4 → 49 |
-| Sleeve + glare + finger | 10 → 51 |
-| Toploader / finger over an edge | 56 / 54 (unchanged) |
+| Card filling the frame (`testMatch`) | 58 |
+| Far away, 40–75% of the frame | 44 → 47 |
+| Binder page, middle card (`testBinder`) | 53 |
+| Clean (`testHard`) | 57 → 57 |
+| Bright glare spots | 56 |
+| Reflection streak | 42 → 47 |
+| Penny sleeve + streak | 40 → 43 |
+| Toploader | 51 → 51 |
+| Finger over an edge | 53 → 58 |
+| Dim light + glare | 45 → 52 |
+| Sleeve + glare + finger | 46 → 50 |
 
-Matching a frame also got about twice as fast (≈230 ms vs ≈430 ms on a desktop).
+(The "before" column for hard conditions is after the first round of glare work; on
+stand-in cards that round took glare from 21 to 55 of 60 and dim light + glare from 4
+to 49.) Over 5 frames of a moving phone (`testFusion`), the app's lock-in rule gave no
+wrong answers in any condition. A frame takes ≈ 0.5 s on a desktop on real cards (it was
+≈ 0.64 s before), so expect 1–2 s on a phone.
 
 **Variants:** every card with its own number (alt arts, full arts, secret rares, reprints in
 other sets) is in the index — all English sets, including 30th Celebration and its Classic
@@ -72,12 +102,15 @@ TCGplayer (US) market prices converted to AUD at the day's exchange rate
   pattern reverse holos. They're matched to our cards by set name and card number; the
   Action's log lists any sets it couldn't match (fix with `GROUP_ALIASES` in the script).
 - Cards missing from the snapshot are looked up live on pokemontcg.io and cached on the device.
-- The Collection tab keeps one entry per card + finish with a quantity, shows each
-  card's price and the collection's total value, and can be searched and sorted (recently
-  added, value, name, set, quantity). Tap a card to change its finish or quantity.
+- **Sealed product** (`data/sealed.json`, ~1,600 items) comes from TCGCSV too: products
+  in each set with no card number, typed by name (booster pack, ETB, tin…).
+- **Market data:** `tools/market.mjs` (run by the same Action) keeps 31 days of daily
+  prices (`data/history.json`), highs/lows since tracking began (`data/extremes.json`),
+  and the small precomputed lists the Market tab shows (`data/market.json`). Prices are
+  tracked per finish, so a source adding a holo price can't fake a mover.
+- `data/sets.json` holds set logos and symbols.
 
-These are US market prices, not Australian sold prices. See the research notes in the
-project history for eBay AU options.
+These are US market prices, not Australian sold prices — see **Ideas** below.
 
 ## Run it on your computer
 
@@ -107,6 +140,8 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 
 - Point at one card; it doesn't need to fill the frame. Hold steady for a moment.
 - In a binder, aim at the card you want. Tilt slightly to move reflections off it.
+- Glare or a shiny sleeve? Keep the phone moving a little — the scanner combines the
+  last few frames, and the reflection moves while the card doesn't.
 - If it isn't sure, it shows the closest matches. Tap the right one.
 - The **Search** tab finds cards by name and/or number (`199` or `199/165`), offline.
 
@@ -114,16 +149,17 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 
 | File | What it is |
 |---|---|
-| `index.html`, `style.css` | Page layout and styling (Scan / Search / Collection) |
-| `app.js` | Camera, auto-scan, results, search, collection |
+| `index.html`, `style.css` | Page layout and styling (Scan / Search / Sets / Collection / Market) |
+| `app.js` | Camera, auto-scan, results, search, sets, collection, market |
 | `worker.js`, `matcher.js` | Background matching: finding the card and identifying it |
 | `detect.js` | Card outline detection and perspective correction |
 | `fingerprint.js` | Fingerprint maths, shared by the app and the index builder |
-| `prices.js` | TCGplayer prices → AUD |
-| `data/` | Card index and price snapshot |
+| `prices.js` | TCGplayer prices → AUD; sealed product and the Australian RRP table |
+| `data/` | Card index, prices, sealed product, set logos, price history, market lists |
 | `tools/build-index.html` | Builds the card index |
-| `tools/update-prices.mjs` | Builds the price snapshot (run by GitHub Actions) |
-| `tools/sim.js` | Accuracy tests on simulated photos and binder pages |
+| `tools/update-prices.mjs` | Builds the price snapshot and sealed product (run by GitHub Actions) |
+| `tools/market.mjs` | Price history and market movers (`--backfill` rebuilds from git history) |
+| `tools/sim.js` | Accuracy tests on simulated photos: binder pages, glare/sleeves (`testHard`), multi-frame (`testFusion`) |
 | `manifest.json`, `sw.js`, `icon.svg` | Makes it installable as a phone app |
 | `serve.ps1` | Tiny local web server for testing on Windows |
 
