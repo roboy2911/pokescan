@@ -261,6 +261,7 @@ const auto = {
   streak: 0,         // how many frames in a row
   ignoreKey: null,   // card just confirmed — don't lock on it again straight away
   lockedKey: null,
+  recent: [],        // last few frames' matches (fuseFrames)
 };
 
 async function startCamera() {
@@ -314,6 +315,7 @@ function resumeScanning() {
   auto.lockedKey = null;
   auto.lastKey = null;
   auto.streak = 0;
+  auto.recent = [];
   auto.state = 'scanning';
   els.wrap.classList.remove('locked');
   setStatus(els.status, 'Looking for a card…', 'busy');
@@ -361,10 +363,44 @@ async function scanLoop() {
   }
 }
 
+/* Evidence over the last few frames. Glare and reflections move as the phone moves, so a
+ * card can be unsure on every single frame yet win most of them. `frames` = recent match
+ * lists (newest last). Returns the card that wins clearly across them, or null.
+ * Tuned on simulated photos (tools/sim.js testFusion) to add no wrong answers. */
+const FUSE_FRAMES = 5;
+function fuseFrames(frames) {
+  if (frames.length < 4) return null;
+  const stats = new Map();
+  frames.forEach((ms, f) => {
+    ms.slice(0, 8).forEach(({ card, score }, rank) => {
+      if (!stats.has(card.id)) stats.set(card.id, { card, scores: Array(frames.length).fill(null), wins: 0 });
+      const st = stats.get(card.id);
+      st.scores[f] = score;
+      if (rank === 0) st.wins++;
+    });
+  });
+  // A card missing from a frame's top 8 gets a bit less than that frame's 8th score.
+  const floor = frames.map((ms) => (ms[Math.min(7, ms.length - 1)]?.score ?? 0) - 0.02);
+  const fused = [...stats.values()].map((st) => ({
+    ...st, mean: st.scores.reduce((sum, v, f) => sum + (v ?? floor[f]), 0) / frames.length,
+  })).sort((a, b) => b.mean - a.mean);
+  const [a, b] = fused;
+  if (!a || a.wins < Math.ceil(frames.length * 0.6) || a.mean < 0.86 || a.mean - (b?.mean ?? 0) < 0.02) return null;
+  return a.card;
+}
+
 /* Decide, frame by frame, when a result is solid enough to show. */
 function onFrame(matches, where, region) {
+  auto.recent.push(matches);
+  if (auto.recent.length > FUSE_FRAMES) auto.recent.shift();
+  const fusedCard = !isConfident(matches) ? fuseFrames(auto.recent) : null;
+  if (fusedCard) {
+    // Put the card that won across frames first, and treat it as found.
+    matches = [matches.find((m) => m.card.id === fusedCard.id) ?? { card: fusedCard, score: matches[0].score },
+      ...matches.filter((m) => m.card.id !== fusedCard.id)];
+  }
   const [best] = matches;
-  const confident = isConfident(matches);
+  const confident = isConfident(matches) || !!fusedCard;
   // Confident → that exact card. Close call with a good score → probably a reprint of the
   // same artwork, so track by name. Otherwise nothing.
   const key = confident ? `id:${best.card.id}`
@@ -382,7 +418,7 @@ function onFrame(matches, where, region) {
     setStatus(els.status, ignored ? 'Got it — point at the next card' : 'Looking for a card…', 'busy');
     return;
   }
-  const needed = confident ? 2 : 4;
+  const needed = fusedCard ? 1 : confident ? 2 : 4;
   if (auto.streak < needed) {
     setStatus(els.status, 'Hold still…', 'busy');
     return;
@@ -393,7 +429,8 @@ function onFrame(matches, where, region) {
   auto.lockedKey = key;
   els.wrap.classList.add('locked');
   navigator.vibrate?.(60);
-  renderScanResults(matches);
+  auto.recent = [];
+  renderScanResults(matches, { found: confident });
 }
 
 /* ------------------------------------------------------------------ */
@@ -497,7 +534,7 @@ function showHero(card, score) {
   showPrice(card);
 }
 
-function renderScanResults(matches) {
+function renderScanResults(matches, { found = null } = {}) {
   els.resultPanel.hidden = false;
   $('view-scan').classList.add('has-result');
   els.scanResults.innerHTML = '';
@@ -509,7 +546,7 @@ function renderScanResults(matches) {
     els.altWrap.hidden = true;
     return;
   }
-  const confident = isConfident(matches);
+  const confident = found ?? isConfident(matches);
   // Near-tie between cards with the same name = the same artwork reprinted in several sets.
   const [best, second] = matches;
   const reprint = !confident && second && best.score >= 0.75

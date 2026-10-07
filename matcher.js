@@ -96,7 +96,7 @@ function createMatcher(indexBuffer) {
       // As found, and zoomed in a little in case the outline is a sleeve / binder pocket.
       cands.push({
         kind: 'outline', q, warped,
-        coarse: [...fpQueries(warped, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1), ...fpCrops(warped, WARP_W, WARP_H, [0.91], [0])],
+        coarse: [...fpQueries(warped, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1), fpCrops(warped, WARP_W, WARP_H, [0.91], [0])[0]],
       });
     }
     // Plain windows too (centred, every size), in case no outline is found.
@@ -115,9 +115,12 @@ function createMatcher(indexBuffer) {
    * per query, its best score (how much that position looks like some card).
    * Glare-tolerant like the fine pass: the `drop` worst-matching of the 20 cells are
    * ignored, so a reflection streak can't knock the right card out of the shortlist. */
-  function quickPass(queries, drop = 0) {
+  function quickPass(queries, drop = 0, owner = null, ncand = 0) {
     const pq = queries.map((q) => fpPool(q));
     const cardBest = new Float32Array(count).fill(-Infinity);
+    // Per candidate position too: each gets its own shortlist (see match()).
+    const candBest = Array.from({ length: ncand }, () => new Float32Array(count).fill(-Infinity));
+    const qOwner = owner ?? new Int32Array(pq.length);
     const queryBest = new Float32Array(pq.length).fill(-Infinity);
     const masked = pq.map((q) => !!q.w);
     // For masked queries: which blocks are masked, how many are used, and Σq² per channel.
@@ -138,9 +141,10 @@ function createMatcher(indexBuffer) {
           const s = masked[qi] ? maskedPooledDot(q, minfo[qi], c) : plainDot(q, pooled, base);
           if (s > cardBest[c]) cardBest[c] = s;
           if (s > queryBest[qi]) queryBest[qi] = s;
+          if (ncand && s > candBest[qOwner[qi]][c]) candBest[qOwner[qi]][c] = s;
         }
       }
-      return { cardBest, queryBest };
+      return { cardBest, queryBest, candBest };
     }
     const cells = FP_POOL_DIM / 3;
     const scale = cells / (cells - drop) / 2;
@@ -168,9 +172,10 @@ function createMatcher(indexBuffer) {
         const s = 1 - sum * scale;
         if (s > cardBest[c]) cardBest[c] = s;
         if (s > queryBest[qi]) queryBest[qi] = s;
+        if (ncand && s > candBest[qOwner[qi]][c]) candBest[qOwner[qi]][c] = s;
       }
     }
-    return { cardBest, queryBest };
+    return { cardBest, queryBest, candBest };
   }
 
   function plainDot(q, arr, base) {
@@ -285,6 +290,15 @@ function createMatcher(indexBuffer) {
     return out.slice(0, topN);
   }
 
+  /* Indices of the k largest values (order not needed). */
+  function topIndices(arr, k) {
+    if (k >= arr.length) return Array.from(arr.keys());
+    const cut = Float32Array.from(arr).sort()[arr.length - k];
+    const out = [];
+    for (let i = 0; i < arr.length && out.length < k; i++) if (arr[i] >= cut) out.push(i);
+    return out;
+  }
+
   /* How far a candidate is from the middle of the view, in guide heights (0 = centred). */
   function centreDistance(c) {
     const { guide } = c.region;
@@ -305,7 +319,7 @@ function createMatcher(indexBuffer) {
    * can't be recognised: each candidate position is scored on its own, minus a penalty
    * for being off-centre. */
   function match(regions, topN = 12,
-    { fineTop = 8, shortlistSize = 800, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16 } = {}) {
+    { fineTop = 8, shortlistSize = 800, perCandidate = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16 } = {}) {
     const t0 = performance.now();
     const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines }).map((c) => ({ ...c, region: r })));
     if (!cands.length) return { matches: [], where: null };
@@ -314,7 +328,7 @@ function createMatcher(indexBuffer) {
     const queries = [];
     const owner = [];
     cands.forEach((c, ci) => c.coarse.forEach((q) => { queries.push(q); owner.push(ci); }));
-    const { cardBest, queryBest } = quickPass(queries, drop);
+    const { cardBest, queryBest, candBest } = quickPass(queries, drop, owner, cands.length);
     const t2 = performance.now();
     cands.forEach((c) => { c.quick = -Infinity; });
     queryBest.forEach((s, qi) => { cands[owner[qi]].quick = Math.max(cands[owner[qi]].quick, s); });
@@ -349,7 +363,12 @@ function createMatcher(indexBuffer) {
         : fpCropsRect(c.region.data, c.region.w, c.region.h, c.rect);
       // Narrow the shortlist with this position's few quick fingerprints first, then
       // compare all the crops against the best of it only.
-      const pre = preTop ? robustScores(c.coarse, shortlist, preTop, keep, maskPenalty).map((r) => r.i) : shortlist;
+      // Its own best coarse matches join the shared shortlist: a position that really is the
+      // card can rank it well even when junk positions (outlines along a reflection's edges)
+      // crowd it out of the shared list.
+      const own = perCandidate ? topIndices(candBest[qi], perCandidate) : [];
+      const list = own.length ? [...new Set([...shortlist, ...own])] : shortlist;
+      const pre = preTop ? robustScores(c.coarse, list, preTop, keep, maskPenalty).map((r) => r.i) : list;
       const ranked = robustScores(fine, pre, topN, keep, maskPenalty);
       const score = ranked[0].score - c.penalty;
       if (!best || score > best.score) best = { score, ranked, c };

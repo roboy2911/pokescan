@@ -450,3 +450,36 @@ export async function testHard(n = 40, seed = 5, sets = [[], ['glare'], ['streak
   }
   return out;
 }
+
+/* Auto-scan over several frames: each card is "filmed" for `frames` frames, each with its
+ * own random glare etc. (as when the phone moves). Compares the app's rules: two confident
+ * frames in a row (`single`), and that plus evidence across frames (`fused`, app.js
+ * fuseFrames — load this on the app page). Counts right / wrong / undecided. */
+export async function testFusion(n = 40, seed = 21, conds = ['glare'], opts = {}) {
+  matcher ??= createMatcher(await (await fetch('data/index.bin')).arrayBuffer());
+  const frames = opts.frames ?? 5;
+  const confident = (m) => m[0].score >= 0.88 && m[0].score - (m[1]?.score ?? 0) >= 0.015;
+  const rnd = mulberry(seed);
+  const res = { single: { right: 0, wrong: 0, none: 0 }, fused: { right: 0, wrong: 0, none: 0 } };
+  for (let k = 0; k < n; k++) {
+    const i = Math.floor(rnd() * matcher.count);
+    let card;
+    try {
+      card = opts.real ? await imgData(db.cards[i].imageLarge, 315, 440) : await synthCard(i, rnd);
+    } catch { continue; }
+    const seen = [];
+    let single = null, fused = null;
+    for (let f = 0; f < frames; f++) {
+      const P = await simHard(card, 'plain', rnd, conds, opts.photo || {});
+      const { matches } = matcher.match([{ data: P.d, w: P.W, h: P.H, guide: P.guide }], 12, opts.match || {});
+      const ms = matches.map((m) => ({ card: db.cards[m.i], score: m.score }));
+      seen.push(ms);
+      if (!single && f > 0 && confident(seen[f - 1]) && confident(ms) && seen[f - 1][0].card.id === ms[0].card.id) single = ms[0].card.id;
+      if (!fused) fused = single ?? (confident(ms) ? null : fuseFrames(seen.slice(-5))?.id ?? null);
+    }
+    const tally = (r, id) => { if (!id) r.none++; else if (id === db.cards[i].id) r.right++; else r.wrong++; };
+    tally(res.single, single);
+    tally(res.fused, fused);
+  }
+  return res;
+}
