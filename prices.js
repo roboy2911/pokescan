@@ -262,3 +262,13 @@ function getMarket() {
   marketPromise ??= fetch('data/market.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
   return marketPromise;
 }
+
+/* "Prices from 7 Oct" for notes; flags the snapshot as old when it's more than 2 days old
+ * (e.g. the phone has been offline). */
+async function priceAgeNote() {
+  const snap = await getSnapshot();
+  if (!snap?.built) return '';
+  const built = new Date(snap.built);
+  const day = built.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  return Date.now() - built > 2 * 86400000 ? `⚠ prices from ${day} — may be out of date` : `prices from ${day}`;
+}

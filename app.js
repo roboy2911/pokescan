@@ -938,7 +938,8 @@ function renderCollection() {
     const sealedCount = list.filter((e) => e.kind === 'sealed').reduce((n, e) => n + e.qty, 0);
     const what = sealedCount ? `${count} item${count === 1 ? '' : 's'}` : `${count} card${count === 1 ? '' : 's'}`;
     els.valueNote.textContent = `${what} (${list.length} different) · `
-      + `${pricedCards} priced · TCGplayer market prices in AUD${rate.approx ? ' (approx. exchange rate)' : ''}`;
+      + `${pricedCards} priced · TCGplayer market prices in AUD${rate.approx ? ' (approx. exchange rate)' : ''}`
+      + (collectionPrices.age ? ` · ${collectionPrices.age}` : '');
   } else {
     els.valueTotal.textContent = 'Loading…';
     els.valueNote.textContent = '';
@@ -993,7 +994,7 @@ async function refreshCollection() {
   const [prices, rate, sealed] = await Promise.all([getTcgPrices(ids), getAudRate(),
     list.some((e) => e.kind === 'sealed') ? getSealed() : null]);
   if (token !== collectionToken) return;
-  collectionPrices = { prices, rate, sealed };
+  collectionPrices = { prices, rate, sealed, age: await priceAgeNote() };
   renderCollection();
 }
 
