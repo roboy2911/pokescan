@@ -40,6 +40,8 @@ const FP_WASH_RELATIVE = 60;
  * fractional rectangle x0..x1, y0..y1. Returns [r,g,b, r,g,b, ...] per cell.
  * With `glare` (length gw*gh), also stores the fraction of glare pixels in each cell. */
 function fpBoxGrid(d, W, H, gw, gh, x0, y0, x1, y1, glare = null, wash = null) {
+  const I = fpIntegrals.get(d);
+  if (I) return fpBoxGridFast(I, gw, gh, x0, y0, x1, y1, glare, wash);
   const sum = new Float64Array(gw * gh * 3);
   const cnt = new Float64Array(gw * gh);
   const px0 = Math.floor(x0 * W), px1 = Math.floor(x1 * W);
@@ -71,6 +73,60 @@ function fpBoxGrid(d, W, H, gw, gh, x0, y0, x1, y1, glare = null, wash = null) {
     sum[c * 3 + 2] /= n;
     if (glare) glare[c] /= n;
     if (wash) wash[c] /= n;
+  }
+  return sum;
+}
+
+/* Summed-area tables of an image, so any box can be averaged with 4 lookups. The scanner
+ * takes dozens of slightly different crops of each candidate; call fpPrepare(d, W, H) once
+ * and every fpBoxGrid on `d` gets fast (same results). */
+const fpIntegrals = new WeakMap();
+
+function fpPrepare(d, W, H) {
+  if (fpIntegrals.has(d)) return;
+  const S = W + 1;
+  const n = S * (H + 1);
+  const t = [new Float64Array(n), new Float64Array(n), new Float64Array(n), new Float64Array(n), new Float64Array(n)];
+  const [tr, tg, tb, tgl, twa] = t;
+  for (let y = 0; y < H; y++) {
+    let r = 0, g = 0, b = 0, gl = 0, wa = 0;
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      const R = d[i], G = d[i + 1], B = d[i + 2];
+      const lo = Math.min(R, G, B), spread = Math.max(R, G, B) - lo;
+      r += R; g += G; b += B;
+      if (lo >= FP_GLARE_MIN && spread <= FP_GLARE_SPREAD) gl++;
+      if (lo >= FP_WASH_MIN && spread <= FP_WASH_SPREAD) wa++;
+      const o = (y + 1) * S + x + 1, up = o - S;
+      tr[o] = tr[up] + r; tg[o] = tg[up] + g; tb[o] = tb[up] + b;
+      tgl[o] = tgl[up] + gl; twa[o] = twa[up] + wa;
+    }
+  }
+  fpIntegrals.set(d, { W, H, S, t });
+}
+
+/* fpBoxGrid using fpPrepare's tables: the same pixel-exact cells, without the pixel loop. */
+function fpBoxGridFast(I, gw, gh, x0, y0, x1, y1, glare, wash) {
+  const { W, H, S, t: [tr, tg, tb, tgl, twa] } = I;
+  const sum = new Float64Array(gw * gh * 3);
+  const px0 = Math.floor(x0 * W), px1 = Math.floor(x1 * W);
+  const py0 = Math.floor(y0 * H), py1 = Math.floor(y1 * H);
+  const cw = px1 - px0, ch = py1 - py0;
+  // Cell k spans pixels [start(k), start(k+1)) — matches floor((p - p0) * g / span) above.
+  const xs = Array.from({ length: gw + 1 }, (_, k) => px0 + Math.ceil(k * cw / gw));
+  const ys = Array.from({ length: gh + 1 }, (_, k) => py0 + Math.ceil(k * ch / gh));
+  const box = (a, xa, ya, xb, yb) => a[yb * S + xb] - a[ya * S + xb] - a[yb * S + xa] + a[ya * S + xa];
+  for (let gy = 0; gy < gh; gy++) {
+    for (let gx = 0; gx < gw; gx++) {
+      const xa = xs[gx], xb = xs[gx + 1], ya = ys[gy], yb = ys[gy + 1];
+      const n = (xb - xa) * (yb - ya) || 1;
+      const c = gy * gw + gx;
+      sum[c * 3] = box(tr, xa, ya, xb, yb) / n;
+      sum[c * 3 + 1] = box(tg, xa, ya, xb, yb) / n;
+      sum[c * 3 + 2] = box(tb, xa, ya, xb, yb) / n;
+      if (glare) glare[c] = box(tgl, xa, ya, xb, yb) / n;
+      if (wash) wash[c] = box(twa, xa, ya, xb, yb) / n;
+    }
   }
   return sum;
 }

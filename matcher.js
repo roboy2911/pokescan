@@ -26,7 +26,7 @@ const MIN_CONTRAST = 6;
 const MATCH_ROBUST_KEEP = 0.85;
 // Score taken off per fraction of the card hidden by glare: a few visible cells can look
 // like many cards, so a heavily masked match must not seem as sure as a clear one.
-const MASK_PENALTY = 0.1;
+const MASK_PENALTY = 0.2;
 
 function createMatcher(indexBuffer) {
   const dim = FP.DIM;
@@ -34,12 +34,20 @@ function createMatcher(indexBuffer) {
   const count = vectors.length / dim;
   const norms = new Float32Array(count);
   const pooled = new Float32Array(count * FP_POOL_DIM);
+  // Per card and colour channel: sum and sum of squares of its pooled values (for glare-
+  // masked comparisons, which then only need to subtract the few masked blocks).
+  const pooledSums = new Float64Array(count * 6);
   for (let c = 0; c < count; c++) {
     const v = vectors.subarray(c * dim, (c + 1) * dim);
     let s = 0;
     for (let k = 0; k < dim; k++) s += v[k] * v[k];
     norms[c] = Math.sqrt(s) || 1;
     pooled.set(fpPool(v), c * FP_POOL_DIM);
+    for (let k = 0; k < FP_POOL_DIM; k++) {
+      const x = pooled[c * FP_POOL_DIM + k];
+      pooledSums[c * 6 + (k % 3)] += x;
+      pooledSums[c * 6 + 3 + (k % 3)] += x * x;
+    }
   }
 
   /* Card-shaped search windows over the region, all inside the image. */
@@ -69,6 +77,7 @@ function createMatcher(indexBuffer) {
   function candidates(region, { step = SEARCH_STEP, maxOutlines = 16 } = {}) {
     const { data, w, h } = region;
     const gray = detGray(data, w, h);
+    fpPrepare(data, w, h); // many crops of this frame get fingerprinted
     const outlines = [];
     for (const win of searchWindows(region, step)) {
       for (const { q, score } of detectCardQuadsScored(data, w, h, win, 2, 0, gray)) {
@@ -82,6 +91,7 @@ function createMatcher(indexBuffer) {
     for (const { q } of outlines) {
       if (cands.length >= maxOutlines) break;
       const warped = warpQuad(data, w, h, q, WARP_W, WARP_H);
+      fpPrepare(warped, WARP_W, WARP_H);
       if (fpContrast(warped, WARP_W, WARP_H) < MIN_CONTRAST) continue; // blank area, not a card
       // As found, and zoomed in a little in case the outline is a sleeve / binder pocket.
       cands.push({
@@ -110,13 +120,22 @@ function createMatcher(indexBuffer) {
     const cardBest = new Float32Array(count).fill(-Infinity);
     const queryBest = new Float32Array(pq.length).fill(-Infinity);
     const masked = pq.map((q) => !!q.w);
+    // For masked queries: which blocks are masked, how many are used, and Σq² per channel.
+    const minfo = pq.map((q) => {
+      if (!q.w) return null;
+      const off = [];
+      q.w.forEach((u, cell) => { if (!u) off.push(cell * 3); });
+      const qq = [0, 0, 0];
+      for (let k = 0; k < FP_POOL_DIM; k++) qq[k % 3] += q[k] * q[k];
+      return { off, used: q.w.length - off.length, qq };
+    });
     if (!drop) {
       // Plain dot product — fastest. With glare: correlation over the usable blocks.
       for (let c = 0; c < count; c++) {
         const base = c * FP_POOL_DIM;
         for (let qi = 0; qi < pq.length; qi++) {
           const q = pq[qi];
-          const s = masked[qi] ? maskedDot(q, pooled, base, FP_POOL_DIM / 3) : plainDot(q, pooled, base);
+          const s = masked[qi] ? maskedPooledDot(q, minfo[qi], c) : plainDot(q, pooled, base);
           if (s > cardBest[c]) cardBest[c] = s;
           if (s > queryBest[qi]) queryBest[qi] = s;
         }
@@ -160,24 +179,24 @@ function createMatcher(indexBuffer) {
     return s;
   }
 
-  /* Correlation of a glare-masked query `q` (standardised over its usable cells, 0
-   * elsewhere) with arr[base…], each colour channel standardised over the usable cells only.
-   * Same scale as a plain dot product of two unit vectors. */
-  function maskedDot(q, arr, base, cells) {
-    const w = q.w;
-    let used = 0;
+  /* Correlation of a glare-masked pooled query `q` (standardised over its usable blocks, 0
+   * elsewhere) with pooled index card c, each colour channel standardised over the usable
+   * blocks only — same scale as a plain dot product. Uses the card's precomputed sums:
+   * per channel, Σq·x over all blocks (q is 0 on masked ones), and Σx, Σx² minus the
+   * masked blocks. */
+  function maskedPooledDot(q, { off, used, qq }, c) {
+    const base = c * FP_POOL_DIM;
     let s = 0;
     for (let ch = 0; ch < 3; ch++) {
-      let sx = 0, sxx = 0, sqx = 0, sqq = 0;
-      for (let cell = 0, k = ch; cell < cells; cell++, k += 3) {
-        if (!w[cell]) continue;
-        const x = arr[base + k];
-        sx += x; sxx += x * x; sqx += q[k] * x; sqq += q[k] * q[k];
-        if (ch === 0) used++;
+      let sx = pooledSums[c * 6 + ch], sxx = pooledSums[c * 6 + 3 + ch], sqx = 0;
+      for (let k = ch; k < FP_POOL_DIM; k += 3) sqx += q[k] * pooled[base + k];
+      for (const o of off) {
+        const x = pooled[base + o + ch];
+        sx -= x;
+        sxx -= x * x;
       }
-      // q sums to 0 over the usable cells, so the mean of x drops out of the numerator.
       const vx = sxx - sx * sx / (used || 1);
-      if (vx > 1e-12 && sqq > 0) s += sqx / Math.sqrt(vx * sqq);
+      if (vx > 1e-12 && qq[ch] > 0) s += sqx / Math.sqrt(vx * qq[ch]);
     }
     return s / 3;
   }
@@ -286,7 +305,7 @@ function createMatcher(indexBuffer) {
    * can't be recognised: each candidate position is scored on its own, minus a penalty
    * for being off-centre. */
   function match(regions, topN = 12,
-    { fineTop = 8, shortlistSize = 300, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16 } = {}) {
+    { fineTop = 8, shortlistSize = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16 } = {}) {
     const t0 = performance.now();
     const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines }).map((c) => ({ ...c, region: r })));
     if (!cands.length) return { matches: [], where: null };
@@ -328,7 +347,10 @@ function createMatcher(indexBuffer) {
       const fine = c.kind === 'outline'
         ? fpCrops(c.warped, WARP_W, WARP_H, [0.91, 0.96, 1], [-0.015, 0, 0.015])
         : fpCropsRect(c.region.data, c.region.w, c.region.h, c.rect);
-      const ranked = robustScores(fine, shortlist, topN, keep, maskPenalty);
+      // Narrow the shortlist with this position's few quick fingerprints first, then
+      // compare all the crops against the best of it only.
+      const pre = preTop ? robustScores(c.coarse, shortlist, preTop, keep, maskPenalty).map((r) => r.i) : shortlist;
+      const ranked = robustScores(fine, pre, topN, keep, maskPenalty);
       const score = ranked[0].score - c.penalty;
       if (!best || score > best.score) best = { score, ranked, c };
       debug?.cands.push({
