@@ -179,3 +179,28 @@ eBay.com.au) can differ a lot. Options, best first:
    gets blocked; not suitable for the public app.
 4. *Stopgap* — hand-check eBay AU sold prices for a sample of cards in a few price bands
    and apply the typical AU ÷ TCGplayer ratio per band.
+
+## Changelog
+
+**8 Oct 2026 (overnight)**
+- New tabs: **Sets** (browse every card in a set, owned/missing, progress, set value, its
+  sealed product) and **Market** (risers/fallers over 1/7/30 days, highs/lows since
+  tracking began).
+- **Sealed product**: ~1,600 products with prices, searchable, per set, in the collection
+  with quantities; tap the price for Australian RRP and how far above/below it is.
+- **Collection**: backup/restore file, filter by set, value by set, sealed items.
+- **Scanning** (real card images): reflection streaks 42→47/60, sleeve + streak 40→43,
+  finger 53→58, dim + glare 45→52, sleeve + glare + finger 46→50; clean, glare, binder
+  and toploader unchanged; far away 44→47. Per-position shortlists; lock-in also accepts a
+  card that wins most of the last 5 frames (no wrong answers in testing). Frame time
+  ≈0.64→0.5 s on desktop.
+- **Scan flow**: "Not it?" thumbnails, remembered finish per card, optional beep.
+- **Offline**: card images cached; prices show their date and warn when >2 days old.
+- **UI**: unsure scans no longer show an empty card box; cards before sealed in name
+  searches; bigger tap targets; screen-reader labels; reduced-motion support.
+- **Daily price job**: also builds sealed product, set logos, price history and market
+  lists; survives pokemontcg.io outages (time budget, page skipping, last-known prices).
+- Tried and dropped: special toploader crops (no gain — the card's own edges are found
+  inside the toploader already).
+- Not done: Australian sold prices (research and options in **Ideas**); Delta Reign
+  (ME06) isn't in the card index yet — rebuild the index once pokemontcg.io's data has it.
