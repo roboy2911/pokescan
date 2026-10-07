@@ -69,6 +69,8 @@ function showView(name) {
   document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
   if (name === 'collection') refreshCollection();
+  if (name === 'sets') showSets();
+  if (name === 'market') renderMarket();
   // Don't keep the camera busy while looking at other screens.
   if (name !== 'scan' && stream) stopCamera();
 }
@@ -128,6 +130,8 @@ const dbReady = fetch('data/cards.json')
   .then((meta) => {
     if (meta.dim !== FP.DIM) throw new Error('Card index was built with different settings — rebuild it.');
     db.cards = meta.cards.map((row) => cardFromRow(row, meta.sets));
+    db.sets = meta.sets; // id → [name, series, total, releaseDate]
+    db.byId = new Map(db.cards.map((c) => [c.id, c]));
     return db;
   });
 
@@ -586,9 +590,32 @@ els.searchForm.addEventListener('submit', async (e) => {
       && (!total || String(c.setTotal) === total))
     .sort((a, b) => (b.releaseDate || '').localeCompare(a.releaseDate || ''));
 
-  setStatus(els.searchStatus,
-    found.length ? `${found.length} result${found.length === 1 ? '' : 's'}${found.length > 100 ? ' (showing 100)' : ''}` : 'No cards found.',
-    found.length ? 'ok' : 'err');
+  const sealed = name && !number ? await searchSealed(els.qName.value.trim()) : [];
+  const parts = [
+    found.length ? `${found.length} card${found.length === 1 ? '' : 's'}${found.length > 100 ? ' (showing 100)' : ''}` : '',
+    sealed.length ? `${sealed.length} sealed product${sealed.length === 1 ? '' : 's'}${sealed.length > 40 ? ' (showing 40)' : ''}` : '',
+  ].filter(Boolean);
+  setStatus(els.searchStatus, parts.length ? parts.join(' · ') : 'Nothing found.', parts.length ? 'ok' : 'err');
+  if (sealed.length) {
+    const h = document.createElement('h3');
+    h.className = 'sub-title';
+    h.textContent = 'Sealed product';
+    els.searchResults.appendChild(h);
+    const rate = await getAudRate();
+    for (const sp of sealed.slice(0, 40)) {
+      const e = sealedEntry(sp);
+      els.searchResults.appendChild(cardRow({ ...e, number: '', setTotal: '', rarity: sp.type, releaseDate: '' }, {
+        onClick: () => openSealedDetail(e),
+        extra: sp.usd != null ? formatAud(sp.usd, rate.rate) : '',
+      }));
+    }
+    if (found.length) {
+      const h2 = document.createElement('h3');
+      h2.className = 'sub-title';
+      h2.textContent = 'Cards';
+      els.searchResults.appendChild(h2);
+    }
+  }
   found.slice(0, 100).forEach((c) => els.searchResults.appendChild(cardRow(c)));
 });
 
@@ -596,7 +623,7 @@ els.searchForm.addEventListener('submit', async (e) => {
 /* Card list + detail                                                  */
 /* ------------------------------------------------------------------ */
 
-function cardRow(card, { score = null, onClick = () => openDetail(card) } = {}) {
+function cardRow(card, { score = null, onClick = () => openDetail(card), extra = '' } = {}) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'card-row';
@@ -604,10 +631,10 @@ function cardRow(card, { score = null, onClick = () => openDetail(card) } = {}) 
     <img src="${esc(card.image)}" alt="" loading="lazy">
     <div class="meta">
       <div class="name">${esc(card.name)}</div>
-      <div class="sub">${esc(card.setName)} · #${esc(card.number)}${card.setTotal ? '/' + esc(card.setTotal) : ''}</div>
+      <div class="sub">${esc(card.setName)}${card.number ? ` · #${esc(card.number)}${card.setTotal ? '/' + esc(card.setTotal) : ''}` : ''}</div>
       <div class="sub">${esc([card.rarity, card.releaseDate?.slice(0, 4),
         score !== null ? `${Math.round(Math.max(0, score) * 100)}% match` : ''].filter(Boolean).join(' · '))}</div>
-    </div>`;
+    </div>${extra ? `<span class="row-price">${esc(extra)}</span>` : ''}`;
   btn.addEventListener('click', onClick);
   return btn;
 }
@@ -731,7 +758,7 @@ const COLLECTION_KEY = 'pokescan.collection.v2';
 const OLD_HISTORY_KEY = 'pokescan.history.v1'; // one row per scan, no quantities
 const SORT_KEY = 'pokescan.collectionSort';
 const CARD_FIELDS = ['id', 'name', 'number', 'rarity', 'setId', 'setName', 'setSeries', 'setTotal',
-  'releaseDate', 'image', 'imageLarge'];
+  'releaseDate', 'image', 'imageLarge', 'kind', 'type'];
 
 const entryKeyOf = (id, variant) => `${id}|${variant || ''}`;
 
@@ -848,11 +875,13 @@ function renderCollection() {
   els.collectionTools.hidden = !list.length;
   els.clearHistory.hidden = !list.length;
 
-  const { prices, rate } = collectionPrices ?? {};
+  const { prices, rate, sealed } = collectionPrices ?? {};
   let total = 0;
   let pricedCards = 0;
   for (const e of list) {
-    const usd = prices ? cardUsd(e, prices[e.id]) : null;
+    const usd = !prices ? null
+      : e.kind === 'sealed' ? sealed?.byKey.get(e.id)?.usd ?? null
+        : cardUsd(e, prices[e.id]);
     e.unit = usd;
     e.total = usd == null ? null : usd * e.qty;
     if (usd != null) {
@@ -864,7 +893,9 @@ function renderCollection() {
     els.valueTotal.textContent = '—';
   } else if (prices) {
     els.valueTotal.textContent = formatAud(total, rate.rate);
-    els.valueNote.textContent = `${count} card${count === 1 ? '' : 's'} (${list.length} different) · `
+    const sealedCount = list.filter((e) => e.kind === 'sealed').reduce((n, e) => n + e.qty, 0);
+    const what = sealedCount ? `${count} item${count === 1 ? '' : 's'}` : `${count} card${count === 1 ? '' : 's'}`;
+    els.valueNote.textContent = `${what} (${list.length} different) · `
       + `${pricedCards} priced · TCGplayer market prices in AUD${rate.approx ? ' (approx. exchange rate)' : ''}`;
   } else {
     els.valueTotal.textContent = 'Loading…';
@@ -896,10 +927,12 @@ function renderCollection() {
     item.innerHTML = `
       <div class="thumb"><img src="${esc(e.image)}" alt="" loading="lazy">${e.qty > 1 ? `<span class="qty">×${e.qty}</span>` : ''}</div>
       <span class="name">${esc(e.name)}</span>
-      <span class="sub">${esc(e.setName)} · #${esc(e.number)}</span>
+      <span class="sub">${esc(e.setName)}${e.kind === 'sealed' ? '' : ` · #${esc(e.number)}`}</span>
+      ${e.kind === 'sealed' ? `<span class="sub finish">${esc(e.type)}</span>` : ''}
       ${finish ? `<span class="sub finish">${esc(finish)}</span>` : ''}
       <span class="price">${price}</span>`;
-    item.addEventListener('click', () => openDetail(e, { entryKey: e.key }));
+    item.addEventListener('click', () => (e.kind === 'sealed'
+      ? openSealedDetail(e, { entryKey: e.key }) : openDetail(e, { entryKey: e.key })));
     els.historyList.appendChild(item);
   }
 }
@@ -908,11 +941,13 @@ function renderCollection() {
 async function refreshCollection() {
   const token = ++collectionToken;
   renderCollection();
-  const ids = [...new Set(loadCollection().map((e) => e.id))];
-  if (!ids.length) return;
-  const [prices, rate] = await Promise.all([getTcgPrices(ids), getAudRate()]);
+  const list = loadCollection();
+  if (!list.length) return;
+  const ids = [...new Set(list.filter((e) => e.kind !== 'sealed').map((e) => e.id))];
+  const [prices, rate, sealed] = await Promise.all([getTcgPrices(ids), getAudRate(),
+    list.some((e) => e.kind === 'sealed') ? getSealed() : null]);
   if (token !== collectionToken) return;
-  collectionPrices = { prices, rate };
+  collectionPrices = { prices, rate, sealed };
   renderCollection();
 }
 
@@ -928,6 +963,356 @@ els.clearHistory.addEventListener('click', () => {
     renderCollection();
   }
 });
+
+/* ------------------------------------------------------------------ */
+/* Sealed product                                                      */
+/* ------------------------------------------------------------------ */
+
+/* A sealed product (from getSealed) in the shape collection entries use. */
+function sealedEntry(s) {
+  const set = db.sets?.[s.set] ?? [];
+  return {
+    id: s.key, name: s.name, number: '', kind: 'sealed', type: s.type,
+    setId: s.set, setName: set[0] ?? '', releaseDate: set[3] ?? '', image: s.image,
+  };
+}
+
+/* Detail sheet for sealed product. Tapping the market price shows the Australian RRP. */
+async function openSealedDetail(item, { entryKey = null } = {}) {
+  const inCollection = entryKey !== null;
+  const productId = String(item.id).replace(/^s/, '');
+  els.detailBody.innerHTML = `
+    <img class="detail-img sealed" src="${esc(sealedImage(productId, 400))}" alt="${esc(item.name)}"
+         onerror="this.onerror=null;this.src='${esc(item.image)}'">
+    <p class="detail-title">${esc(item.name)}</p>
+    <p class="detail-sub">${esc(item.setName)} · ${esc(item.type)}</p>
+    <button type="button" class="detail-price tap" id="sealedPrice" aria-expanded="false">
+      <span class="price-label">Market price (AUD)</span>
+      <span class="price-value none" id="detailPrice">Loading…</span>
+      <span class="rrp" id="sealedRrp" hidden></span>
+      <span class="price-note" id="sealedHint">Tap to compare with Australian RRP</span>
+    </button>
+    <div class="detail-actions">
+      ${inCollection
+        ? `<div class="qty-row">
+             <span>Quantity</span>
+             <div class="stepper">
+               <button type="button" class="step" id="qtyDown" aria-label="One less">−</button>
+               <span id="qtyValue"></span>
+               <button type="button" class="step" id="qtyUp" aria-label="One more">＋</button>
+             </div>
+           </div>
+           <button class="btn ghost" id="detailRemove">Remove from collection</button>`
+        : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
+      <a class="btn ghost" href="https://www.tcgplayer.com/product/${esc(productId)}" target="_blank" rel="noopener">View on TCGplayer ↗</a>
+    </div>`;
+  const showQty = () => {
+    const entry = loadCollection().find((e) => e.key === entryKey);
+    if (!entry) return;
+    $('qtyValue').textContent = entry.qty;
+    $('qtyDown').disabled = entry.qty <= 1;
+  };
+  $('detailAdd')?.addEventListener('click', () => {
+    const qty = addToCollection(item, null);
+    els.detail.close();
+    toast(qty > 1 ? `Added ${item.name} — you have ${qty}` : `Added ${item.name} to your collection`);
+  });
+  $('detailRemove')?.addEventListener('click', () => {
+    saveCollection(loadCollection().filter((e) => e.key !== entryKey));
+    els.detail.close();
+    renderCollection();
+    toast(`Removed ${item.name}`);
+  });
+  const changeQty = (d) => {
+    updateEntry(entryKey, (e) => { e.qty = Math.max(1, e.qty + d); });
+    showQty();
+    renderCollection();
+  };
+  $('qtyDown')?.addEventListener('click', () => changeQty(-1));
+  $('qtyUp')?.addEventListener('click', () => changeQty(1));
+  if (inCollection) showQty();
+  els.detail.showModal();
+
+  const [sealed, rate] = await Promise.all([getSealed(), getAudRate()]);
+  const s = sealed.byKey.get(`s${productId}`);
+  const priceEl = $('detailPrice');
+  if (!priceEl) return;
+  if (s?.usd == null) {
+    priceEl.textContent = 'No price available';
+    return;
+  }
+  priceEl.textContent = formatAud(s.usd, rate.rate);
+  priceEl.className = 'price-value';
+  const cmp = rrpCompare(s.type, s.usd, rate.rate);
+  $('sealedPrice').addEventListener('click', () => {
+    const rrpEl = $('sealedRrp');
+    const open = rrpEl.hidden;
+    rrpEl.hidden = !open;
+    $('sealedPrice').setAttribute('aria-expanded', String(open));
+    $('sealedHint').textContent = open ? 'TCGplayer (US) market price in AUD' : 'Tap to compare with Australian RRP';
+    rrpEl.innerHTML = cmp
+      ? `RRP ${formatAudPlain(cmp.rrp)}${cmp.estimate ? ' <small>(estimate)</small>' : ''} · <b class="${cmp.up ? 'up' : 'down'}">${esc(cmp.text)}</b>`
+      : 'No Australian RRP for this kind of product';
+  });
+}
+
+const formatAudPlain = (aud) => audFormat.format(aud);
+
+/* ------------------------------------------------------------------ */
+/* Sets: browse every card in a set                                    */
+/* ------------------------------------------------------------------ */
+
+const setsEls = {
+  list: $('setsList'), filter: $('setsFilter'), groups: $('setsGroups'),
+  page: $('setPage'), back: $('setBack'), head: $('setHead'), show: $('setShow'),
+  sealedTitle: $('setSealedTitle'), sealed: $('setSealed'), cards: $('setCards'),
+};
+let setsRendered = false;
+let openSetId = null;
+let setShowMode = 'all';
+
+/* How many different cards of each set are in the collection. */
+function ownedBySet() {
+  const owned = new Map();
+  const seen = new Set();
+  for (const e of loadCollection()) {
+    if (e.kind === 'sealed' || seen.has(e.id)) continue;
+    seen.add(e.id);
+    owned.set(e.setId, (owned.get(e.setId) || 0) + 1);
+  }
+  return owned;
+}
+
+async function showSets() {
+  await dbReady;
+  if (openSetId) {
+    renderSetPage(); // owned marks may have changed
+    return;
+  }
+  if (!setsRendered) await renderSetsList();
+  else updateSetCounts();
+}
+
+async function renderSetsList() {
+  const info = await getSetsInfo();
+  const counts = new Map();
+  for (const c of db.cards) counts.set(c.setId, (counts.get(c.setId) || 0) + 1);
+  // Series, newest first; sets in each newest first.
+  const bySeries = new Map();
+  for (const [id, [name, series, , date]] of Object.entries(db.sets)) {
+    if (!counts.get(id)) continue;
+    if (!bySeries.has(series)) bySeries.set(series, []);
+    bySeries.get(series).push({ id, name, date: date || '' });
+  }
+  const groups = [...bySeries].map(([series, sets]) => ({
+    series, sets: sets.sort((a, b) => b.date.localeCompare(a.date)),
+  })).sort((a, b) => b.sets[0].date.localeCompare(a.sets[0].date));
+  setsEls.groups.innerHTML = groups.map((g) => `
+    <section class="set-group" data-series="${esc(g.series)}">
+      <h3 class="sub-title">${esc(g.series)}</h3>
+      ${g.sets.map((st) => `
+        <button type="button" class="set-row" data-id="${esc(st.id)}" data-name="${esc(normName(st.name))}">
+          <span class="set-icon">${info[st.id]?.symbol ? `<img src="${esc(info[st.id].symbol)}" alt="" loading="lazy">` : ''}</span>
+          <span class="set-meta"><span class="name">${esc(st.name)}</span>
+            <span class="sub">${esc(st.date.slice(0, 4))} · ${counts.get(st.id)} cards</span></span>
+          <span class="set-owned" data-owned="${esc(st.id)}"></span>
+        </button>`).join('')}
+    </section>`).join('');
+  setsEls.groups.querySelectorAll('.set-row').forEach((b) => b.addEventListener('click', () => openSet(b.dataset.id)));
+  setsRendered = true;
+  updateSetCounts();
+}
+
+function updateSetCounts() {
+  const owned = ownedBySet();
+  setsEls.groups.querySelectorAll('[data-owned]').forEach((el) => {
+    const n = owned.get(el.dataset.owned) || 0;
+    el.textContent = n ? `${n} owned` : '';
+  });
+}
+
+setsEls.filter.addEventListener('input', () => {
+  const q = normName(setsEls.filter.value.trim());
+  setsEls.groups.querySelectorAll('.set-group').forEach((g) => {
+    let any = false;
+    g.querySelectorAll('.set-row').forEach((r) => {
+      const hit = !q || r.dataset.name.includes(q) || normName(g.dataset.series).includes(q);
+      r.hidden = !hit;
+      any ||= hit;
+    });
+    g.hidden = !any;
+  });
+});
+
+function openSet(id) {
+  openSetId = id;
+  setsEls.list.hidden = true;
+  setsEls.page.hidden = false;
+  window.scrollTo(0, 0);
+  renderSetPage();
+}
+
+setsEls.back.addEventListener('click', () => {
+  openSetId = null;
+  setsEls.page.hidden = true;
+  setsEls.list.hidden = false;
+  updateSetCounts();
+});
+
+setsEls.show.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+  setShowMode = b.dataset.v;
+  setsEls.show.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+  renderSetPage();
+}));
+
+let setToken = 0;
+async function renderSetPage() {
+  const token = ++setToken;
+  const id = openSetId;
+  const [name, series, printed, date] = db.sets[id] ?? [];
+  const cards = db.cards.filter((c) => c.setId === id).sort(byNumber);
+  const qtyById = new Map();
+  for (const e of loadCollection()) if (e.kind !== 'sealed') qtyById.set(e.id, (qtyById.get(e.id) || 0) + e.qty);
+  const ownedCount = cards.filter((c) => qtyById.has(c.id)).length;
+  const info = (await getSetsInfo())[id];
+  setsEls.head.innerHTML = `
+    ${info?.logo ? `<img class="set-logo" src="${esc(info.logo)}" alt="${esc(name)}">` : ''}
+    <p class="detail-title">${esc(name)}</p>
+    <p class="detail-sub">${esc(series)} · ${esc(date || '')}${printed ? ` · ${printed} in the main set` : ''}</p>
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${cards.length}" aria-valuenow="${ownedCount}">
+      <span style="width:${cards.length ? (100 * ownedCount / cards.length).toFixed(1) : 0}%"></span></div>
+    <p class="muted center" id="setSummary">You have ${ownedCount} of ${cards.length} cards</p>`;
+
+  const shown = cards.filter((c) => setShowMode === 'all'
+    || (setShowMode === 'owned' ? qtyById.has(c.id) : !qtyById.has(c.id)));
+  setsEls.cards.innerHTML = shown.length ? '' : `<p class="empty">${setShowMode === 'owned' ? 'None of this set yet.' : 'You have every card!'}</p>`;
+  const priceEls = new Map();
+  for (const c of shown) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `grid-item${qtyById.has(c.id) ? ' owned' : ''}`;
+    const q = qtyById.get(c.id);
+    item.innerHTML = `
+      <div class="thumb"><img src="${esc(c.image)}" alt="" loading="lazy">${q ? `<span class="qty owned-mark" aria-label="Owned">${q > 1 ? '×' + q : '✓'}</span>` : ''}</div>
+      <span class="name">${esc(c.name)}</span>
+      <span class="sub">#${esc(c.number)}${c.rarity ? ` · ${esc(c.rarity)}` : ''}</span>
+      <span class="price"></span>`;
+    item.addEventListener('click', () => openDetail(c));
+    setsEls.cards.appendChild(item);
+    priceEls.set(c.id, item.querySelector('.price'));
+  }
+
+  const [prices, rate, sealed] = await Promise.all([getTcgPrices(cards.map((c) => c.id)), getAudRate(), getSealed()]);
+  if (token !== setToken) return;
+  let setValue = 0;
+  for (const c of cards) {
+    const usd = priceVariants(prices[c.id]?.prices)[0]?.usd;
+    if (usd != null && qtyById.has(c.id)) setValue += usd * qtyById.get(c.id);
+    const el = priceEls.get(c.id);
+    if (el && usd != null) el.textContent = formatAud(usd, rate.rate);
+  }
+  if (ownedCount) $('setSummary').textContent += ` · worth about ${formatAud(setValue, rate.rate)}`;
+
+  const items = sealed.items.filter((s) => s.set === id && s.type !== 'Case')
+    .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
+  setsEls.sealedTitle.hidden = !items.length;
+  setsEls.sealed.innerHTML = '';
+  for (const s of items) {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'sealed-tile';
+    tile.innerHTML = `<img src="${esc(s.image)}" alt="" loading="lazy">
+      <span class="name">${esc(s.type === 'Other' ? s.name : s.type)}</span>
+      <span class="price">${s.usd != null ? formatAud(s.usd, rate.rate) : ''}</span>`;
+    tile.title = s.name;
+    tile.addEventListener('click', () => openSealedDetail(sealedEntry(s)));
+    setsEls.sealed.appendChild(tile);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Market: movers and highs / lows                                     */
+/* ------------------------------------------------------------------ */
+
+const marketEls = { window: $('marketWindow'), kind: $('marketKind'), note: $('marketNote'), body: $('marketBody') };
+const market = { window: '1', kind: 'cards' };
+
+for (const [el, key] of [[marketEls.window, 'window'], [marketEls.kind, 'kind']]) {
+  el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    market[key] = b.dataset.v;
+    el.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+    renderMarket();
+  }));
+}
+
+const finishFromShort = (short) => VARIANTS.find(([, s]) => s === short)?.[0] ?? null;
+const shortDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+
+let marketToken = 0;
+async function renderMarket() {
+  const token = ++marketToken;
+  marketEls.body.innerHTML = '<p class="empty"><span class="spinner"></span>Loading market data…</p>';
+  const [data, rate, sealed] = await Promise.all([getMarket(), getAudRate(), getSealed(), dbReady]);
+  if (token !== marketToken) return;
+  if (!data) {
+    marketEls.body.innerHTML = '<p class="empty">Market data isn’t available right now. Try again later.</p>';
+    return;
+  }
+  const w = data.movers[market.window];
+  marketEls.note.textContent = (w ? `Comparing with ${shortDate(w.from)}. ` : '')
+    + `“Highest” and “lowest” mean since tracking began on ${shortDate(data.since)}. TCGplayer market prices in AUD.`;
+
+  // [key, nowCents, otherCents, pct?] → a row.
+  const resolve = (key) => {
+    if (key[0] === 's') {
+      const s = sealed.byKey.get(key);
+      return s && { item: sealedEntry(s), sub: `${db.sets?.[s.set]?.[0] ?? ''} · ${s.type}`, open: () => openSealedDetail(sealedEntry(s)) };
+    }
+    const [id, short] = key.split(':');
+    const c = db.byId.get(id);
+    const variant = finishFromShort(short);
+    return c && { item: c, sub: `${c.setName} · #${c.number} · ${variantLabel(variant)}`, open: () => openDetail({ ...c, variant }) };
+  };
+  const section = (title, rows, pctOf) => {
+    const items = rows.map((r) => ({ r, x: resolve(r[0]) })).filter((x) => x.x);
+    if (!items.length) return `<h3 class="sub-title">${esc(title)}</h3><p class="muted">Nothing yet — check back after a few days of prices.</p>`;
+    return `<h3 class="sub-title">${esc(title)}</h3><div class="results">${items.map(({ r, x }, i) => {
+      const pct = pctOf(r);
+      return `<button type="button" class="card-row mover" data-i="${i}" data-sec="${esc(title)}">
+        <img src="${esc(x.item.image)}" alt="" loading="lazy">
+        <div class="meta"><div class="name">${esc(x.item.name)}</div><div class="sub">${esc(x.sub)}</div></div>
+        <div class="mv"><b>${formatAud(r[1] / 100, rate.rate)}</b>
+          <span class="${pct >= 0 ? 'up' : 'down'}">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(pct >= 10 || pct <= -10 ? 0 : 1)}%</span></div>
+      </button>`;
+    }).join('')}</div>`;
+  };
+  const k = market.kind;
+  const pctMove = (r) => r[3];
+  const pctVs = (r) => ((r[1] - r[2]) / r[2]) * 100;
+  const sections = [
+    ['Biggest risers', w?.[k].up ?? [], pctMove],
+    ['Biggest fallers', w?.[k].down ?? [], pctMove],
+    ['At their highest', data.highs[k], pctVs],
+    ['At their lowest', data.lows[k], pctVs],
+  ];
+  marketEls.body.innerHTML = sections.map(([t, rows, f]) => section(t, rows, f)).join('');
+  marketEls.body.querySelectorAll('.mover').forEach((b) => {
+    const rows = sections.find(([t]) => t === b.dataset.sec)[1].filter((r) => resolve(r[0]));
+    b.addEventListener('click', () => resolve(rows[+b.dataset.i][0]).open());
+  });
+}
+
+/* Search also finds sealed product (every word must appear in its name or set). */
+async function searchSealed(query) {
+  const words = normName(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const sealed = await getSealed();
+  return sealed.items.filter((s) => {
+    const hay = normName(`${s.name} ${db.sets?.[s.set]?.[0] ?? ''} ${s.type}`);
+    return words.every((w) => hay.includes(w));
+  }).sort((a, b) => (a.type === 'Case') - (b.type === 'Case')
+    || (db.sets?.[b.set]?.[3] ?? '').localeCompare(db.sets?.[a.set]?.[3] ?? '') || (b.usd ?? 0) - (a.usd ?? 0));
+}
 
 /* ------------------------------------------------------------------ */
 /* PWA                                                                 */

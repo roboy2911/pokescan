@@ -186,3 +186,79 @@ const audFormat = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 
 function formatAud(usd, rate) {
   return audFormat.format(usd * rate);
 }
+
+/* ------------------------------------------------------------------ */
+/* Sealed product                                                       */
+/* ------------------------------------------------------------------ */
+
+/* Australian RRP (AUD) by product type — the types tools/update-prices.mjs assigns.
+ * Edit freely. Pack, bundle, ETB and booster box are the owner's current prices;
+ * entries marked "estimate" are rough guesses to correct. Types left out (cases,
+ * displays, "Other") have no single RRP. */
+const SEALED_RRP_AUD = {
+  'Booster Pack': 8.5,
+  'Sleeved Booster Pack': 8.5,
+  'Booster Bundle': 50,
+  'Elite Trainer Box': 100,
+  'Booster Box': 300,
+  'Pokémon Center Elite Trainer Box': 130, // estimate
+  'Booster Pack Art Bundle': 34, // estimate (4 packs)
+  '2-Pack Blister': 20, // estimate
+  '3-Pack Blister': 30, // estimate
+  'Blister': 12, // estimate (1 pack + promo)
+  'Mini Tin': 18, // estimate
+  'Tin': 40, // estimate
+  'Collection Box': 40, // estimate
+  'Premium Collection': 80, // estimate
+  'Super-Premium Collection': 150, // estimate
+  'Ultra-Premium Collection': 250, // estimate
+  'Build & Battle Box': 35, // estimate
+  'Build & Battle Stadium': 90, // estimate
+  'Deck': 30, // estimate
+  'Surprise Box': 40, // estimate
+};
+const SEALED_RRP_ESTIMATE = new Set(Object.keys(SEALED_RRP_AUD)
+  .filter((t) => !['Booster Pack', 'Sleeved Booster Pack', 'Booster Bundle', 'Elite Trainer Box', 'Booster Box'].includes(t)));
+
+const sealedImage = (productId, size = 200) => `https://tcgplayer-cdn.tcgplayer.com/product/${productId}_${size}w.jpg`;
+
+/* data/sealed.json, loaded on first use: { items: [{ id, name, set, type, usd }] } with each
+ * item also given key ('s' + id), kind 'sealed' and image. */
+let sealedPromise = null;
+function getSealed() {
+  sealedPromise ??= fetch('data/sealed.json')
+    .then((r) => (r.ok ? r.json() : { items: [] }))
+    .catch(() => ({ items: [] }))
+    .then((j) => {
+      const items = j.items.map((s) => ({ ...s, key: `s${s.id}`, kind: 'sealed', image: sealedImage(s.id) }));
+      return { built: j.built, items, byKey: new Map(items.map((s) => [s.key, s])) };
+    });
+  return sealedPromise;
+}
+
+/* "+35% over RRP" / "12% under RRP" for a sealed product's market price, or null. */
+function rrpCompare(type, usd, rate) {
+  const rrp = SEALED_RRP_AUD[type];
+  if (!rrp || usd == null) return null;
+  const pct = Math.round(((usd * rate) / rrp - 1) * 100);
+  return {
+    rrp,
+    estimate: SEALED_RRP_ESTIMATE.has(type),
+    text: pct === 0 ? 'at RRP' : pct > 0 ? `+${pct}% over RRP` : `${-pct}% under RRP`,
+    up: pct > 0,
+  };
+}
+
+/* data/sets.json (logos/symbols per set id), loaded on first use. */
+let setsInfoPromise = null;
+function getSetsInfo() {
+  setsInfoPromise ??= fetch('data/sets.json').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+  return setsInfoPromise;
+}
+
+/* data/market.json (movers and highs/lows), loaded when the Market tab opens. */
+let marketPromise = null;
+function getMarket() {
+  marketPromise ??= fetch('data/market.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  return marketPromise;
+}

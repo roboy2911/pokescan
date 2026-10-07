@@ -80,14 +80,56 @@
 
     <!-- SEARCH -->
     <section id="view-search" class="view">
-      <h2 class="view-title">Search cards</h2>
+      <h2 class="view-title">Search cards &amp; sealed</h2>
       <form id="searchForm" class="search-form">
-        <input id="qName" type="search" placeholder="Name, e.g. Charizard ex" autocomplete="off" enterkeyhint="search">
+        <input id="qName" type="search" placeholder="Name, e.g. Charizard ex or 151 Elite Trainer Box" autocomplete="off" enterkeyhint="search">
         <input id="qNumber" type="text" placeholder="Number, e.g. 199 or 199/165" autocomplete="off" enterkeyhint="search">
         <button class="btn primary" type="submit">Search</button>
       </form>
       <div id="searchStatus" class="status" hidden></div>
       <div id="searchResults" class="results"></div>
+    </section>
+
+    <!-- SETS -->
+    <section id="view-sets" class="view">
+      <div id="setsList">
+        <h2 class="view-title">Sets</h2>
+        <input id="setsFilter" class="field" type="search" placeholder="Find a set, e.g. 151 or Evolving Skies" autocomplete="off" enterkeyhint="search">
+        <div id="setsGroups"></div>
+      </div>
+      <div id="setPage" hidden>
+        <button id="setBack" class="btn ghost small back">‹ All sets</button>
+        <div class="set-head" id="setHead"></div>
+        <div class="set-tools">
+          <div class="seg" id="setShow" role="tablist">
+            <button type="button" data-v="all" class="active">All</button>
+            <button type="button" data-v="owned">Owned</button>
+            <button type="button" data-v="missing">Missing</button>
+          </div>
+        </div>
+        <h3 class="sub-title" id="setSealedTitle" hidden>Sealed product</h3>
+        <div class="hscroll" id="setSealed"></div>
+        <h3 class="sub-title">Cards</h3>
+        <div id="setCards" class="grid"></div>
+      </div>
+    </section>
+
+    <!-- MARKET -->
+    <section id="view-market" class="view">
+      <h2 class="view-title">Market</h2>
+      <div class="market-tools">
+        <div class="seg" id="marketWindow">
+          <button type="button" data-v="1" class="active">1 day</button>
+          <button type="button" data-v="7">7 days</button>
+          <button type="button" data-v="30">30 days</button>
+        </div>
+        <div class="seg" id="marketKind">
+          <button type="button" data-v="cards" class="active">Cards</button>
+          <button type="button" data-v="sealed">Sealed</button>
+        </div>
+      </div>
+      <p class="muted" id="marketNote"></p>
+      <div id="marketBody"></div>
     </section>
 
     <!-- COLLECTION -->
@@ -102,7 +144,7 @@
         <span class="price-note" id="valueNote"></span>
       </div>
       <div class="collection-tools" id="collectionTools" hidden>
-        <input id="collectionSearch" type="search" placeholder="Search your cards" autocomplete="off" enterkeyhint="search">
+        <input id="collectionSearch" type="search" placeholder="Search your collection" autocomplete="off" enterkeyhint="search">
         <select id="collectionSort" aria-label="Sort by">
           <option value="recent">Recently added</option>
           <option value="value">Value: high → low</option>
@@ -126,9 +168,17 @@
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
       Search
     </button>
+    <button class="nav-btn" data-view="sets">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>
+      Sets
+    </button>
     <button class="nav-btn" data-view="collection">
       <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="9" rx="1"/><rect x="13" y="4" width="7" height="9" rx="1"/><rect x="4" y="15" width="7" height="5" rx="1"/><rect x="13" y="15" width="7" height="5" rx="1"/></svg>
       Collection
+    </button>
+    <button class="nav-btn" data-view="market">
+      <svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 3 7-9"/><path d="M15 6h5v5"/></svg>
+      Market
     </button>
   </nav>
 
