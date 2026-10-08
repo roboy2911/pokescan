@@ -2,19 +2,45 @@
 importScripts('fingerprint.js', 'detect.js', 'matcher.js');
 
 let matcherPromise = null;
+let englishIndex = null;
 
-function getMatcher() {
+function getEnglish() {
   matcherPromise ??= fetch('data/index.bin')
     .then((r) => {
       if (!r.ok) throw new Error(`index.bin: HTTP ${r.status}`);
       return r.arrayBuffer();
     })
-    .then(createMatcher);
+    .then((buf) => { englishIndex = buf; return createMatcher(buf); });
   return matcherPromise;
 }
 
+/* "Scan Japanese cards" on: data/index-ja.bin is loaded (once) and searched together with the
+ * English index — its rows come after the English ones. Off: English only, as before. */
+let japanesePromise = null;
+let useJapanese = false;
+function getJapanese() {
+  japanesePromise ??= Promise.all([getEnglish(), fetch('data/index-ja.bin').then((r) => {
+    if (!r.ok) throw new Error(`index-ja.bin: HTTP ${r.status}`);
+    return r.arrayBuffer();
+  })]).then(([, ja]) => {
+    const both = new Uint8Array(englishIndex.byteLength + ja.byteLength);
+    both.set(new Uint8Array(englishIndex), 0);
+    both.set(new Uint8Array(ja), englishIndex.byteLength);
+    return createMatcher(both.buffer);
+  });
+  japanesePromise.catch(() => { japanesePromise = null; });
+  return japanesePromise;
+}
+const getMatcher = () => (useJapanese ? getJapanese() : getEnglish());
+
 self.onmessage = async ({ data: msg }) => {
   try {
+    if (msg.type === 'japanese') {
+      useJapanese = !!msg.on;
+      const m = await getMatcher().catch((err) => { useJapanese = false; throw err; });
+      self.postMessage({ id: msg.id, count: m.count, jaStart: englishIndex.byteLength / FP.DIM });
+      return;
+    }
     const matcher = await getMatcher();
     if (msg.type === 'warmup') {
       self.postMessage({ id: msg.id, count: matcher.count });

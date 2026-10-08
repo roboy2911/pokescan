@@ -660,7 +660,7 @@ button.detail-price { width: 100%; border: 0; color: inherit; font: inherit; tex
 .bulk-text { display: flex; flex-direction: column; min-width: 0; flex: 1; font-size: .85rem; }
 .bulk-text span { color: var(--muted); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bulk-bar .btn { min-height: 40px; white-space: nowrap; }
-#bulkBtn.on { color: var(--accent); background: rgba(255, 203, 5, .18); }
+#bulkBtn.on, #jpScanBtn.on { color: var(--accent); background: rgba(255, 203, 5, .18); }
 
 a.btn { text-decoration: none; }
 
@@ -723,3 +723,4 @@ a.btn { text-decoration: none; }
 
 .jp-badge { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 0.65em; font-weight: 700;
   line-height: 1.5; vertical-align: middle; color: #fff; background: #bc002d; letter-spacing: 0.04em; }
+.icon-btn.jp-btn { font-weight: 800; font-size: 0.8rem; letter-spacing: 0.04em; }

@@ -236,7 +236,12 @@ function loadJapanese() {
   }).catch(() => false);
   return japaneseReady;
 }
-ready.then(() => setTimeout(loadJapanese, 3000));
+ready.then(() => {
+  let saved = false;
+  try { saved = localStorage.getItem(JP_SCAN_KEY) === '1'; } catch { /* no storage */ }
+  if (saved) setJapaneseScan(true, { quiet: true });
+  else setTimeout(loadJapanese, 3000);
+});
 
 ready
   .then(() => {
@@ -247,11 +252,62 @@ ready
   })
   .catch((err) => setStatus(els.status, `Couldn't load the card database: ${esc(err.message)}`, 'err'));
 
+/* Japanese prints look like the English print with the same artwork. In a ranked list, a
+ * Japanese card (index ≥ jaStart) with the same name as an English card scoring within
+ * `margin` of it is folded into one match: the preferred language keeps the place and the
+ * other is attached as `twin`, so the pair doesn't count as two competing answers. */
+function foldTwins(ranked, jaStart, nameOf, { margin = 0.03, prefer = 'en' } = {}) {
+  const out = [];
+  for (const m of ranked) {
+    const isJa = m.i >= jaStart;
+    const twin = out.find((o) => (o.i >= jaStart) !== isJa && o.twin === undefined
+      && Math.abs(o.score - m.score) <= margin && nameOf(o.i) === nameOf(m.i));
+    if (!twin) { out.push({ ...m }); continue; }
+    if ((prefer === 'ja') === isJa) Object.assign(twin, { twin: twin.i, i: m.i });
+    else twin.twin = m.i;
+  }
+  return out;
+}
+
+/* "Scan Japanese cards" (off by default, remembered): Japanese cards join the scan, Japanese
+ * print first with the English print as its twin. Off = English-only scanning exactly as before
+ * (searching both makes English scanning a little less sure in bad light). */
+const JP_SCAN_KEY = 'pokescan.scanJapanese';
+let jpScan = false;
+async function setJapaneseScan(on, { quiet = false } = {}) {
+  jpScan = false;
+  showJapaneseScan();
+  if (on) {
+    try {
+      if (!(await loadJapanese())) throw new Error('card list');
+      const { jaStart } = await ask({ type: 'japanese', on: true });
+      if (jaStart !== db.enCount) throw new Error('index mismatch');
+      jpScan = true;
+    } catch (err) {
+      console.warn('Japanese scanning unavailable', err);
+      ask({ type: 'japanese', on: false }).catch(() => {});
+      if (!quiet) toast("Couldn't load the Japanese cards — check your connection");
+    }
+  } else {
+    await ask({ type: 'japanese', on: false }).catch(() => {});
+  }
+  try { localStorage.setItem(JP_SCAN_KEY, jpScan ? '1' : '0'); } catch { /* no storage */ }
+  showJapaneseScan();
+  if (!quiet && (jpScan || !on)) toast(jpScan ? 'Scanning Japanese cards too' : 'Scanning English cards only');
+}
+function showJapaneseScan() {
+  const btn = $('jpScanBtn');
+  btn.classList.toggle('on', jpScan);
+  btn.setAttribute('aria-pressed', String(jpScan));
+}
+$('jpScanBtn').addEventListener('click', () => setJapaneseScan(!jpScan));
+
 /* Ask the worker to identify the card in a captured region. */
 async function identify(region) {
   const res = await ask({ type: 'scan', regions: [region] }, [region.data]);
+  const ranked = jpScan ? foldTwins(res.matches, db.enCount, (i) => db.cards[i]?.name, { prefer: 'ja' }) : res.matches;
   return {
-    matches: res.matches.map(({ i, score }) => ({ card: db.cards[i], score })),
+    matches: ranked.filter(({ i }) => db.cards[i]).map(({ i, score, twin }) => ({ card: db.cards[i], score, ...(twin !== undefined && { twin: db.cards[twin] }) })),
     where: res.where,
     ms: res.ms,
   };
@@ -764,7 +820,7 @@ function showHero(card, score) {
   els.addBtn.hidden = false;
   els.heroImg.src = card.image;
   els.heroImg.alt = card.name;
-  els.heroName.textContent = card.name;
+  els.heroName.innerHTML = esc(card.name) + jpBadge(card);
   els.heroSub.textContent = `${card.setName} · #${card.number}${card.setTotal ? '/' + card.setTotal : ''}`;
   els.heroTags.innerHTML = [
     score != null ? `<span class="tag match">${Math.round(Math.max(0, score) * 100)}% match</span>` : '',
@@ -807,13 +863,15 @@ function renderScanResults(matches, { found = null } = {}) {
 
   // Quick swap: the next few matches as thumbnails right under the result.
   els.altStrip.innerHTML = '';
-  els.altStrip.hidden = !confident || matches.length < 2;
+  els.altStrip.hidden = !confident || (matches.length < 2 && !best.twin);
   if (confident) {
     const label = document.createElement('span');
     label.className = 'alt-strip-label';
     label.textContent = 'Not it? Tap the right one:';
     els.altStrip.appendChild(label);
-    for (const { card, score } of matches.slice(1, 5)) {
+    // The other-language print of the same artwork first, then the next closest matches.
+    const alts = [...(best.twin ? [{ card: best.twin, score: best.score }] : []), ...matches.slice(1)].slice(0, 4);
+    for (const { card, score } of alts) {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'alt-thumb';
