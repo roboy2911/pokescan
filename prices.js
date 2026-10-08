@@ -187,7 +187,23 @@ async function livePrice(id) {
 }
 
 /* TCGplayer data for card ids: { [id]: { prices, url, updatedAt } }. */
+/* Japanese cards: data/prices-ja.json, downloaded the first time a Japanese card is priced. */
+let jaSnapshotPromise = null;
+function getJaSnapshot() {
+  jaSnapshotPromise ??= fetch('data/prices-ja.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  return jaSnapshotPromise;
+}
+
 async function getTcgPrices(ids) {
+  const jaIds = ids.filter((id) => id.startsWith('ja:'));
+  if (jaIds.length) {
+    const [ja, rest] = await Promise.all([getJaSnapshot(), jaIds.length < ids.length ? getTcgPrices(ids.filter((id) => !id.startsWith('ja:'))) : {}]);
+    for (const id of jaIds) {
+      const row = ja?.cards?.[id];
+      if (row) rest[id] = { prices: expandRow(row), url: row.p ? `https://www.tcgplayer.com/product/${row.p}` : '', updatedAt: (ja.built || '').slice(0, 10).replace(/-/g, '/') };
+    }
+    return rest;
+  }
   const snap = await getSnapshot();
   const cache = readCache(PRICE_CACHE_KEY) || {};
   const now = Date.now();

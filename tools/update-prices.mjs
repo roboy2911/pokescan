@@ -436,3 +436,11 @@ if (Object.keys(setsInfo).length) await writeFile(dataFile('sets.json'), JSON.st
 if (releases.length) await writeFile(dataFile('releases.json'), JSON.stringify({ built: out.built, currency: 'USD', releases }));
 
 await updateMarket(cards, sealed.size > 500 ? [...sealed.values()] : null);
+
+// Japanese cards (data/prices-ja.json). A failure here must never cost the English prices.
+try {
+  const { updateJapanesePrices } = await import('./prices-ja.mjs');
+  await updateJapanesePrices();
+} catch (err) {
+  console.warn(`Japanese prices skipped: ${err.message}`);
+}

@@ -40,6 +40,7 @@ const MODES = {
   o: (t) => !REPRINT_WORDS.test(t),
   r25: (t) => /celebrations|25th|cel25/i.test(t) && !/30th/i.test(t),
   r30: (t) => /30th/i.test(t),
+  ja: (t) => /japanese|japan|\bjpn?\b/i.test(t),
 };
 
 export function summarise(items, n, wantsOtherLang, q = '', mode = '') {

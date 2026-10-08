@@ -214,6 +214,30 @@ function ask(msg, transfer = []) {
 
 const ready = Promise.all([dbReady, ask({ type: 'warmup' })]);
 
+/* Japanese cards (data/cards-ja.json): added to db.cards after start-up, behind the English
+ * ones, so search, Sets, prices and the collection know them. Scanning uses the English index
+ * only (rows ≥ db.enCount never come back from the worker). */
+const jpBadge = (c) => (c?.lang === 'ja' ? '<span class="jp-badge" title="Japanese card">JP</span>' : '');
+let japaneseReady = null;
+function loadJapanese() {
+  japaneseReady ??= dbReady.then(() => fetch('data/cards-ja.json')).then((r) => (r.ok ? r.json() : null)).then((meta) => {
+    if (!meta) return false;
+    db.enCount = db.cards.length;
+    for (const row of meta.cards) {
+      const c = { ...cardFromRow(row, meta.sets), lang: 'ja', jaName: row[6] || '' };
+      db.cards.push(c);
+      db.byId.set(c.id, c);
+    }
+    Object.assign(db.sets, meta.sets);
+    searchIndex = null;
+    setsRendered = false;
+    if (!setsEls.page.hidden || document.querySelector('[data-view=sets].active')) renderSetsList();
+    return true;
+  }).catch(() => false);
+  return japaneseReady;
+}
+ready.then(() => setTimeout(loadJapanese, 3000));
+
 ready
   .then(() => {
     els.dbNote.textContent = `${db.cards.length.toLocaleString()} cards`;
@@ -851,16 +875,25 @@ const normName = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 const normNumber = (s) => String(s).toUpperCase().replace(/(^|[A-Z])0+(?=\d)/g, '$1');
 
 let searchIndex = null;
-function getSearchIndex() {
-  searchIndex ??= db.cards.map((c) => ({
-    c,
-    words: ` ${normName(`${c.name} ${c.setName}`)} `,
-    name: normName(c.name),
-    number: normNumber(c.number),
-    total: String(c.setTotal ?? ''),
-  }));
-  return searchIndex;
+/* English and Japanese cards are indexed apart, so English searches stay as quick as before:
+ * Japanese cards come up when the query says "jp" / "japanese" or is written in Japanese. */
+function getSearchIndex(lang = 'en') {
+  if (!searchIndex) {
+    searchIndex = { en: [], ja: [] };
+    for (const c of db.cards) {
+      (c.lang === 'ja' ? searchIndex.ja : searchIndex.en).push({
+        c,
+        words: ` ${normName(`${c.name} ${c.setName}${c.jaName ? ` ${c.jaName}` : ''}`)} `,
+        name: normName(c.name),
+        number: normNumber(c.number),
+        total: String(c.setTotal ?? ''),
+      });
+    }
+  }
+  return searchIndex[lang];
 }
+const JP_WORDS = new Set(['jp', 'jpn', 'japan', 'japanese']);
+const hasJapanese = (s) => /[\u3040-\u30ff\u3400-\u9fff]/.test(s);
 
 function parseQuery(q) {
   return normName(q).split(/\s+/).filter(Boolean).map((t) => {
@@ -918,7 +951,12 @@ async function runSearch() {
     setStatus(els.searchStatus, `Card database didn't load: ${esc(err.message)}`, 'err');
     return;
   }
-  const found = rankCards(getSearchIndex().filter((e) => cardMatches(e, tokens)), tokens).map((e) => e.c);
+  const wantJa = tokens.some((t) => JP_WORDS.has(t.text)) || hasJapanese(query);
+  const cardTokens = wantJa ? tokens.filter((t) => !JP_WORDS.has(t.text)) : tokens;
+  if (wantJa) await loadJapanese();
+  if (token !== searchToken) return;
+  const found = !cardTokens.length && !wantJa ? []
+    : rankCards(getSearchIndex(wantJa ? 'ja' : 'en').filter((e) => cardMatches(e, cardTokens)), cardTokens).map((e) => e.c);
   // Don't hold results up for the exchange rate (slow offline): sealed prices need it, so
   // use it if it's ready within a moment, otherwise show them without and fill in later.
   const ratePromise = getAudRate();
@@ -985,7 +1023,7 @@ function cardRow(card, { score = null, onClick = () => openDetail(card), extra =
   btn.innerHTML = `
     <img src="${esc(card.image)}" alt="" loading="lazy">
     <div class="meta">
-      <div class="name">${esc(card.name)}</div>
+      <div class="name">${esc(card.name)}${jpBadge(card)}</div>
       <div class="sub">${esc(card.setName)}${card.number ? ` · #${esc(card.number)}${card.setTotal ? '/' + esc(card.setTotal) : ''}` : ''}</div>
       <div class="sub">${esc([card.rarity, card.releaseDate?.slice(0, 4),
         score !== null ? `${Math.round(Math.max(0, score) * 100)}% match` : ''].filter(Boolean).join(' · '))}</div>
@@ -1014,7 +1052,7 @@ function reprintInfo(item) {
   if (!reprintIndex) {
     const earliest = new Map();
     for (const c of db.cards) {
-      if (REPRINT_SETS[c.setId]) continue;
+      if (REPRINT_SETS[c.setId] || c.lang === 'ja') continue;
       const k = `${c.name}|${c.number}`;
       if (!earliest.has(k) || (c.releaseDate || '') < (earliest.get(k).releaseDate || '')) earliest.set(k, c);
     }
@@ -1053,6 +1091,8 @@ function ebaySoldQuery(item, variant = null) {
     q = `${item.name.replace(/★/g, ' Gold Star').replace(/δ/g, '')} ${n}`;
     const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim() : EBAY_FINISH_WORDS[variant];
     if (finish) q += ` ${finish}`;
+    // Japanese cards: search "… Japanese" and count only sales that say so (au-sold-filter).
+    if (item.lang === 'ja') { q += ' Japanese'; t = 'ja'; }
   }
   return { q: q.replace(/\s+/g, ' ').trim(), n, t };
 }
@@ -1111,7 +1151,7 @@ function openDetail(card, { entryKey = null } = {}) {
   els.detailBody.innerHTML = `
     <img class="detail-img" src="${esc(card.imageLarge || card.image)}" alt="${esc(card.name)}"
          onerror="this.onerror=null;this.src='${esc(card.image)}'">
-    <p class="detail-title">${esc(card.name)}</p>
+    <p class="detail-title">${esc(card.name)}${jpBadge(card)}</p>${card.jaName ? `<p class="detail-sub">${esc(card.jaName)}</p>` : ''}
     <p class="detail-sub">${esc(card.setName)} · #${esc(card.number)}</p>
     <div class="detail-price">
       <span class="price-label">Market price (AUD)</span>
@@ -1275,7 +1315,7 @@ const COLLECTION_KEY = 'pokescan.collection.v2';
 const OLD_HISTORY_KEY = 'pokescan.history.v1'; // one row per scan, no quantities
 const SORT_KEY = 'pokescan.collectionSort';
 const CARD_FIELDS = ['id', 'name', 'number', 'rarity', 'setId', 'setName', 'setSeries', 'setTotal',
-  'releaseDate', 'image', 'imageLarge', 'kind', 'type'];
+  'releaseDate', 'image', 'imageLarge', 'kind', 'type', 'lang', 'jaName'];
 
 // Near Mint keeps the plain key, so collections from before conditions existed are unchanged.
 const entryKeyOf = (id, variant, condition = null) =>
@@ -1485,7 +1525,7 @@ function renderCollection() {
         : formatAud(e.unit, rate.rate);
     item.innerHTML = `
       <div class="thumb"><img src="${esc(e.image)}" alt="" loading="lazy">${e.qty > 1 ? `<span class="qty">×${e.qty}</span>` : ''}</div>
-      <span class="name">${esc(e.name)}</span>
+      <span class="name">${esc(e.name)}${jpBadge(e)}</span>
       <span class="sub">${esc(e.setName)}${e.kind === 'sealed' ? '' : ` · #${esc(e.number)}`}</span>
       ${e.kind === 'sealed' ? `<span class="sub finish">${esc(e.type)}</span>` : ''}
       ${finish ? `<span class="sub finish">${esc(finish)}</span>` : ''}
@@ -2022,14 +2062,17 @@ async function renderSetsList() {
   for (const c of db.cards) counts.set(c.setId, (counts.get(c.setId) || 0) + 1);
   // Series, newest first; sets in each newest first.
   const bySeries = new Map();
-  for (const [id, [name, series, , date]] of Object.entries(db.sets)) {
+  for (const [id, [name, series, , date, lang]] of Object.entries(db.sets)) {
     if (!counts.get(id)) continue;
-    if (!bySeries.has(series)) bySeries.set(series, []);
-    bySeries.get(series).push({ id, name, date: date || '' });
+    const group = lang === 'ja' ? `Japanese · ${series}` : series;
+    if (!bySeries.has(group)) bySeries.set(group, []);
+    bySeries.get(group).push({ id, name, date: date || '' });
   }
+  // English series first, newest first; then the Japanese ones ("Other" and promos last).
+  const rank = (g) => (!g.series.startsWith('Japanese · ') ? 0 : /· (Other|Promos)$/.test(g.series) ? 2 : 1);
   const groups = [...bySeries].map(([series, sets]) => ({
     series, sets: sets.sort((a, b) => b.date.localeCompare(a.date)),
-  })).sort((a, b) => b.sets[0].date.localeCompare(a.sets[0].date));
+  })).sort((a, b) => rank(a) - rank(b) || b.sets[0].date.localeCompare(a.sets[0].date));
   setsEls.groups.innerHTML = groups.map((g) => `
     <section class="set-group" data-series="${esc(g.series)}">
       <h3 class="sub-title">${esc(g.series)}</h3>
@@ -2140,7 +2183,7 @@ async function renderSetPage() {
     const q = qtyById.get(c.id);
     item.innerHTML = `
       <div class="thumb"><img src="${esc(c.image)}" alt="" loading="lazy">${q ? `<span class="qty owned-mark" aria-label="Owned">${q > 1 ? '×' + q : '✓'}</span>` : ''}</div>
-      <span class="name">${esc(c.name)}</span>
+      <span class="name">${esc(c.name)}${jpBadge(c)}</span>
       <span class="sub">#${esc(c.number)}${c.rarity ? ` · ${esc(c.rarity)}` : ''}</span>
       <span class="price"></span>`;
     item.addEventListener('click', () => openDetail(c));

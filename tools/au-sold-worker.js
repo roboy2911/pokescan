@@ -38,7 +38,7 @@ export default {
     const url = new URL(request.url);
     const q = (url.searchParams.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 120);
     const n = (url.searchParams.get('n') || '').trim().slice(0, 20);
-    const t = ['o', 'r25', 'r30'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
+    const t = ['o', 'r25', 'r30', 'ja'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
     if (q.length < 3) return json({ ok: false, reason: 'query' }, allow, 400);
 
     const cacheDays = Number(env.CACHE_DAYS) || 3;

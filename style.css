@@ -720,3 +720,6 @@ a.btn { text-decoration: none; }
 .value-chart polyline { fill: none !important; }
 .value-chart .mark { stroke: var(--line, #333); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .value-trend .sub-title { margin: 8px 0 4px; font-size: 0.9rem; }
+
+.jp-badge { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 0.65em; font-weight: 700;
+  line-height: 1.5; vertical-align: middle; color: #fff; background: #bc002d; letter-spacing: 0.04em; }
