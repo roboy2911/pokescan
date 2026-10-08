@@ -98,3 +98,14 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   small line chart of the daily total, and "Your risers / fallers" (top 5 each, tap to open).
   From TCGplayer history × quantity × condition; hidden when the collection is empty.
   *Remove:* "remove value over time" (`git revert 98324b7`).
+
+## Owner request (Thu evening) — AU sold pre-check (10,000 credits/month plan)
+
+- **Feature: nightly AU sold pre-check for every single worth A$50+** — `6fe981c`. New GitHub job
+  "AU sold prices" (05:15 AEST, `tools/au-sold-precheck.mjs`) checks ~275 of the ~3,850 singles
+  worth A$50+ (each finish separately) each night, so each is re-checked about every 2 weeks, and
+  writes `data/au-sold.json`. The app reads it: those cards open with their AU sold price
+  instantly. Live lookups (cards not on the list) are capped at 50/day; total ≈ 9,750/month.
+  Sales filter shared with the worker (`tools/au-sold-filter.mjs`). Test run: 10 cards OK.
+  *Remove:* "remove AU pre-check" (`git revert 6fe981c`, and delete the workflow run history if wanted).
+- **Fix: Gold Star cards searched as "Gold Star"** (not ★, δ dropped) — `162809f`.
