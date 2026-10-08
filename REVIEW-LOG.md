@@ -82,3 +82,4 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   device 3 days (and in the worker's KV 3 days); collection value and trade list use it where known.
   Worker caps at 400 searches/day. *Remove:* "remove AU sold prices" (`git revert 46bf34d`; the worker can
   stay or be deleted in Cloudflare).
+- **Feature: AU sold price on the scan result** — `b4af18c`. Same as the card sheet; bulk mode uses saved answers only (no searches). *Remove:* `git revert b4af18c`.
