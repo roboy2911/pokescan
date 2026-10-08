@@ -9,7 +9,7 @@ on:
         default: 'charizard 4/102'
       sites:
         description: 'ebaySite values to try (comma-separated)'
-        default: 'AU,EBAY_AU,ebay.com.au,au'
+        default: 'ebay.com.au'
 
 permissions:
   contents: read
