@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copy worker code</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #111; --btn: #e3350d; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #eee; } }
+  body { margin: 0; padding: 24px 16px; font: 17px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  button { width: 100%; padding: 18px; font-size: 20px; font-weight: 700; border: 0; border-radius: 14px; background: var(--btn); color: #fff; }
+  #msg { margin: 16px 0; font-weight: 600; min-height: 1.5em; }
+  textarea { width: 100%; height: 40vh; box-sizing: border-box; font: 12px monospace; }
+  ol { padding-left: 20px; }
+</style>
+</head>
+<body>
+<button id="copy">Copy worker code</button>
+<p id="msg"></p>
+<ol>
+  <li>In Cloudflare's code editor, delete the Hello World code (tap in it, then long-press → Select All → delete).</li>
+  <li>Long-press → Paste, then tap Deploy.</li>
+</ol>
+<p>If the button doesn't work: tap in the box below, Select All, Copy.</p>
+<textarea id="code" readonly></textarea>
+<script>
+  const msg = document.getElementById('msg');
+  const box = document.getElementById('code');
+  fetch('au-sold-worker.js', { cache: 'no-store' }).then((r) => r.text()).then((t) => { box.value = t; })
+    .catch(() => { msg.textContent = 'Could not load the code — check your connection.'; });
+  document.getElementById('copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(box.value);
+    } catch {
+      box.focus(); box.select(); box.setSelectionRange(0, box.value.length);
+      document.execCommand('copy');
+    }
+    msg.textContent = `Copied ${box.value.split('\n').length} lines ✓ — now paste it into Cloudflare.`;
+  });
+</script>
+</body>
+</html>
