@@ -297,3 +297,7 @@ Claude "remove <name>".
 ## 7am Fri — run 17 (final)
 
 - Bug sweep: full regression passing (15 scripts + full-screen layout at 390×844, 375×667, 1280×800), no bugs found, no changes. Morning summary written at the top.
+
+## Owner report (Fri morning) — wrong AU prices
+
+- **Fix: AU sold prices counted other cards' sales** — `b0921aa`. Charmander SVP 044 showed A$7.49, made of a Geodude 44/64, an Ivysaur 44/130 and a Graveler 44/110. The filter never checked the name, and a promo's bare number matched any "44". Now the title must contain the card's name and a bare number must stand alone ("SVP 044", "#44"). The 87 saved promo answers were removed (tonight's pre-check redoes them first); the worker and phone caches were reset. *Remove:* `git revert b0921aa`.
