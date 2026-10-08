@@ -661,3 +661,5 @@ button.detail-price { width: 100%; border: 0; color: inherit; font: inherit; tex
 .bulk-text span { color: var(--muted); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bulk-bar .btn { min-height: 40px; white-space: nowrap; }
 #bulkBtn.on { color: var(--accent); background: rgba(255, 203, 5, .18); }
+
+a.btn { text-decoration: none; }

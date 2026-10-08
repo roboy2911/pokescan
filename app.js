@@ -686,6 +686,7 @@ async function showPrice(card) {
   }
   const pick = (v, remember = false) => {
     shownVariant = v.key;
+    els.priceNote.querySelector('.ebay-sold')?.setAttribute('href', ebaySoldUrl(card, v.key));
     if (remember) rememberFinish(card.id, v.key);
     els.priceValue.textContent = formatAud(v.usd, rate.rate);
     els.priceValue.className = 'price-value';
@@ -705,7 +706,8 @@ async function showPrice(card) {
   pick(variants.find((v) => v.key === lastFinish(card.id)) ?? variants[0]);
   els.priceNote.innerHTML = `TCGplayer (US) market price × ${rate.rate.toFixed(3)}${rate.approx ? ' (approx. rate)' : ''}`
     + `${info.updatedAt ? ` · ${esc(info.updatedAt)}` : ''}`
-    + `${info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}`;
+    + `${info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}`
+    + ` · <a class="ebay-sold" href="${esc(ebaySoldUrl(card, shownVariant))}" target="_blank" rel="noopener">AU sold ↗</a>`;
 }
 
 function hideResult() {
@@ -977,6 +979,36 @@ function cardRow(card, { score = null, onClick = () => openDetail(card), extra =
 }
 
 /* Card details. `entryKey` = the collection entry being shown (to edit or remove it). */
+/* eBay Australia sold listings for a card (or sealed product): sold + completed, located in
+ * Australia, most recently ended first. Opens in the browser, where you're signed in to eBay
+ * (it needs that to show sold results). Finishes that change the price narrow the search. */
+const EBAY_FINISH_WORDS = {
+  reverseHolofoil: 'reverse holo',
+  '1stEditionHolofoil': '1st edition',
+  '1stEditionNormal': '1st edition',
+};
+function ebaySoldUrl(item, variant = null) {
+  let q;
+  if (item.kind === 'sealed') {
+    q = item.name.replace(/\bPokemon\b/gi, '').replace(/[[\]()]/g, ' ');
+  } else {
+    // Search the number as it's printed (and so how sellers list it): "4/102" on older
+    // cards, "025/165" from Sword & Shield (2020) on; promos and gallery cards ("SWSH020",
+    // "TG05") have no set size.
+    const raw = String(item.number);
+    const coded = /^[A-Z]/i.test(raw) || /promo/i.test(item.setName || '');
+    const digits = raw.replace(/^0+(?=\d)/, '');
+    const num = !coded && (item.releaseDate || '') >= '2020' && /^\d+$/.test(digits) ? digits.padStart(3, '0') : digits;
+    const total = num !== digits ? String(item.setTotal).padStart(3, '0') : item.setTotal;
+    q = coded || !item.setTotal ? `${item.name} ${raw}` : `${item.name} ${num}/${total}`;
+    const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim() : EBAY_FINISH_WORDS[variant];
+    if (finish) q += ` ${finish}`;
+  }
+  q = `pokemon ${q}`.replace(/\s+/g, ' ').trim();
+  return `https://www.ebay.com.au/sch/i.html?_nkw=${encodeURIComponent(q)}&LH_Sold=1&LH_Complete=1&LH_PrefLoc=1&_sop=13`;
+}
+const ebayButton = (url) => `<a class="btn ghost ebay-sold" href="${esc(url)}" target="_blank" rel="noopener">Check AU sold prices on eBay ↗</a>`;
+
 function openDetail(card, { entryKey = null } = {}) {
   const inCollection = entryKey !== null;
   let variant = card.variant ?? null; // finish picked in this sheet
@@ -1013,6 +1045,7 @@ function openDetail(card, { entryKey = null } = {}) {
            </div>
            <button class="btn ghost" id="detailRemove">Remove from collection</button>`
         : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
+      ${ebayButton(ebaySoldUrl(card, variant))}
     </div>`;
 
   const showQty = () => {
@@ -1057,6 +1090,7 @@ function openDetail(card, { entryKey = null } = {}) {
     }
     const pick = (v, save) => {
       variant = v.key;
+      els.detailBody.querySelector('.ebay-sold')?.setAttribute('href', ebaySoldUrl(card, variant));
       priceEl.textContent = formatAud(v.usd, rate.rate);
       priceEl.className = 'price-value';
       $('detailChips').querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
@@ -1427,6 +1461,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
            </div>
            <button class="btn ghost" id="detailRemove">Remove from collection</button>`
         : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
+      ${ebayButton(ebaySoldUrl(item))}
       <a class="btn ghost" href="https://www.tcgplayer.com/product/${esc(productId)}" target="_blank" rel="noopener">View on TCGplayer ↗</a>
     </div>`;
   const showQty = () => {
