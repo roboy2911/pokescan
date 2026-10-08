@@ -173,3 +173,20 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   preferred language first, the other print offered as its twin). Loader written and saved
   (`scratchpad/ja-scan-loader.patch`: worker loads index-ja.bin after start-up and swaps it in; app
   folds JA/EN twins of the same name within 0.03). To do in the 11pm / 12am runs with part 3.
+
+## 11pm Thu — run 9 (Japanese 3/4)
+
+- **Feature: Japanese cards (3/4): prices, search and sets** — `62854e2`.
+  - **Prices:** `tools/prices-ja.mjs` → `data/prices-ja.json` (21,430 of 24,961 cards priced by
+    TCGplayer Japan, 0.8 MB, **~5 s** — the daily job stays well under 25 min). Downloaded only when a
+    Japanese card is priced. Not in market history yet (movers/highs stay English).
+  - **Search:** "pikachu jp", "terastal jp", "ピカチュウ" find Japanese cards; plain English queries
+    search the English cards only (same speed as before: 27 ms per filter, 11 ms in the search test).
+  - **Sets:** "Japanese · Scarlet & Violet", "Japanese · Mega", … after the English series
+    ("Japanese · Other / Promos" last — 130 vintage/promo groups without a set code).
+  - **JP badge** (results, set pages, collection, card sheet + Japanese name); collection, backup,
+    trade and condition keep the language. **AU sold** for Japanese cards searches "… Japanese" and
+    only counts sales that say Japanese (worker mode `ja`).
+  - Not done: scanning Japanese cards (switch planned for 12am), Japanese sealed product, Japanese
+    cards in Market movers.
+  - *Remove:* "remove Japanese cards" (revert the Japanese commits, newest first).
