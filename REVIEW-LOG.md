@@ -233,3 +233,7 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
 - Bug sweep: full regression passing (14 scripts), no bugs found.
 - **Tweak: header counts the Japanese cards** — `cf78ac0`. "20,583 cards · 24,961 JP" once they've loaded.
   *Remove:* `git revert cf78ac0`.
+
+## 4am Fri — run 14
+
+- Bug sweep: full regression passing (15 scripts, search 12.6 ms), no bugs found, no changes.
