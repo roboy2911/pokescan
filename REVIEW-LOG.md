@@ -227,3 +227,9 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
 - **Tweak: full-screen scan panel fits short phones** — `28eecc5`. On an iPhone SE the "Not it?" strip was
   cut off and "Add to collection" wrapped; screens up to 740 px tall now get a tighter panel.
   *Remove:* `git revert 28eecc5`.
+
+## 3am Fri — run 13
+
+- Bug sweep: full regression passing (14 scripts), no bugs found.
+- **Tweak: header counts the Japanese cards** — `cf78ac0`. "20,583 cards · 24,961 JP" once they've loaded.
+  *Remove:* `git revert cf78ac0`.
