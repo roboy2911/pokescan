@@ -190,3 +190,21 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   - Not done: scanning Japanese cards (switch planned for 12am), Japanese sealed product, Japanese
     cards in Market movers.
   - *Remove:* "remove Japanese cards" (revert the Japanese commits, newest first).
+
+## 12am Fri — run 10 (Japanese 4/4)
+
+- **Feature: "Scan Japanese cards" switch** — `7a76dec`. **JP** button with the camera controls, off by
+  default and remembered. Off → English index only, results identical to before (checked on the
+  upload path). On → loads `index-ja.bin` once (~1.3 s here) and searches both; a Japanese print and
+  the English print of the same artwork fold into one match (Japanese first, English first in
+  "Not it?"). Upload tests with it on: Japanese Leafeon ex and Charizard ex (151) found with their
+  English prints offered; Budew (two Japanese prints, same art) → "same artwork in more than one
+  set". JP badge on the scan result too.
+- Checked: all tabs, search (12 ms per search, as before), Sets, card sheet prices, collection,
+  backup, trade, condition, offline, AU sold, scan flow — no errors. English start-up unchanged:
+  cards-ja.json (3.1 MB) loads 3 s after start; prices-ja.json and index-ja.bin only when needed.
+  The daily price job runs the Japanese part in ~5 s, wrapped so it can't break English prices.
+- **All Japanese commits** (remove with "remove Japanese cards" = `git revert` newest first):
+  `7a76dec` (scan switch) · `62854e2` (prices, search, Sets, badges) · `8dfe9d9` (scanning index) ·
+  `a735cf7` (card list). Separate fix kept either way: `f3f7f16` (price job user agent).
+- Not done: Japanese sealed product; Japanese cards in Market movers / price history.

@@ -17,6 +17,11 @@ your phone's home screen like an app (PWA), and works offline after the first vi
 - **Release calendar** (top of Sets) — upcoming sets and ones out in the last 45 days, with
   each product's release date and market price vs Australian RRP (presale prices before
   release). Built daily into `data/releases.json` from TCGplayer's presale listings.
+- **Japanese cards** — 24,961 Japanese cards (401 sets) with TCGplayer Japan prices in AUD and a red
+  **JP** badge. Search with "jp" or in Japanese ("pikachu jp", "ピカチュウ"); Sets lists them under
+  "Japanese · …". To scan them, turn on **JP** with the camera controls (off by default: searching
+  both languages makes English scanning slightly less sure in bad light). A Japanese print and the
+  English print of the same artwork count as one match, with the other offered under "Not it?".
 - **Sets** — every English set by series; open one to see all its cards in number order
   with prices, which you own (All / Owned / Missing), your progress and its sealed product.
 - **Collection** — cards and sealed product with quantities and finishes; search, sort,
@@ -131,6 +136,18 @@ Set up (free Cloudflare account, works from a phone — no code pasting):
 3. Worker → **Settings → Variables and Secrets** → add Secret `SOLDCOMPS_API_KEY` (your `sc_…` key).
    `DAILY_LIMIT` and `CACHE_DAYS` are set in `wrangler.jsonc`.
 4. Put the worker's URL (`https://pokescan-au-sold.<you>.workers.dev`) in `AU_SOLD_URL` in `prices.js`.
+
+## Japanese cards
+
+- `tools/build-ja.mjs` builds `data/cards-ja.json` (cards, sets) and `data/ja-tcgmap.json` (TCGplayer
+  product per card and finish) from TCGplayer's Japanese catalogue (TCGCSV category 85), with
+  Japanese names and release dates from TCGdex where it has them. ~6 s: `node tools/build-ja.mjs`.
+- `tools/build-index-ja.mjs` fingerprints their pictures into `data/index-ja.bin` exactly like the
+  English index (download the pictures first, 200 px is plenty; it needs Playwright and a local
+  server — see the file).
+- `tools/prices-ja.mjs` (run by the daily price job, ~5 s) writes `data/prices-ja.json`.
+- The app adds the Japanese cards to its list a few seconds after start-up; their prices and the
+  Japanese scanning index download only when needed.
 
 ## Run it on your computer
 
