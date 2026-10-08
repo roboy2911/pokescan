@@ -31,3 +31,7 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   "AU sold ↗" on the scan result. Opens ebay.com.au sold + completed listings, located in
   Australia, newest first, searching the number as printed ("4/102", "025/165", "SWSH020").
   Works because you're signed in to eBay in your browser. *Remove:* "remove AU sold button" (`git revert f54012a`).
+- **Feature: Release calendar** (owner request) — `33a4e3e`. Top of the Sets tab: upcoming sets
+  (Delta Reign, 6 Nov) and ones out in the last 45 days, with each product's release date,
+  market/presale price in AUD and "+x% over RRP". Built daily into `data/releases.json`.
+  *Remove:* "remove release calendar" (`git revert 33a4e3e`).
