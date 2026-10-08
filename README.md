@@ -123,19 +123,14 @@ someone opens a card, the app asks it for that card's eBay.com.au sales by Austr
 in the last 90 days. It drops graded, other-language, lot and fake listings, and returns the median.
 Answers are kept for 3 days (re-opening a card is free), and it stops at 400 searches a day.
 
-Set up (free Cloudflare account, all in the browser):
-1. dash.cloudflare.com → **Compute (Workers)** → **Create** → **Start with Hello World** → name it
-   `pokescan-au-sold` → **Deploy**.
-2. **Edit code** → replace everything with `tools/au-sold-worker.js` → **Deploy**.
-3. **Storage & Databases → KV** → **Create** a namespace called `pokescan-au-sold`.
-4. Back in the worker → **Bindings** → **Add binding** → **KV namespace**: variable name `AU_KV`,
-   namespace `pokescan-au-sold` → **Add**.
-5. Worker → **Settings → Variables and Secrets** → **Add** → type **Secret**, name
-   `SOLDCOMPS_API_KEY`, value your `sc_…` key → **Deploy**. (Optional plain variables:
-   `DAILY_LIMIT`, `CACHE_DAYS`.)
-6. Copy the worker's URL (`https://pokescan-au-sold.<you>.workers.dev`) into `AU_SOLD_URL` in
-   `prices.js`.
-
+Set up (free Cloudflare account, works from a phone — no code pasting):
+1. dash.cloudflare.com → **Storage & databases → Workers KV** → create a namespace; its ID goes in
+   `wrangler.jsonc` (`AU_KV`).
+2. The worker (`pokescan-au-sold`) → **Settings → Build** → connect GitHub repo
+   `roboy2911/pokescan`, branch `main`. Cloudflare deploys it from `wrangler.jsonc` on every push.
+3. Worker → **Settings → Variables and Secrets** → add Secret `SOLDCOMPS_API_KEY` (your `sc_…` key).
+   `DAILY_LIMIT` and `CACHE_DAYS` are set in `wrangler.jsonc`.
+4. Put the worker's URL (`https://pokescan-au-sold.<you>.workers.dev`) in `AU_SOLD_URL` in `prices.js`.
 
 ## Run it on your computer
 
