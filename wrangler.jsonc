@@ -1,5 +1,6 @@
 // Cloudflare Worker for AU sold prices (tools/au-sold-worker.js). Deployed by Cloudflare's
 // Git integration from this repo (every push to main); the SoldComps key is a secret set in the Cloudflare dashboard.
+// PAUSED_UNTIL: the owner paused SoldComps searches (credits) until this date; saved answers still work.
 {
   "name": "pokescan-au-sold",
   "main": "tools/au-sold-worker.js",
@@ -8,5 +9,5 @@
   "kv_namespaces": [
     { "binding": "AU_KV", "id": "02feafd425954c419b1078e53cfc8dc9" }
   ],
-  "vars": { "DAILY_LIMIT": "50", "CACHE_DAYS": "14" }
+  "vars": { "DAILY_LIMIT": "50", "CACHE_DAYS": "14", "PAUSED_UNTIL": "2026-10-23" }
 }

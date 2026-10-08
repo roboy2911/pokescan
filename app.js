@@ -1181,6 +1181,7 @@ function auSoldText(au, tcgText) {
   const why = !au ? "Couldn't check Australian sales"
     : au.reason === 'few-sales' ? 'Not enough sales on eBay Australia to price it'
       : au.reason === 'daily-limit' ? 'Australian sold lookups are paused until tomorrow'
+        : au.reason === 'paused' ? 'New Australian sold lookups are paused for now'
         : "Couldn't check Australian sales";
   return `${why} — showing TCGplayer (US) market price`;
 }

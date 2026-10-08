@@ -9,7 +9,7 @@
 // Set up (Cloudflare dashboard): see README → "AU sold prices".
 //   Secret   SOLDCOMPS_API_KEY  your sc_… key
 //   KV       AU_KV              a KV namespace (cache + daily counter)
-//   Optional variables: DAILY_LIMIT (default 400; set to 50 in wrangler.jsonc), CACHE_DAYS (default 3; set to 14 in wrangler.jsonc)
+//   Optional variables: PAUSED_UNTIL ("YYYY-MM-DD": no searches before then), DAILY_LIMIT (default 400; set to 50 in wrangler.jsonc), CACHE_DAYS (default 3; set to 14 in wrangler.jsonc)
 //
 // GET /?q=<search words>&n=<card number as printed, e.g. 161/131>[&t=<mode>][&s=<set name>][&w=1]
 //   → { ok: true, aud, n, low, high, asOf, recent: [{ title, aud, date, url }], wide?, few? }
@@ -51,9 +51,13 @@ export default {
     const cached = env.AU_KV && await env.AU_KV.get(key, 'json');
     if (cached) return json({ ...cached, cached: true }, allow);
 
+    // Owner's pause (PAUSED_UNTIL in wrangler.jsonc, e.g. "2026-10-23"): saved answers only,
+    // no SoldComps searches.
+    const day = new Date().toISOString().slice(0, 10);
+    if (env.PAUSED_UNTIL && day < env.PAUSED_UNTIL) return json({ ok: false, reason: 'paused' }, allow);
+
     // Daily cap, counted per SoldComps search (approximate: KV counters are eventually
     // consistent, which is fine here).
-    const day = new Date().toISOString().slice(0, 10);
     const limit = Number(env.DAILY_LIMIT) || 400;
     const countKey = `count:${day}`;
     let used = Number(env.AU_KV && await env.AU_KV.get(countKey)) || 0;

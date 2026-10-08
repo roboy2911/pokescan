@@ -137,6 +137,12 @@ if (DRY_RUN) {
   for (const t of tonight.slice(0, 15)) console.log(`  A$${t.aud.toFixed(0)}  ${t.q}`);
   process.exit(0);
 }
+// Owner's pause: no SoldComps searches (credits) before this date.
+const PAUSED_UNTIL = '2026-10-23';
+if (today < PAUSED_UNTIL) {
+  console.log(`AU sold searches are paused until ${PAUSED_UNTIL} — nothing checked, no credits used.`);
+  process.exit(0);
+}
 if (!process.env.SOLDCOMPS_API_KEY) throw new Error('SOLDCOMPS_API_KEY is not set');
 
 let done = 0, priced = 0, failed = 0, stop = null, rateLimited = 0;

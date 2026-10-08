@@ -91,7 +91,7 @@ async function fetchAuSold(q, n, t, s, wide) {
     const res = await fetch(`${AU_SOLD_URL}?${new URLSearchParams({ q, n: n || '', ...(t && { t }), ...(s && { s }), ...(wide && { w: '1' }) })}`, { signal: ctrl.signal });
     const body = await res.json();
     // Don't remember "try again later" answers.
-    if (!res.ok || body.reason === 'daily-limit') return { ok: false, reason: body.reason || 'error' };
+    if (!res.ok || body.reason === 'daily-limit' || body.reason === 'paused') return { ok: false, reason: body.reason || 'error' };
     const store = auSoldStore();
     for (const [k, v] of Object.entries(store)) if (Date.now() - v.at > AU_SOLD_KEEP) delete store[k];
     store[auSoldKey(q, n, t)] = { ...body, at: Date.now() };
