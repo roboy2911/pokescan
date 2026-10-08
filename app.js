@@ -684,13 +684,33 @@ async function showPrice(card) {
     els.priceValue.textContent = info ? 'No price available' : "Couldn't load price";
     return;
   }
-  const pick = (v, remember = false) => {
-    shownVariant = v.key;
-    els.priceNote.querySelector('.ebay-sold')?.setAttribute('href', ebaySoldUrl(card, v.key));
-    if (remember) rememberFinish(card.id, v.key);
-    els.priceValue.textContent = formatAud(v.usd, rate.rate);
+  const label = els.priceValue.parentElement.querySelector('.price-label');
+  const tcgNote = `TCGplayer (US) market price × ${rate.rate.toFixed(3)}${rate.approx ? ' (approx. rate)' : ''}`
+    + `${info.updatedAt ? ` · ${esc(info.updatedAt)}` : ''}`
+    + `${info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}`;
+  const soldLink = () => ` · <a class="ebay-sold" href="${esc(ebaySoldUrl(card, shownVariant))}" target="_blank" rel="noopener">AU sold ↗</a>`;
+  // AU sold price (median of Australian eBay sales) replaces the main price when known.
+  // In bulk mode only saved answers are used, so a big scanning session costs no searches.
+  const showAu = (v, au) => {
+    const tcg = formatAud(v.usd, rate.rate);
+    els.priceValue.textContent = au?.ok ? formatAudPlain(au.aud) : tcg;
     els.priceValue.className = 'price-value';
+    label.textContent = au?.ok ? 'AU sold price' : 'Market price (AUD)';
+    els.priceNote.innerHTML = (au === undefined ? 'Checking Australian eBay sales… · ' : '')
+      + (au?.ok ? `${esc(auSoldText(au, tcg))}` : tcgNote) + soldLink();
+  };
+  let auReq = 0;
+  const pick = async (v, remember = false) => {
+    shownVariant = v.key;
+    if (remember) rememberFinish(card.id, v.key);
     els.variantChips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
+    const { q, n } = ebaySoldQuery(card, v.key);
+    const req = ++auReq;
+    const cached = auSoldCached(q, n);
+    if (cached || bulk.on) return showAu(v, cached);
+    showAu(v, undefined);
+    const au = await getAuSold(q, n);
+    if (token === priceToken && req === auReq && shownVariant === v.key) showAu(v, au);
   };
   if (variants.length > 1) {
     for (const v of variants) {
@@ -704,10 +724,6 @@ async function showPrice(card) {
     }
   }
   pick(variants.find((v) => v.key === lastFinish(card.id)) ?? variants[0]);
-  els.priceNote.innerHTML = `TCGplayer (US) market price × ${rate.rate.toFixed(3)}${rate.approx ? ' (approx. rate)' : ''}`
-    + `${info.updatedAt ? ` · ${esc(info.updatedAt)}` : ''}`
-    + `${info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}`
-    + ` · <a class="ebay-sold" href="${esc(ebaySoldUrl(card, shownVariant))}" target="_blank" rel="noopener">AU sold ↗</a>`;
 }
 
 function hideResult() {
