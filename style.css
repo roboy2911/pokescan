@@ -648,3 +648,16 @@ button.detail-price { width: 100%; border: 0; color: inherit; font: inherit; tex
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Bulk add */
+.bulk-bar {
+  position: absolute; left: 10px; right: 10px; bottom: 66px; z-index: 3;
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  background: rgba(14, 16, 21, .82); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border-radius: 14px; border: 1px solid var(--line);
+}
+.camera-wrap:not(.live) .bulk-bar { display: none; }
+.bulk-text { display: flex; flex-direction: column; min-width: 0; flex: 1; font-size: .85rem; }
+.bulk-text span { color: var(--muted); font-size: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bulk-bar .btn { min-height: 40px; white-space: nowrap; }
+#bulkBtn.on { color: var(--accent); background: rgba(255, 203, 5, .18); }

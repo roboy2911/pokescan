@@ -29,6 +29,10 @@
         <svg class="overlay" id="overlay" aria-hidden="true"><polygon id="outline" points=""></polygon></svg>
 
         <div id="status" class="pill" role="status" aria-live="polite" hidden></div>
+        <div id="bulkBar" class="bulk-bar" hidden>
+          <div class="bulk-text"><b id="bulkCount"></b><span id="bulkLast"></span></div>
+          <button type="button" id="bulkUndo" class="btn small secondary">Undo last</button>
+        </div>
 
         <div class="camera-msg" id="cameraMsg">
           <div class="camera-msg-icon" aria-hidden="true">
@@ -42,6 +46,9 @@
         <div class="cam-controls" id="camControls">
           <button id="stopCamBtn" class="icon-btn" aria-label="Stop camera">
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+          <button id="bulkBtn" class="icon-btn" aria-label="Bulk add: add every card found" aria-pressed="false">
+            <svg viewBox="0 0 24 24"><rect x="7" y="3" width="12" height="16" rx="2"/><path d="M5 7v12a2 2 0 0 0 2 2h9"/><path d="M13 8v6M10 11h6"/></svg>
           </button>
           <button id="soundBtn" class="icon-btn" aria-label="Beep when a card is found" aria-pressed="false">
             <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="wave" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="mute" d="M16 9l6 6M22 9l-6 6"/></svg>

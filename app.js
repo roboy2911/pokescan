@@ -455,6 +455,16 @@ function onFrame(matches, where, region) {
   }
   const [best] = matches;
   const confident = isConfident(matches) || !!fusedCard;
+  bulkTrack(best);
+  // Bulk add: the card just added stays "done" while it's in view, even on unsure frames.
+  if (bulk.on && bulk.last && best && best.score >= 0.75 && best.card.name === bulk.last.name
+    && !(confident && bulkCanReadd(best.card))) {
+    showOutline(null, region);
+    setStatus(els.status, 'Added — point at the next card', 'busy');
+    auto.lastKey = null;
+    auto.streak = 0;
+    return;
+  }
   // Confident → that exact card. Close call with a good score → probably a reprint of the
   // same artwork, so track by name. Otherwise nothing.
   const key = confident ? `id:${best.card.id}`
@@ -478,6 +488,12 @@ function onFrame(matches, where, region) {
     return;
   }
 
+  // Bulk add: add it and keep scanning instead of stopping on the result.
+  if (bulk.on && confident) {
+    bulkAdd(best.card);
+    return;
+  }
+
   // Locked in.
   auto.state = 'locked';
   auto.lockedKey = key;
@@ -487,6 +503,132 @@ function onFrame(matches, where, region) {
   auto.recent = [];
   renderScanResults(matches, { found: confident });
 }
+
+/* ------------------------------------------------------------------ */
+/* Bulk add: scan a stack or binder without tapping for every card     */
+/* ------------------------------------------------------------------ */
+
+/* While on, each card found with confidence is added straight to the collection (with the
+ * finish last picked for it) and scanning carries on. The same card isn't added twice while
+ * it's held in view: it only re-arms after it has been out of view for several frames in a
+ * row and at least BULK_ABSENT_MS, and at least BULK_REPEAT_MS after it was added — so a
+ * second copy swapped in is added again, but one held still (or a glitchy frame) isn't. */
+const BULK_KEY = 'pokescan.bulk';
+const BULK_ABSENT_FRAMES = 3;
+const BULK_ABSENT_MS = 1000;
+const BULK_REPEAT_MS = 2000;
+const bulk = {
+  on: false,
+  last: null,     // { id, name, at, absentFrames, absentSince, rearmed }
+  session: { count: 0, usd: 0, byId: new Map(), log: [] },
+};
+try { bulk.on = localStorage.getItem(BULK_KEY) === '1'; } catch { /* no storage */ }
+
+/* Keep track of whether the last-added card is still in view. */
+function bulkTrack(best) {
+  const last = bulk.last;
+  if (!last) return;
+  const present = best && best.score >= 0.75 && best.card.name === last.name;
+  if (present) {
+    last.absentFrames = 0;
+    last.absentSince = null;
+    return;
+  }
+  last.absentFrames++;
+  last.absentSince ??= performance.now();
+  if (last.absentFrames >= BULK_ABSENT_FRAMES && performance.now() - last.absentSince >= BULK_ABSENT_MS) last.rearmed = true;
+}
+
+/* May this card be added (again)? A different card always may. */
+function bulkCanReadd(card) {
+  const last = bulk.last;
+  return !last || card.id !== last.id || (last.rearmed && performance.now() - last.at >= BULK_REPEAT_MS);
+}
+
+function bulkAdd(card) {
+  auto.lastKey = null;
+  auto.streak = 0;
+  auto.recent = [];
+  if (!bulkCanReadd(card)) {
+    setStatus(els.status, 'Added — point at the next card', 'busy');
+    return;
+  }
+  const variant = lastFinish(card.id);
+  addToCollection(card, variant);
+  const s = bulk.session;
+  const n = (s.byId.get(card.id) || 0) + 1;
+  s.byId.set(card.id, n);
+  s.count++;
+  const item = { card, variant, usd: 0 };
+  s.log.push(item);
+  bulk.last = { id: card.id, name: card.name, at: performance.now(), absentFrames: 0, absentSince: null, rearmed: false };
+  navigator.vibrate?.(40);
+  beep();
+  const label = `${card.name}${n > 1 ? ` ×${n}` : ''}`;
+  toast(`Added ${label}`);
+  setStatus(els.status, `Added ${esc(label)} — next card`, 'ok');
+  renderBulkBar(label);
+  // Add its price to the session total once known.
+  getTcgPrices([card.id]).then((prices) => {
+    item.usd = cardUsd({ variant }, prices[card.id]) ?? 0;
+    s.usd += item.usd;
+    renderBulkBar();
+  });
+}
+
+function bulkUndo() {
+  const s = bulk.session;
+  const item = s.log.pop();
+  if (!item) return;
+  const key = entryKeyOf(item.card.id, item.variant);
+  const list = loadCollection();
+  const entry = list.find((e) => e.key === key);
+  if (entry) {
+    if (entry.qty > 1) entry.qty--;
+    else list.splice(list.indexOf(entry), 1);
+    saveCollection(list);
+  }
+  s.count--;
+  s.usd -= item.usd;
+  s.byId.set(item.card.id, (s.byId.get(item.card.id) || 1) - 1);
+  if (bulk.last?.id === item.card.id) bulk.last = null; // it can be scanned again straight away
+  toast(`Removed ${item.card.name}`);
+  renderBulkBar(s.log.length ? undefined : '');
+}
+
+let bulkLastLabel = '';
+async function renderBulkBar(label) {
+  if (label !== undefined) bulkLastLabel = label;
+  const bar = $('bulkBar');
+  bar.hidden = !bulk.on;
+  if (!bulk.on) return;
+  const s = bulk.session;
+  const rate = await getAudRate();
+  $('bulkCount').textContent = `${s.count} card${s.count === 1 ? '' : 's'} · ${formatAud(Math.max(0, s.usd), rate.rate)} added`;
+  $('bulkLast').textContent = bulkLastLabel ? `Last: ${bulkLastLabel}` : 'Bulk add on — point at a card';
+  $('bulkUndo').disabled = !s.log.length;
+}
+
+function showBulk() {
+  const btn = $('bulkBtn');
+  btn.classList.toggle('on', bulk.on);
+  btn.setAttribute('aria-pressed', String(bulk.on));
+  renderBulkBar();
+}
+
+$('bulkBtn').addEventListener('click', () => {
+  bulk.on = !bulk.on;
+  try { localStorage.setItem(BULK_KEY, bulk.on ? '1' : '0'); } catch { /* no storage */ }
+  if (bulk.on) {
+    bulk.session = { count: 0, usd: 0, byId: new Map(), log: [] };
+    bulk.last = null;
+    bulkLastLabel = '';
+  }
+  showBulk();
+  toast(bulk.on ? 'Bulk add on: cards are added as they’re found' : 'Bulk add off');
+});
+$('bulkUndo').addEventListener('click', bulkUndo);
+showBulk();
 
 /* ------------------------------------------------------------------ */
 /* Photo upload                                                        */
