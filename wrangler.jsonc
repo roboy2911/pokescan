@@ -1,5 +1,5 @@
 // Cloudflare Worker for AU sold prices (tools/au-sold-worker.js). Deployed by Cloudflare's
-// Git integration from this repo; the SoldComps key is a secret set in the Cloudflare dashboard.
+// Git integration from this repo (every push to main); the SoldComps key is a secret set in the Cloudflare dashboard.
 {
   "name": "pokescan-au-sold",
   "main": "tools/au-sold-worker.js",
