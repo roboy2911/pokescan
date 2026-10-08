@@ -179,6 +179,19 @@
           <option value="">All sets</option>
         </select>
       </div>
+      <div class="trade-bar" id="tradeBar" hidden>
+        <span id="tradeTotal"></span>
+        <select id="tradePct" aria-label="List prices at">
+          <option value="100">at 100% of market</option>
+          <option value="95">at 95%</option>
+          <option value="90">at 90%</option>
+          <option value="85">at 85%</option>
+          <option value="80">at 80%</option>
+          <option value="75">at 75%</option>
+          <option value="70">at 70%</option>
+        </select>
+        <button type="button" id="tradeShare" class="btn primary small">Share list</button>
+      </div>
       <div id="historyList" class="grid"></div>
       <p class="muted small-note">Saved on this device only — use ••• → Back up now and then. Tap a card to change its finish or quantity.</p>
     </section>

@@ -682,3 +682,17 @@ a.btn { text-decoration: none; }
 .rel-price { display: flex; flex-direction: column; align-items: flex-end; font-weight: 700; font-size: .9rem; white-space: nowrap; }
 .rel-price small { font-size: .72rem; font-weight: 600; }
 .release details summary { cursor: pointer; color: var(--muted); font-size: .82rem; padding: 8px 0 2px; }
+
+/* Trade / sale list */
+.toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 2px; min-height: 44px; cursor: pointer; }
+.toggle-row input { width: 22px; height: 22px; accent-color: var(--accent); }
+.trade-bar {
+  display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+  background: var(--panel); border: 1px solid rgba(255, 203, 5, .45); border-radius: 14px; padding: 10px 12px; margin-bottom: 12px;
+}
+.trade-bar #tradeTotal { grid-column: 1 / -1; font-weight: 700; }
+.trade-bar select {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 10px; font: inherit; font-size: .9rem; min-width: 0;
+}
+.trade-bar .btn { min-height: 40px; }

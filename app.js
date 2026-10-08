@@ -1048,6 +1048,7 @@ function openDetail(card, { entryKey = null } = {}) {
                <button type="button" class="step" id="qtyUp" aria-label="One more">＋</button>
              </div>
            </div>
+           <label class="toggle-row"><span>For trade / sale</span><input type="checkbox" id="tradeToggle"></label>
            <button class="btn ghost" id="detailRemove">Remove from collection</button>`
         : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
       ${ebayButton(ebaySoldUrl(card, variant))}
@@ -1080,6 +1081,7 @@ function openDetail(card, { entryKey = null } = {}) {
   $('qtyDown')?.addEventListener('click', () => changeQty(-1));
   $('qtyUp')?.addEventListener('click', () => changeQty(1));
   if (inCollection) showQty();
+  wireTradeToggle(() => entryKey);
 
   els.detail.showModal();
 
@@ -1202,6 +1204,7 @@ function setEntryVariant(key, variant) {
   const other = list.find((e) => e.key === newKey);
   if (other) {
     other.qty += entry.qty;
+    other.trade ||= entry.trade;
     list.splice(list.indexOf(entry), 1);
   } else {
     Object.assign(entry, { key: newKey, variant });
@@ -1283,10 +1286,11 @@ function renderCollection() {
 
   renderSetFilter(list);
   renderValueBySet(list, rate);
+  renderTradeBar(list, rate);
   const q = normName(els.collectionSearch.value.trim());
   const onlySet = els.collectionSet.value;
   const shown = list
-    .filter((e) => !onlySet || e.setId === onlySet)
+    .filter((e) => (onlySet === TRADE_FILTER ? e.trade : !onlySet || e.setId === onlySet))
     .filter((e) => !q || normName(`${e.name} ${e.setName} ${e.number} ${variantLabel(e.variant)}`).includes(q))
     .sort(SORTS[els.collectionSort.value] ?? SORTS.recent);
 
@@ -1353,16 +1357,106 @@ function renderSetFilter(list) {
   const sets = new Map();
   for (const e of list) if (e.setId && !sets.has(e.setId)) sets.set(e.setId, e);
   const want = [...sets.values()].sort((a, b) => (b.releaseDate || '').localeCompare(a.releaseDate || ''));
-  const key = want.map((e) => e.setId).join(',');
+  const trading = list.filter((e) => e.trade).length;
+  const key = want.map((e) => e.setId).join(',') + `|${trading}`;
   if (els.collectionSet.dataset.key === key) return;
   const current = els.collectionSet.value;
   els.collectionSet.innerHTML = '<option value="">All sets</option>'
+    + (trading ? `<option value="${TRADE_FILTER}">⇄ Trade / sale list (${trading})</option>` : '')
     + want.map((e) => `<option value="${esc(e.setId)}">${esc(e.setName)}</option>`).join('');
-  els.collectionSet.value = sets.has(current) ? current : '';
+  els.collectionSet.value = sets.has(current) || (current === TRADE_FILTER && trading) ? current : '';
   els.collectionSet.dataset.key = key;
-  els.collectionSet.hidden = want.length < 2;
+  els.collectionSet.hidden = want.length < 2 && !trading;
 }
 els.collectionSet.addEventListener('change', renderCollection);
+
+/* ------------------------------------------------------------------ */
+/* Trade / sale list: flag items in their sheet, share them as text    */
+/* ------------------------------------------------------------------ */
+
+const TRADE_FILTER = '__trade';
+const TRADE_PCT_KEY = 'pokescan.tradePct';
+
+/* The "For trade / sale" switch in a collection item's sheet. */
+function wireTradeToggle(getKey) {
+  const box = $('tradeToggle');
+  if (!box) return;
+  box.checked = !!loadCollection().find((e) => e.key === getKey())?.trade;
+  box.addEventListener('change', () => {
+    updateEntry(getKey(), (e) => {
+      if (box.checked) e.trade = true;
+      else delete e.trade;
+    });
+    renderCollection();
+    toast(box.checked ? 'Added to your trade / sale list' : 'Removed from your trade / sale list');
+  });
+}
+
+function tradePct() {
+  try { return Number(localStorage.getItem(TRADE_PCT_KEY)) || 100; } catch { return 100; }
+}
+
+/* Bar above the trade list: total, "list at N%" and Share. */
+function renderTradeBar(list, rate) {
+  const bar = $('tradeBar');
+  const on = els.collectionSet.value === TRADE_FILTER;
+  bar.hidden = !on;
+  if (!on) return;
+  const items = list.filter((e) => e.trade);
+  const usd = items.reduce((sum, e) => sum + (e.total ?? 0), 0);
+  const pct = tradePct();
+  $('tradePct').value = String(pct);
+  const n = `${items.length} item${items.length === 1 ? '' : 's'}`;
+  $('tradeTotal').textContent = rate
+    ? `${n} · ${formatAud(usd * pct / 100, rate.rate)}${pct !== 100 ? ` (${pct}% of ${formatAud(usd, rate.rate)})` : ''}`
+    : n;
+}
+
+/* The list as plain text, ready to paste into Facebook / Discord / Messenger. */
+function tradeListText() {
+  const { rate, prices, sealed } = collectionPrices ?? {};
+  const pct = tradePct();
+  // "A$" so it's clear to people outside Australia too.
+  const price = (usd) => (usd == null || !rate ? 'offers' : formatAud(usd * pct / 100, rate.rate).replace(/^\$/, 'A$'));
+  let total = 0;
+  const lines = loadCollection().filter((e) => e.trade).sort(SORTS.set).map((e) => {
+    const unit = !prices ? null : e.kind === 'sealed' ? sealed?.byKey.get(e.id)?.usd ?? null : cardUsd(e, prices[e.id]);
+    if (unit != null) total += unit * e.qty;
+    const qty = e.qty > 1 ? ` ×${e.qty}` : '';
+    const each = e.qty > 1 && unit != null ? ' each' : '';
+    if (e.kind === 'sealed') return `${e.name} · ${e.type}${qty} · ${price(unit)}${each}`;
+    const num = `#${e.number}${e.setTotal ? '/' + e.setTotal : ''}`;
+    const finish = e.variant ? ` · ${variantLabel(e.variant)}` : '';
+    return `${e.name} · ${e.setName} ${num}${finish}${qty} · ${price(unit)}${each}`;
+  });
+  const note = pct !== 100 ? ` (${pct}% of TCGplayer market)` : ' (TCGplayer market)';
+  return ['Pokémon for trade / sale:', ...lines, '', `Total: ${price(total)}${note}`].join('\n');
+}
+
+async function shareTradeList() {
+  if (!collectionPrices) await refreshCollection();
+  const text = tradeListText();
+  if (navigator.share) {
+    try {
+      await navigator.share({ text });
+      return;
+    } catch (err) {
+      if (err?.name === 'AbortError') return; // closed the share sheet
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Trade list copied — paste it anywhere');
+  } catch {
+    toast('Couldn’t copy the list on this device');
+  }
+}
+
+$('tradePct').addEventListener('change', () => {
+  try { localStorage.setItem(TRADE_PCT_KEY, $('tradePct').value); } catch { /* no storage */ }
+  renderCollection();
+});
+$('tradeShare').addEventListener('click', shareTradeList);
 
 /* Value per set (biggest first), under the total. */
 function renderValueBySet(list, rate) {
@@ -1419,8 +1513,14 @@ $('importFile').addEventListener('change', async () => {
     const entry = { ...pickCard(e), key: entryKeyOf(e.id, e.variant), variant: e.variant ?? null,
       qty: Math.max(1, Math.floor(Number(e.qty) || 1)), addedAt: e.addedAt || e.scannedAt || '' };
     const have = list.find((x) => x.key === entry.key);
-    if (have) have.qty = Math.max(have.qty, entry.qty);
-    else { list.push(entry); added++; }
+    if (e.trade) entry.trade = true;
+    if (have) {
+      have.qty = Math.max(have.qty, entry.qty);
+      have.trade ||= entry.trade;
+    } else {
+      list.push(entry);
+      added++;
+    }
   }
   saveCollection(list);
   refreshCollection();
@@ -1466,6 +1566,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
                <button type="button" class="step" id="qtyUp" aria-label="One more">＋</button>
              </div>
            </div>
+           <label class="toggle-row"><span>For trade / sale</span><input type="checkbox" id="tradeToggle"></label>
            <button class="btn ghost" id="detailRemove">Remove from collection</button>`
         : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
       ${ebayButton(ebaySoldUrl(item))}
@@ -1496,6 +1597,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
   $('qtyDown')?.addEventListener('click', () => changeQty(-1));
   $('qtyUp')?.addEventListener('click', () => changeQty(1));
   if (inCollection) showQty();
+  wireTradeToggle(() => entryKey);
   els.detail.showModal();
 
   const [sealed, rate] = await Promise.all([getSealed(), getAudRate()]);
