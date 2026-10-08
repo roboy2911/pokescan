@@ -109,3 +109,26 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   Sales filter shared with the worker (`tools/au-sold-filter.mjs`). Test run: 10 cards OK.
   *Remove:* "remove AU pre-check" (`git revert 6fe981c`, and delete the workflow run history if wanted).
 - **Fix: Gold Star cards searched as "Gold Star"** (not ★, δ dropped) — `162809f`.
+
+## 9pm Thu — run 7 (Japanese 1/4)
+
+- Bug sweep: regression scripts passing.
+- **Fix: daily price job names the app in its requests** — `f3f7f16`. TCGCSV now blocks Node's default
+  user agent (401 "Your User-Agent has been blocked"); yesterday's GitHub run still worked, but this
+  keeps the TCGplayer, sealed and new-set prices from silently dropping out. *Remove:* `git revert f3f7f16`.
+- **Feature: Japanese cards (1/4): card list** — `a735cf7`. `tools/build-ja.mjs` →
+  `data/cards-ja.json` (**24,961 cards, 401 sets, all with a picture**; ids `ja:<set>-<number>`,
+  same row shape as cards.json plus the Japanese name) and `data/ja-tcgmap.json` (TCGplayer product
+  per card and finish, for prices). Not used by the app yet. Rebuild: `node tools/build-ja.mjs` (~6 s).
+  - **Sources:** TCGdex's Japanese API is reachable but incomplete — 68 of its 184 sets have no card
+    list (most of XY, Sun & Moon, early Sword & Shield) and only ~3,900 cards have images. So the main
+    source is TCGplayer's Japanese catalogue (TCGCSV category 85, 460 groups: English names, numbers,
+    rarities, photos, Mirror Foil / Master Ball printings); TCGdex adds Japanese names and real release
+    dates where it covers the set (9,267 cards).
+  - **Mapping:** by set code (TCGCSV abbreviation ↔ TCGdex id) and card number; 120 of TCGdex's 184
+    sets match. Prices map 1:1 (the cards come from TCGplayer's own list).
+  - **Blockers / to do:** 130 sets (mostly vintage/promo groups without a set code) are filed under
+    "Other" — group them better in part 3. Pictures are TCGplayer photos (400 px), fine for the index.
+  - **Next (10pm, part 2):** fingerprint the 24,961 pictures with fingerprint.js into a separate
+    `data/index-ja.bin` the app loads after the English index; check English accuracy is no worse.
+  - *Remove:* "remove Japanese cards" (revert the Japanese commits, newest first).
