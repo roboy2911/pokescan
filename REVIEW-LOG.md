@@ -132,3 +132,15 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   - **Next (10pm, part 2):** fingerprint the 24,961 pictures with fingerprint.js into a separate
     `data/index-ja.bin` the app loads after the English index; check English accuracy is no worse.
   - *Remove:* "remove Japanese cards" (revert the Japanese commits, newest first).
+
+## AU sold — full pre-check (owner request, Thu night)
+
+- Full run (60/min): **3,228 checked → 1,611 priced, 1,617 too few Australian sales**, 23 failed
+  (SoldComps "upstream blocked" / scrape errors). Stopped at 55 min on SoldComps' 60/min rate limit
+  (its retries count too) — the rest is being finished at 50/min (656 cards). Credits used ≈ 3,900.
+- Note: SoldComps' rate-limit reply says `"plan": "free"` — worth checking on the SoldComps
+  dashboard that the 10,000-credit plan is attached to this key.
+- **Fix: Classic Collection reprints vs originals** — `2d7823e`. Base Set Charizard 4/102 was priced from
+  Celebrations / 30th Celebration reprint sales (A$285), and the reprints were searched as "4/25".
+  Reprints now search the original's printed number and count only their own sales; the 53 reprinted
+  originals ignore reprint sales. *Remove:* `git revert 2d7823e`.
