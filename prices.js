@@ -34,7 +34,8 @@ const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v1';
 const AU_SOLD_MAX_AGE = 14 * 86400 * 1000;
 const AU_SOLD_KEEP = 45 * 86400 * 1000;
 let auSoldMem = null;
-const auSoldKey = (q, n) => `${q.toLowerCase()}|${(n || '').toLowerCase()}`;
+// t: reprint mode ('o', 'r25', 'r30', or '' — see tools/au-sold-filter.mjs).
+const auSoldKey = (q, n, t = '') => `${q.toLowerCase()}|${(n || '').toLowerCase()}${t ? `|${t}` : ''}`;
 const auSoldStore = () => (auSoldMem ??= readCache(AU_SOLD_CACHE_KEY) || {});
 
 /* data/au-sold.json: the nightly pre-check of every single worth A$50+ (tools/au-sold-precheck.mjs).
@@ -53,8 +54,8 @@ function auPreEntry(key) {
 
 /* A saved answer — the newer of this device's and the nightly pre-check's: fresh only (for
  * the card sheet), or any age (for the collection value). */
-function auSoldCached(q, n, { anyAge = false } = {}) {
-  const key = auSoldKey(q, n);
+function auSoldCached(q, n, t = '', { anyAge = false } = {}) {
+  const key = auSoldKey(q, n, t);
   const own = auSoldStore()[key];
   const pre = auPreEntry(key);
   const hit = !own ? pre : !pre ? own : own.at >= pre.at ? own : pre;
@@ -65,29 +66,29 @@ function auSoldCached(q, n, { anyAge = false } = {}) {
 
 /* { ok, aud, n, low, high, recent, asOf } or { ok: false, reason }; null if it couldn't ask. */
 const auSoldPending = new Map(); // one search per card even if two screens ask at once
-async function getAuSold(q, n) {
+async function getAuSold(q, n, t = '') {
   await auPreReady;
-  const hit = auSoldCached(q, n);
+  const hit = auSoldCached(q, n, t);
   if (hit || !AU_SOLD_URL) return Promise.resolve(hit);
-  const key = auSoldKey(q, n);
+  const key = auSoldKey(q, n, t);
   if (!auSoldPending.has(key)) {
-    auSoldPending.set(key, fetchAuSold(q, n).finally(() => auSoldPending.delete(key)));
+    auSoldPending.set(key, fetchAuSold(q, n, t).finally(() => auSoldPending.delete(key)));
   }
   return auSoldPending.get(key);
 }
-async function fetchAuSold(q, n) {
+async function fetchAuSold(q, n, t) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60000); // a new search takes ~10–30 s
   try {
-    const res = await fetch(`${AU_SOLD_URL}?${new URLSearchParams({ q, n: n || '' })}`, { signal: ctrl.signal });
+    const res = await fetch(`${AU_SOLD_URL}?${new URLSearchParams({ q, n: n || '', ...(t && { t }) })}`, { signal: ctrl.signal });
     const body = await res.json();
     // Don't remember "try again later" answers.
     if (!res.ok || body.reason === 'daily-limit') return { ok: false, reason: body.reason || 'error' };
     const store = auSoldStore();
     for (const [k, v] of Object.entries(store)) if (Date.now() - v.at > AU_SOLD_KEEP) delete store[k];
-    store[auSoldKey(q, n)] = { ...body, at: Date.now() };
+    store[auSoldKey(q, n, t)] = { ...body, at: Date.now() };
     writeCache(AU_SOLD_CACHE_KEY, store);
-    return store[auSoldKey(q, n)];
+    return store[auSoldKey(q, n, t)];
   } catch {
     return null;
   } finally {

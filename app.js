@@ -704,12 +704,12 @@ async function showPrice(card) {
     shownVariant = v.key;
     if (remember) rememberFinish(card.id, v.key);
     els.variantChips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
-    const { q, n } = ebaySoldQuery(card, v.key);
+    const { q, n, t } = ebaySoldQuery(card, v.key);
     const req = ++auReq;
-    const cached = auSoldCached(q, n);
+    const cached = auSoldCached(q, n, t);
     if (cached || bulk.on) return showAu(v, cached);
     showAu(v, undefined);
-    const au = await getAuSold(q, n);
+    const au = await getAuSold(q, n, t);
     if (token === priceToken && req === auReq && shownVariant === v.key) showAu(v, au);
   };
   if (variants.length > 1) {
@@ -1003,28 +1003,58 @@ const EBAY_FINISH_WORDS = {
   '1stEditionHolofoil': '1st edition',
   '1stEditionNormal': '1st edition',
 };
-/* What to search eBay for: { q: words, n: the number as printed ('' for sealed). */
+/* Classic Collection reprints carry the original card's name and printed number (Charizard
+ * "4/102"), so they're searched as the original and told apart by the words in sale titles
+ * (tools/au-sold-filter.mjs). Built once from the card list: reprint id → original card, and the
+ * originals that were reprinted. */
+const REPRINT_SETS = { cel25c: 'r25', me55c: 'r30' };
+let reprintIndex = null;
+function reprintInfo(item) {
+  if (!db.cards) return {};
+  if (!reprintIndex) {
+    const earliest = new Map();
+    for (const c of db.cards) {
+      if (REPRINT_SETS[c.setId]) continue;
+      const k = `${c.name}|${c.number}`;
+      if (!earliest.has(k) || (c.releaseDate || '') < (earliest.get(k).releaseDate || '')) earliest.set(k, c);
+    }
+    reprintIndex = { of: new Map(), originals: new Set() };
+    for (const c of db.cards) {
+      const o = REPRINT_SETS[c.setId] && earliest.get(`${c.name}|${c.number}`);
+      if (o && (o.releaseDate || '') < (c.releaseDate || '')) { reprintIndex.of.set(c.id, o); reprintIndex.originals.add(o.id); }
+    }
+  }
+  const original = reprintIndex.of.get(item.id);
+  if (original) return { original, t: REPRINT_SETS[item.setId] };
+  return reprintIndex.originals.has(item.id) ? { t: 'o' } : {};
+}
+
+/* What to search eBay for: { q: words, n: the number as printed ('' for sealed), t: reprint mode }. */
 function ebaySoldQuery(item, variant = null) {
   let q;
   let n = '';
+  let t = '';
   if (item.kind === 'sealed') {
     q = item.name.replace(/\bPokemon\b/gi, '').replace(/[[\]()]/g, ' ');
   } else {
     // Search the number as it's printed (and so how sellers list it): "4/102" on older
     // cards, "025/165" from Sword & Shield (2020) on; promos and gallery cards ("SWSH020",
     // "TG05") have no set size.
-    const raw = String(item.number);
-    const coded = /^[A-Z]/i.test(raw) || /promo/i.test(item.setName || '');
+    const rp = reprintInfo(item);
+    t = rp.t || '';
+    const printed = rp.original ?? item; // a reprint is printed with the original's number
+    const raw = String(printed.number);
+    const coded = /^[A-Z]/i.test(raw) || /promo/i.test(printed.setName || '');
     const digits = raw.replace(/^0+(?=\d)/, '');
-    const num = !coded && (item.releaseDate || '') >= '2020' && /^\d+$/.test(digits) ? digits.padStart(3, '0') : digits;
-    const total = num !== digits ? String(item.setTotal).padStart(3, '0') : item.setTotal;
-    n = coded || !item.setTotal ? raw : `${num}/${total}`;
+    const num = !coded && (printed.releaseDate || '') >= '2020' && /^\d+$/.test(digits) ? digits.padStart(3, '0') : digits;
+    const total = num !== digits ? String(printed.setTotal).padStart(3, '0') : printed.setTotal;
+    n = coded || !printed.setTotal ? raw : `${num}/${total}`;
     // Sellers write "Gold Star", not ★ (and often leave out δ).
     q = `${item.name.replace(/★/g, ' Gold Star').replace(/δ/g, '')} ${n}`;
     const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim() : EBAY_FINISH_WORDS[variant];
     if (finish) q += ` ${finish}`;
   }
-  return { q: q.replace(/\s+/g, ' ').trim(), n };
+  return { q: q.replace(/\s+/g, ' ').trim(), n, t };
 }
 function ebaySoldUrl(item, variant = null) {
   const q = `pokemon ${ebaySoldQuery(item, variant).q}`;
@@ -1198,12 +1228,12 @@ function openDetail(card, { entryKey = null } = {}) {
       if (inCollection && au?.ok) renderCollection();
     };
     const lookupAu = async (v) => {
-      const { q, n } = ebaySoldQuery(card, v.key);
+      const { q, n, t } = ebaySoldQuery(card, v.key);
       const req = ++auReq;
-      const cached = auSoldCached(q, n);
+      const cached = auSoldCached(q, n, t);
       showAu(v, cached ?? undefined);
       if (cached) return;
-      const au = await getAuSold(q, n);
+      const au = await getAuSold(q, n, t);
       if (token === sheetToken && req === auReq && $('detailNote')) showAu(v, au);
     };
     const pick = (v, save) => {
@@ -1885,11 +1915,11 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
     $('sealedHint').textContent = open ? source : `${source} · Tap to compare with Australian RRP`;
     if (open) showRrp();
   });
-  const { q, n } = ebaySoldQuery(item);
-  const cached = auSoldCached(q, n);
+  const { q, n, t } = ebaySoldQuery(item);
+  const cached = auSoldCached(q, n, t);
   showAu(cached ?? undefined);
   if (!cached) {
-    const au = await getAuSold(q, n);
+    const au = await getAuSold(q, n, t);
     if (token === sheetToken && $('sealedHint')) showAu(au);
   }
 }

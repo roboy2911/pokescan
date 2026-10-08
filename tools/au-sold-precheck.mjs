@@ -29,20 +29,45 @@ const ageDays = (d) => (Date.parse(today) - Date.parse(d)) / 86400000;
 
 // Same as the app's ebaySoldQuery (app.js) — keep the two in step.
 const EBAY_FINISH_WORDS = { reverseHolofoil: 'reverse holo', '1stEditionHolofoil': '1st edition', '1stEditionNormal': '1st edition' };
+// card.printed: for a Classic Collection reprint, the original it copies (its number is printed).
 function ebaySoldQuery(card, variant) {
-  const raw = String(card.number);
-  const coded = /^[A-Z]/i.test(raw) || /promo/i.test(card.setName || '');
+  const printed = card.printed ?? card;
+  const raw = String(printed.number);
+  const coded = /^[A-Z]/i.test(raw) || /promo/i.test(printed.setName || '');
   const digits = raw.replace(/^0+(?=\d)/, '');
-  const num = !coded && (card.releaseDate || '') >= '2020' && /^\d+$/.test(digits) ? digits.padStart(3, '0') : digits;
-  const total = num !== digits ? String(card.setTotal).padStart(3, '0') : card.setTotal;
-  const n = coded || !card.setTotal ? raw : `${num}/${total}`;
+  const num = !coded && (printed.releaseDate || '') >= '2020' && /^\d+$/.test(digits) ? digits.padStart(3, '0') : digits;
+  const total = num !== digits ? String(printed.setTotal).padStart(3, '0') : printed.setTotal;
+  const n = coded || !printed.setTotal ? raw : `${num}/${total}`;
   // Sellers write "Gold Star", not ★ (and often leave out δ).
   let q = `${card.name.replace(/★/g, ' Gold Star').replace(/δ/g, '')} ${n}`;
   const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim() : EBAY_FINISH_WORDS[variant];
   if (finish) q += ` ${finish}`;
-  return { q: q.replace(/\s+/g, ' ').trim(), n };
+  return { q: q.replace(/\s+/g, ' ').trim(), n, t: card.t || '' };
 }
-const cacheKey = (q, n) => `${q.toLowerCase()}|${(n || '').toLowerCase()}`;
+const cacheKey = (q, n, t = '') => `${q.toLowerCase()}|${(n || '').toLowerCase()}${t ? `|${t}` : ''}`;
+
+// Classic Collection reprints ↔ the originals they copy (same as reprintInfo in app.js).
+const REPRINT_SETS = { cel25c: 'r25', me55c: 'r30' };
+function reprintIndex(cardsMeta) {
+  const card = ([id, name, number, setId]) => {
+    const [setName, , setTotal, releaseDate] = cardsMeta.sets[setId] ?? [];
+    return { id, name, number, setId, setName, setTotal, releaseDate };
+  };
+  const earliest = new Map();
+  for (const row of cardsMeta.cards) {
+    const c = card(row);
+    if (REPRINT_SETS[c.setId]) continue;
+    const k = `${c.name}|${c.number}`;
+    if (!earliest.has(k) || (c.releaseDate || '') < (earliest.get(k).releaseDate || '')) earliest.set(k, c);
+  }
+  const of = new Map(), originals = new Set();
+  for (const row of cardsMeta.cards) {
+    const c = card(row);
+    const o = REPRINT_SETS[c.setId] && earliest.get(`${c.name}|${c.number}`);
+    if (o && (o.releaseDate || '') < (c.releaseDate || '')) { of.set(c.id, o); originals.add(o.id); }
+  }
+  return { of, originals };
+}
 
 async function audRate() {
   try {
@@ -56,17 +81,19 @@ async function audRate() {
 // Every card + finish (one search per distinct query) worth at least MIN_AUD.
 function targets(cardsMeta, prices, rate) {
   const list = new Map();
+  const rp = reprintIndex(cardsMeta);
   for (const [id, name, number, setId] of cardsMeta.cards) {
     const row = prices[id];
     if (!row) continue;
     const [setName, , setTotal, releaseDate] = cardsMeta.sets[setId] ?? [];
-    const card = { name, number, setName, setTotal, releaseDate };
+    const card = { name, number, setName, setTotal, releaseDate,
+      printed: rp.of.get(id), t: rp.of.has(id) ? REPRINT_SETS[setId] : rp.originals.has(id) ? 'o' : '' };
     const add = (variant, usd) => {
       if (usd == null || usd * rate < MIN_AUD) return;
-      const { q, n } = ebaySoldQuery(card, variant);
-      const key = cacheKey(q, n);
+      const { q, n, t } = ebaySoldQuery(card, variant);
+      const key = cacheKey(q, n, t);
       const aud = usd * rate;
-      if (!list.has(key) || list.get(key).aud < aud) list.set(key, { key, q, n, aud, id });
+      if (!list.has(key) || list.get(key).aud < aud) list.set(key, { key, q, n, t, aud, id });
     };
     // Holo / normal / unlimited share one search (no finish word); the rest have their own.
     const plain = ['h', 'n', 'u', 'uh'].map((k) => row[k]).filter((v) => v != null);
@@ -88,7 +115,7 @@ async function lookup(t) {
     throw err;
   }
   const body = await res.json();
-  return summarise(body.items || [], t.n, OTHER_LANG.test(t.q), t.q);
+  return summarise(body.items || [], t.n, OTHER_LANG.test(t.q), t.q, t.t);
 }
 
 const [cardsMeta, pricesFile, store] = await Promise.all([

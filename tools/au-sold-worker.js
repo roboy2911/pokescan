@@ -38,10 +38,11 @@ export default {
     const url = new URL(request.url);
     const q = (url.searchParams.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 120);
     const n = (url.searchParams.get('n') || '').trim().slice(0, 20);
+    const t = ['o', 'r25', 'r30'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
     if (q.length < 3) return json({ ok: false, reason: 'query' }, allow, 400);
 
     const cacheDays = Number(env.CACHE_DAYS) || 3;
-    const key = `v2:${q.toLowerCase()}|${n.toLowerCase()}`;
+    const key = `v3:${q.toLowerCase()}|${n.toLowerCase()}|${t}`;
     const cached = env.AU_KV && await env.AU_KV.get(key, 'json');
     if (cached) return json({ ...cached, cached: true }, allow);
 
@@ -58,7 +59,7 @@ export default {
     if (!res.ok) return json({ ok: false, reason: `upstream-${res.status}` }, allow, 502);
     const body = await res.json();
 
-    const result = { ...summarise(body.items || [], n, OTHER_LANG.test(q), q), asOf: day };
+    const result = { ...summarise(body.items || [], n, OTHER_LANG.test(q), q, t), asOf: day };
     // Cards with too few sales are remembered too, so they don't cost a search every view.
     if (env.AU_KV) await env.AU_KV.put(key, JSON.stringify(result), { expirationTtl: cacheDays * 86400 });
     return json(result, allow);

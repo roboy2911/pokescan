@@ -32,8 +32,19 @@ function numberMatcher(n) {
   return (title) => title.toLowerCase().replace(/[\s-]/g, '').includes(parts[0].replace(/[\s-]/g, ''));
 }
 
-export function summarise(items, n, wantsOtherLang, q = '') {
+// Classic Collection reprints (Celebrations 2021, 30th Celebration 2026) carry the original card's
+// name and number, so their sales and the original's look alike. mode: 'o' = an original that
+// was reprinted (ignore reprint sales), 'r25' / 'r30' = the reprint itself (only its sales).
+const REPRINT_WORDS = /celebrations?|classic collection|\b(25th|30th)\b|anniversary|reprint|cel25/i;
+const MODES = {
+  o: (t) => !REPRINT_WORDS.test(t),
+  r25: (t) => /celebrations|25th|cel25/i.test(t) && !/30th/i.test(t),
+  r30: (t) => /30th/i.test(t),
+};
+
+export function summarise(items, n, wantsOtherLang, q = '', mode = '') {
   const hasNumber = numberMatcher(n);
+  const inMode = MODES[mode] ?? (() => true);
   // Words searched for don't count as junk ("Booster Bundle" is a product, not a lot).
   const qWords = new RegExp(`\\b(${q.toLowerCase().split(/\s+/).filter((w) => /^[a-z]+$/.test(w)).join('|') || '$^'})\\b`, 'gi');
   const isJunk = (title) => JUNK.test(title.replace(qWords, ' ')) || MULTI.test(title);
@@ -46,7 +57,7 @@ export function summarise(items, n, wantsOtherLang, q = '') {
   };
   let sales = items
     .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
-    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasWords(it.title))
+    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasWords(it.title) && inMode(it.title))
     .map((it) => ({ title: it.title, aud: Number(it.soldPrice), date: (it.endedAt || '').slice(0, 10), url: it.url }));
   if (sales.length >= 4) {
     // Drop outliers: outside 0.5×–2× the median (mislabelled lots, damaged copies, typos).
