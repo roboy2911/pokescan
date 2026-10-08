@@ -208,3 +208,14 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   `7a76dec` (scan switch) · `62854e2` (prices, search, Sets, badges) · `8dfe9d9` (scanning index) ·
   `a735cf7` (card list). Separate fix kept either way: `f3f7f16` (price job user agent).
 - Not done: Japanese sealed product; Japanese cards in Market movers / price history.
+
+## 1am Fri — run 11
+
+- Bug sweep: all regression scripts pass (smoke, ui, backup, trade, bulk, condition, offline, AU sold,
+  pre-check, value trend, scan flow, search, Japanese search and scan switch).
+- **Feature: full-screen scan view on phones** (owner request, moved from the cancelled 7pm run) —
+  `65ac929`. Camera fills the screen behind a floating header and see-through tab bar; results in a
+  see-through bottom panel (card, price, finishes, Add / Scan next) whose strips scroll sideways; the
+  panel never scrolls up/down and the page doesn't scroll (checked: page height = screen height).
+  Camera buttons move to the top right; card guide stays card-shaped above the panel. Desktop
+  (≥ 700 px wide) and the other tabs unchanged. *Remove:* "remove full-screen scan" (`git revert 65ac929`).
