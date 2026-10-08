@@ -785,3 +785,14 @@ a.btn { text-decoration: none; }
   /* Nothing of the scan view's own scrolls the page. */
   body.scan-full main { min-height: 0; }
 }
+/* Short phones (e.g. iPhone SE): tighter result panel so the strips aren't cut off. */
+@media (max-width: 699px) and (max-height: 740px) {
+  body.scan-full .result-panel { padding: 10px; gap: 6px; }
+  body.scan-full .hero img { width: 58px; flex-basis: 58px; }
+  body.scan-full .hero-name { font-size: 1rem; }
+  body.scan-full .price-value { font-size: 1.25rem; }
+  body.scan-full .price-note { display: none; }
+  body.scan-full .result-actions .btn { padding: 9px 10px; font-size: .85rem; white-space: nowrap; }
+  body.scan-full .alt-thumb img { width: 42px; }
+  body.scan-full .alt-thumb { flex-basis: 42px; }
+}
