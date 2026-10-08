@@ -24,6 +24,50 @@ const VARIANTS = [
   ['reverseHolofoil', 'r', 'Reverse Holo'],
 ];
 
+/* Australian sold prices: the median of eBay.com.au sales by Australian sellers over the last
+ * 90 days, from the PokeScan Cloudflare worker (tools/au-sold-worker.js, which holds the
+ * SoldComps key). Looked up only when someone opens a card or product; answers are kept on
+ * the device (refreshed after AU_SOLD_MAX_AGE, kept for the collection value up to
+ * AU_SOLD_KEEP). Empty AU_SOLD_URL = off. */
+const AU_SOLD_URL = 'https://pokescan-au-sold.minecraftfishies.workers.dev/';
+const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v1';
+const AU_SOLD_MAX_AGE = 3 * 86400 * 1000;
+const AU_SOLD_KEEP = 30 * 86400 * 1000;
+let auSoldMem = null;
+const auSoldKey = (q, n) => `${q.toLowerCase()}|${(n || '').toLowerCase()}`;
+const auSoldStore = () => (auSoldMem ??= readCache(AU_SOLD_CACHE_KEY) || {});
+
+/* A saved answer: fresh only (for the card sheet), or any age (for the collection value). */
+function auSoldCached(q, n, { anyAge = false } = {}) {
+  const hit = auSoldStore()[auSoldKey(q, n)];
+  if (!hit) return null;
+  const age = Date.now() - hit.at;
+  return age < (anyAge ? AU_SOLD_KEEP : AU_SOLD_MAX_AGE) ? hit : null;
+}
+
+/* { ok, aud, n, low, high, recent, asOf } or { ok: false, reason }; null if it couldn't ask. */
+async function getAuSold(q, n) {
+  const hit = auSoldCached(q, n);
+  if (hit || !AU_SOLD_URL) return hit;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 45000); // a search takes ~10–20 s
+  try {
+    const res = await fetch(`${AU_SOLD_URL}?${new URLSearchParams({ q, n: n || '' })}`, { signal: ctrl.signal });
+    const body = await res.json();
+    // Don't remember "try again later" answers.
+    if (!res.ok || body.reason === 'daily-limit') return { ok: false, reason: body.reason || 'error' };
+    const store = auSoldStore();
+    for (const [k, v] of Object.entries(store)) if (Date.now() - v.at > AU_SOLD_KEEP) delete store[k];
+    store[auSoldKey(q, n)] = { ...body, at: Date.now() };
+    writeCache(AU_SOLD_CACHE_KEY, store);
+    return store[auSoldKey(q, n)];
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function readCache(key) {

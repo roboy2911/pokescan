@@ -49,11 +49,14 @@ function numberMatcher(n) {
   return (title) => title.toLowerCase().replace(/[\s-]/g, '').includes(parts[0].replace(/[\s-]/g, ''));
 }
 
-function summarise(items, n, wantsOtherLang) {
+function summarise(items, n, wantsOtherLang, q = '') {
   const hasNumber = numberMatcher(n);
+  // Words searched for don't count as junk ("Booster Bundle" is a product, not a lot).
+  const qWords = new RegExp(`\\b(${q.toLowerCase().split(/\s+/).filter((w) => /^[a-z]+$/.test(w)).join('|') || '$^'})\\b`, 'gi');
+  const isJunk = (title) => JUNK.test(title.replace(qWords, ' '));
   let sales = items
     .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
-    .filter((it) => !JUNK.test(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title))
+    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title))
     .map((it) => ({ title: it.title, aud: Number(it.soldPrice), date: (it.endedAt || '').slice(0, 10), url: it.url }));
   if (sales.length >= 4) {
     // Drop outliers: outside 0.5×–2× the median (mislabelled lots, damaged copies, typos).
@@ -106,7 +109,7 @@ export default {
     if (!res.ok) return json({ ok: false, reason: `upstream-${res.status}` }, allow, 502);
     const body = await res.json();
 
-    const result = { ...summarise(body.items || [], n, OTHER_LANG.test(q)), asOf: day };
+    const result = { ...summarise(body.items || [], n, OTHER_LANG.test(q), q), asOf: day };
     // Cards with too few sales are remembered too, so they don't cost a search every view.
     if (env.AU_KV) await env.AU_KV.put(key, JSON.stringify(result), { expirationTtl: cacheDays * 86400 });
     return json(result, allow);

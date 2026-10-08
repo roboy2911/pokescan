@@ -987,8 +987,10 @@ const EBAY_FINISH_WORDS = {
   '1stEditionHolofoil': '1st edition',
   '1stEditionNormal': '1st edition',
 };
-function ebaySoldUrl(item, variant = null) {
+/* What to search eBay for: { q: words, n: the number as printed ('' for sealed). */
+function ebaySoldQuery(item, variant = null) {
   let q;
+  let n = '';
   if (item.kind === 'sealed') {
     q = item.name.replace(/\bPokemon\b/gi, '').replace(/[[\]()]/g, ' ');
   } else {
@@ -1000,12 +1002,42 @@ function ebaySoldUrl(item, variant = null) {
     const digits = raw.replace(/^0+(?=\d)/, '');
     const num = !coded && (item.releaseDate || '') >= '2020' && /^\d+$/.test(digits) ? digits.padStart(3, '0') : digits;
     const total = num !== digits ? String(item.setTotal).padStart(3, '0') : item.setTotal;
-    q = coded || !item.setTotal ? `${item.name} ${raw}` : `${item.name} ${num}/${total}`;
+    n = coded || !item.setTotal ? raw : `${num}/${total}`;
+    q = `${item.name} ${n}`;
     const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim() : EBAY_FINISH_WORDS[variant];
     if (finish) q += ` ${finish}`;
   }
-  q = `pokemon ${q}`.replace(/\s+/g, ' ').trim();
+  return { q: q.replace(/\s+/g, ' ').trim(), n };
+}
+function ebaySoldUrl(item, variant = null) {
+  const q = `pokemon ${ebaySoldQuery(item, variant).q}`;
   return `https://www.ebay.com.au/sch/i.html?_nkw=${encodeURIComponent(q)}&LH_Sold=1&LH_Complete=1&LH_PrefLoc=1&_sop=13`;
+}
+
+/* AU sold price box under the main price. `show(au)` gets the answer (or null). */
+function auSoldText(au, tcgText) {
+  const tcg = tcgText ? ` · TCGplayer ${tcgText}` : '';
+  if (au?.ok) {
+    return `Median of ${au.n} Australian eBay sales, last 90 days (${formatAudPlain(au.low)}–${formatAudPlain(au.high)})${tcg}`;
+  }
+  const why = !au ? "Couldn't check Australian sales"
+    : au.reason === 'few-sales' ? 'Not enough Australian sales to price it'
+      : au.reason === 'daily-limit' ? 'Australian sold lookups are paused until tomorrow'
+        : "Couldn't check Australian sales";
+  return `${why} — showing TCGplayer (US) market price`;
+}
+function auSoldRecent(au) {
+  if (!au?.ok || !au.recent?.length) return '';
+  return `<details class="au-recent"><summary>Recent Australian sales</summary><ul>${au.recent.map((r) =>
+    `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(formatAudPlain(r.aud))} · ${esc(r.date)}</a> <span>${esc(r.title)}</span></li>`).join('')}</ul></details>`;
+}
+
+/* Value of one collection entry in USD: the AU sold price when one has been looked up,
+ * otherwise TCGplayer. */
+function entryUsd(e, prices, sealed, rate) {
+  const au = rate && auSoldCached(...Object.values(ebaySoldQuery(e, e.variant)), { anyAge: true });
+  if (au?.ok) return (au.aud / rate.rate) * (e.kind === 'sealed' ? 1 : conditionFactor(e.condition));
+  return e.kind === 'sealed' ? sealed?.byKey.get(e.id)?.usd ?? null : cardUsd(e, prices[e.id]);
 }
 const ebayButton = (url) => `<a class="btn ghost ebay-sold" href="${esc(url)}" target="_blank" rel="noopener">Check AU sold prices on eBay ↗</a>`;
 
@@ -1036,6 +1068,7 @@ function openDetail(card, { entryKey = null } = {}) {
       <span class="price-value none" id="detailPrice">Loading…</span>
       <div class="variant-chips" id="detailChips"></div>
       <span class="price-note" id="detailNote"></span>
+      <div id="auRecent"></div>
     </div>
     ${inCollection ? `<div class="detail-price cond-box">
       <span class="price-label">Your copy's condition</span>
@@ -1123,13 +1156,40 @@ function openDetail(card, { entryKey = null } = {}) {
       priceEl.textContent = info ? 'No price available' : "Couldn't load price";
       return;
     }
+    const label = els.detailBody.querySelector('.detail-price .price-label');
+    let auReq = 0;
+    // AU sold price for the picked finish replaces the main price (TCGplayer in the note).
+    const showAu = (v, au) => {
+      const tcg = formatAud(v.usd, rate.rate);
+      if (au?.ok) {
+        unitUsd = au.aud / rate.rate;
+        priceEl.textContent = formatAudPlain(au.aud);
+        label.textContent = 'AU sold price';
+      } else {
+        unitUsd = v.usd;
+        priceEl.textContent = tcg;
+        label.textContent = 'Market price (AUD)';
+      }
+      priceEl.className = 'price-value';
+      $('detailNote').innerHTML = au === undefined ? 'Checking Australian eBay sales…'
+        : esc(auSoldText(au, au?.ok ? tcg : '')) + (info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : '');
+      $('auRecent').innerHTML = auSoldRecent(au);
+      showCondition();
+      if (inCollection && au?.ok) renderCollection();
+    };
+    const lookupAu = async (v) => {
+      const { q, n } = ebaySoldQuery(card, v.key);
+      const req = ++auReq;
+      const cached = auSoldCached(q, n);
+      showAu(v, cached ?? undefined);
+      if (cached) return;
+      const au = await getAuSold(q, n);
+      if (token === sheetToken && req === auReq && $('detailNote')) showAu(v, au);
+    };
     const pick = (v, save) => {
       variant = v.key;
-      unitUsd = v.usd;
-      showCondition();
       els.detailBody.querySelector('.ebay-sold')?.setAttribute('href', ebaySoldUrl(card, variant));
-      priceEl.textContent = formatAud(v.usd, rate.rate);
-      priceEl.className = 'price-value';
+      lookupAu(v);
       $('detailChips').querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
       if (save) rememberFinish(card.id, v.key);
       if (save && inCollection) {
@@ -1150,8 +1210,6 @@ function openDetail(card, { entryKey = null } = {}) {
       }
     }
     pick(variants.find((v) => v.key === variant) ?? variants.find((v) => v.key === lastFinish(card.id)) ?? variants[0], false);
-    $('detailNote').innerHTML = `TCGplayer (US) market price in AUD`
-      + `${info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : ''}`;
   });
 }
 
@@ -1324,9 +1382,7 @@ function renderCollection() {
   let total = 0;
   let pricedCards = 0;
   for (const e of list) {
-    const usd = !prices ? null
-      : e.kind === 'sealed' ? sealed?.byKey.get(e.id)?.usd ?? null
-        : cardUsd(e, prices[e.id]);
+    const usd = !prices ? null : entryUsd(e, prices, sealed, rate);
     e.unit = usd;
     e.total = usd == null ? null : usd * e.qty;
     if (usd != null) {
@@ -1341,7 +1397,7 @@ function renderCollection() {
     const sealedCount = list.filter((e) => e.kind === 'sealed').reduce((n, e) => n + e.qty, 0);
     const what = sealedCount ? `${count} item${count === 1 ? '' : 's'}` : `${count} card${count === 1 ? '' : 's'}`;
     els.valueNote.textContent = `${what} (${list.length} different) · `
-      + `${pricedCards} priced · TCGplayer market prices in AUD${rate.approx ? ' (approx. exchange rate)' : ''}`
+      + `${pricedCards} priced · AU sold prices for items you've opened, otherwise TCGplayer market prices in AUD${rate.approx ? ' (approx. exchange rate)' : ''}`
       + (collectionPrices.age ? ` · ${collectionPrices.age}` : '');
   } else {
     els.valueTotal.textContent = 'Loading…';
@@ -1485,7 +1541,7 @@ function tradeListText() {
   const price = (usd) => (usd == null || !rate ? 'offers' : formatAud(usd * pct / 100, rate.rate).replace(/^\$/, 'A$'));
   let total = 0;
   const lines = loadCollection().filter((e) => e.trade).sort(SORTS.set).map((e) => {
-    const unit = !prices ? null : e.kind === 'sealed' ? sealed?.byKey.get(e.id)?.usd ?? null : cardUsd(e, prices[e.id]);
+    const unit = !prices ? null : entryUsd(e, prices, sealed, rate);
     if (unit != null) total += unit * e.qty;
     const qty = e.qty > 1 ? ` ×${e.qty}` : '';
     const each = e.qty > 1 && unit != null ? ' each' : '';
@@ -1494,7 +1550,7 @@ function tradeListText() {
     const finish = (e.variant ? ` · ${variantLabel(e.variant)}` : '') + (e.condition && e.condition !== 'NM' ? ` · ${e.condition}` : '');
     return `${e.name} · ${e.setName} ${num}${finish}${qty} · ${price(unit)}${each}`;
   });
-  const note = pct !== 100 ? ` (${pct}% of TCGplayer market)` : ' (TCGplayer market)';
+  const note = pct !== 100 ? ` (${pct}% of market value)` : ' (market value)';
   return ['Pokémon for trade / sale:', ...lines, '', `Total: ${price(total)}${note}`].join('\n');
 }
 
@@ -1622,6 +1678,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
       <span class="rrp" id="sealedRrp" hidden></span>
       <span class="price-note" id="sealedHint">Tap to compare with Australian RRP</span>
     </button>
+    <div id="sealedAuRecent"></div>
     <div class="detail-actions">
       ${inCollection
         ? `<div class="qty-row">
@@ -1675,19 +1732,42 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
     priceEl.textContent = 'No price available';
     return;
   }
-  priceEl.textContent = formatAud(s.usd, rate.rate);
-  priceEl.className = 'price-value';
-  const cmp = rrpCompare(s.type, s.usd, rate.rate);
+  let usd = s.usd;
+  let source = 'TCGplayer (US) market price in AUD';
+  const showAu = (au) => {
+    const tcg = formatAud(s.usd, rate.rate);
+    usd = au?.ok ? au.aud / rate.rate : s.usd;
+    priceEl.textContent = au?.ok ? formatAudPlain(au.aud) : tcg;
+    priceEl.className = 'price-value';
+    $('sealedPrice').querySelector('.price-label').textContent = au?.ok ? 'AU sold price' : 'Market price (AUD)';
+    source = au === undefined ? 'Checking Australian eBay sales…' : auSoldText(au, au?.ok ? tcg : '');
+    $('sealedHint').textContent = $('sealedRrp').hidden ? `${source} · Tap to compare with Australian RRP` : source;
+    $('sealedAuRecent').innerHTML = auSoldRecent(au);
+    if (!$('sealedRrp').hidden) showRrp();
+    if (inCollection && au?.ok) renderCollection();
+  };
+  const showRrp = () => {
+    const rrpEl = $('sealedRrp');
+    const cmp = rrpCompare(s.type, usd, rate.rate);
+    rrpEl.innerHTML = cmp
+      ? `RRP ${formatAudPlain(cmp.rrp)}${cmp.estimate ? ' <small>(estimate)</small>' : ''} · <b class="${cmp.up ? 'up' : 'down'}">${esc(cmp.text)}</b>`
+      : 'No Australian RRP for this kind of product';
+  };
   $('sealedPrice').addEventListener('click', () => {
     const rrpEl = $('sealedRrp');
     const open = rrpEl.hidden;
     rrpEl.hidden = !open;
     $('sealedPrice').setAttribute('aria-expanded', String(open));
-    $('sealedHint').textContent = open ? 'TCGplayer (US) market price in AUD' : 'Tap to compare with Australian RRP';
-    rrpEl.innerHTML = cmp
-      ? `RRP ${formatAudPlain(cmp.rrp)}${cmp.estimate ? ' <small>(estimate)</small>' : ''} · <b class="${cmp.up ? 'up' : 'down'}">${esc(cmp.text)}</b>`
-      : 'No Australian RRP for this kind of product';
+    $('sealedHint').textContent = open ? source : `${source} · Tap to compare with Australian RRP`;
+    if (open) showRrp();
   });
+  const { q, n } = ebaySoldQuery(item);
+  const cached = auSoldCached(q, n);
+  showAu(cached ?? undefined);
+  if (!cached) {
+    const au = await getAuSold(q, n);
+    if (token === sheetToken && $('sealedHint')) showAu(au);
+  }
 }
 
 const formatAudPlain = (aud) => audFormat.format(aud);
