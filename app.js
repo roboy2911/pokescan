@@ -1037,6 +1037,12 @@ function openDetail(card, { entryKey = null } = {}) {
       <div class="variant-chips" id="detailChips"></div>
       <span class="price-note" id="detailNote"></span>
     </div>
+    ${inCollection ? `<div class="detail-price cond-box">
+      <span class="price-label">Your copy's condition</span>
+      <div class="variant-chips" id="condChips">${CONDITIONS.map(([k, label]) =>
+        `<button type="button" class="chip" data-cond="${k}" title="${esc(label)}">${k}</button>`).join('')}</div>
+      <span class="price-note" id="condNote"></span>
+    </div>` : ''}
     <table class="detail-table">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>
     <div class="detail-actions">
       ${inCollection
@@ -1083,6 +1089,27 @@ function openDetail(card, { entryKey = null } = {}) {
   if (inCollection) showQty();
   wireTradeToggle(() => entryKey);
 
+  // Condition (collection cards): value = market price × the condition's factor.
+  let unitUsd = null;
+  let condRate = null;
+  const showCondition = () => {
+    const chips = $('condChips');
+    if (!chips) return;
+    const cond = loadCollection().find((e) => e.key === entryKey)?.condition ?? 'NM';
+    chips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.cond === cond));
+    const [, label, factor] = CONDITIONS.find(([k]) => k === cond);
+    $('condNote').textContent = unitUsd == null || !condRate ? label
+      : `${label}: valued at ${Math.round(factor * 100)}% = ${formatAud(unitUsd * factor, condRate.rate)} each`;
+  };
+  $('condChips')?.querySelectorAll('.chip').forEach((b) => b.addEventListener('click', () => {
+    entryKey = setEntryCondition(entryKey, b.dataset.cond);
+    showQty();
+    showCondition();
+    renderCollection();
+  }));
+  getAudRate().then((r) => { condRate = r; showCondition(); });
+  showCondition();
+
   els.detail.showModal();
 
   // Price, with a chip per finish (picking one changes the saved card's finish).
@@ -1098,6 +1125,8 @@ function openDetail(card, { entryKey = null } = {}) {
     }
     const pick = (v, save) => {
       variant = v.key;
+      unitUsd = v.usd;
+      showCondition();
       els.detailBody.querySelector('.ebay-sold')?.setAttribute('href', ebaySoldUrl(card, variant));
       priceEl.textContent = formatAud(v.usd, rate.rate);
       priceEl.className = 'price-value';
@@ -1140,7 +1169,41 @@ const SORT_KEY = 'pokescan.collectionSort';
 const CARD_FIELDS = ['id', 'name', 'number', 'rarity', 'setId', 'setName', 'setSeries', 'setTotal',
   'releaseDate', 'image', 'imageLarge', 'kind', 'type'];
 
-const entryKeyOf = (id, variant) => `${id}|${variant || ''}`;
+// Near Mint keeps the plain key, so collections from before conditions existed are unchanged.
+const entryKeyOf = (id, variant, condition = null) =>
+  `${id}|${variant || ''}${condition && condition !== 'NM' ? `|${condition}` : ''}`;
+
+/* Card condition and how much of the (Near Mint) market price each is valued at.
+ * Edit freely. Entries without a condition are Near Mint. */
+const CONDITIONS = [
+  ['NM', 'Near Mint', 1],
+  ['LP', 'Lightly Played', 0.85],
+  ['MP', 'Moderately Played', 0.7],
+  ['HP', 'Heavily Played', 0.5],
+  ['DMG', 'Damaged', 0.3],
+];
+const conditionFactor = (c) => CONDITIONS.find(([k]) => k === c)?.[2] ?? 1;
+
+/* Change an entry's condition, merging into an existing entry of that condition. Returns the new key. */
+function setEntryCondition(key, condition) {
+  const list = loadCollection();
+  const entry = list.find((e) => e.key === key);
+  if (!entry) return key;
+  const newKey = entryKeyOf(entry.id, entry.variant, condition);
+  if (newKey === key) return key;
+  const other = list.find((e) => e.key === newKey);
+  if (other) {
+    other.qty += entry.qty;
+    other.trade ||= entry.trade;
+    list.splice(list.indexOf(entry), 1);
+  } else {
+    entry.key = newKey;
+    if (condition && condition !== 'NM') entry.condition = condition;
+    else delete entry.condition;
+  }
+  saveCollection(list);
+  return newKey;
+}
 
 function loadCollection() {
   try {
@@ -1199,7 +1262,7 @@ function setEntryVariant(key, variant) {
   const list = loadCollection();
   const entry = list.find((e) => e.key === key);
   if (!entry) return key;
-  const newKey = entryKeyOf(entry.id, variant);
+  const newKey = entryKeyOf(entry.id, variant, entry.condition);
   if (newKey === key) return key;
   const other = list.find((e) => e.key === newKey);
   if (other) {
@@ -1213,10 +1276,11 @@ function setEntryVariant(key, variant) {
   return newKey;
 }
 
-/* USD market price of one copy, using the entry's finish. */
+/* USD value of one copy, using the entry's finish and condition. */
 function cardUsd(entry, info) {
   const variants = priceVariants(info?.prices);
-  return (variants.find((v) => v.key === entry.variant) ?? variants[0])?.usd ?? null;
+  const usd = (variants.find((v) => v.key === entry.variant) ?? variants[0])?.usd ?? null;
+  return usd == null ? null : usd * conditionFactor(entry.condition);
 }
 
 /* "12", "TG05", "SV001" → sortable by number, then text. */
@@ -1307,7 +1371,8 @@ function renderCollection() {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'grid-item';
-    const finish = e.variant ? variantLabel(e.variant) : '';
+    const finish = [e.variant ? variantLabel(e.variant) : '', e.condition && e.condition !== 'NM' ? e.condition : '']
+      .filter(Boolean).join(' · ');
     const price = e.unit == null ? ''
       : e.qty > 1 ? `${formatAud(e.total, rate.rate)} <small>(${e.qty} × ${formatAud(e.unit, rate.rate)})</small>`
         : formatAud(e.unit, rate.rate);
@@ -1426,7 +1491,7 @@ function tradeListText() {
     const each = e.qty > 1 && unit != null ? ' each' : '';
     if (e.kind === 'sealed') return `${e.name} · ${e.type}${qty} · ${price(unit)}${each}`;
     const num = `#${e.number}${e.setTotal ? '/' + e.setTotal : ''}`;
-    const finish = e.variant ? ` · ${variantLabel(e.variant)}` : '';
+    const finish = (e.variant ? ` · ${variantLabel(e.variant)}` : '') + (e.condition && e.condition !== 'NM' ? ` · ${e.condition}` : '');
     return `${e.name} · ${e.setName} ${num}${finish}${qty} · ${price(unit)}${each}`;
   });
   const note = pct !== 100 ? ` (${pct}% of TCGplayer market)` : ' (TCGplayer market)';
@@ -1510,7 +1575,8 @@ $('importFile').addEventListener('change', async () => {
   const list = loadCollection();
   let added = 0;
   for (const e of incoming) {
-    const entry = { ...pickCard(e), key: entryKeyOf(e.id, e.variant), variant: e.variant ?? null,
+    const cond = CONDITIONS.some(([k]) => k === e.condition) && e.condition !== 'NM' ? e.condition : null;
+    const entry = { ...pickCard(e), key: entryKeyOf(e.id, e.variant, cond), variant: e.variant ?? null, ...(cond && { condition: cond }),
       qty: Math.max(1, Math.floor(Number(e.qty) || 1)), addedAt: e.addedAt || e.scannedAt || '' };
     const have = list.find((x) => x.key === entry.key);
     if (e.trade) entry.trade = true;

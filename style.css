@@ -696,3 +696,4 @@ a.btn { text-decoration: none; }
   padding: 9px 10px; font: inherit; font-size: .9rem; min-width: 0;
 }
 .trade-bar .btn { min-height: 40px; }
+.cond-box { margin-top: -4px; }
