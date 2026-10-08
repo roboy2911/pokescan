@@ -230,6 +230,7 @@ function loadJapanese() {
       db.byId.set(c.id, c);
     }
     Object.assign(db.sets, meta.sets);
+    els.dbNote.textContent = `${db.enCount.toLocaleString()} cards · ${(db.cards.length - db.enCount).toLocaleString()} JP`;
     searchIndex = null;
     setsRendered = false;
     if (!setsEls.page.hidden || document.querySelector('[data-view=sets].active')) renderSetsList();
