@@ -1492,7 +1492,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
   els.detail.showModal();
 
   const [sealed, rate] = await Promise.all([getSealed(), getAudRate()]);
-  const s = sealed.byKey.get(`s${productId}`);
+  const s = sealed.byKey.get(`s${productId}`) ?? (item.usd !== undefined ? item : null);
   const priceEl = $('detailPrice');
   if (!priceEl) return;
   if (s?.usd == null) {
@@ -1543,12 +1543,67 @@ function ownedBySet() {
 
 async function showSets() {
   await dbReady;
+  renderReleases();
   if (openSetId) {
     renderSetPage(); // owned marks may have changed
     return;
   }
   if (!setsRendered) await renderSetsList();
   else updateSetCounts();
+}
+
+/* Release calendar: upcoming sets (and ones out in the last few weeks) with their key
+ * products, release dates, market price and how it compares with Australian RRP. */
+const RELEASE_ORDER = ['Booster Box', 'Elite Trainer Box', 'Pokémon Center Elite Trainer Box', 'Booster Bundle',
+  'Booster Pack', 'Sleeved Booster Pack', 'Build & Battle Box', '3-Pack Blister', 'Premium Collection',
+  'Super-Premium Collection', 'Ultra-Premium Collection', 'Mini Tin', 'Tin', 'Collection Box', 'Blister'];
+let releasesRendered = false;
+
+async function renderReleases() {
+  if (releasesRendered) return;
+  const [data, rate] = await Promise.all([getReleases(), getAudRate()]);
+  const box = $('releases');
+  if (!data?.releases?.length) return;
+  releasesRendered = true;
+  const today = new Date(new Date().toDateString());
+  const day = (iso) => new Date(`${iso}T00:00:00`);
+  const fmt = (iso) => day(iso).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+  const when = (iso) => {
+    const d = Math.round((day(iso) - today) / 86400000);
+    return d > 1 ? `in ${d} days` : d === 1 ? 'tomorrow' : d === 0 ? 'out today' : `out ${-d} days ago`;
+  };
+  const rank = (t) => (RELEASE_ORDER.indexOf(t) + 1 || 99);
+  const releases = [...data.releases].sort((a, b) => (day(b.date) >= today) - (day(a.date) >= today) || a.date.localeCompare(b.date));
+  box.innerHTML = `<h3 class="sub-title">Release calendar</h3>` + releases.map((r, ri) => {
+    const items = r.products.filter((p) => p.usd != null || p.presale).sort((a, b) => rank(a.type) - rank(b.type) || (b.usd ?? 0) - (a.usd ?? 0));
+    const row = (p, i) => {
+      const cmp = rrpCompare(p.type, p.usd, rate.rate);
+      // "Delta Reign Elite Trainer Box" → "Elite Trainer Box" under the Delta Reign heading.
+      const short = p.name.toLowerCase().startsWith(r.name.toLowerCase()) ? p.name.slice(r.name.length).trim() || p.name : p.name;
+      return `<button type="button" class="rel-row" data-r="${ri}" data-i="${i}">
+        <span class="rel-name">${esc(short)}${p.date !== r.date ? ` <small>· ${esc(fmt(p.date))}</small>` : ''}</span>
+        <span class="rel-price">${p.usd != null ? formatAud(p.usd, rate.rate) : '—'}${cmp ? `<small class="${cmp.up ? 'up' : 'down'}">${esc(cmp.text)}</small>` : ''}</span>
+      </button>`;
+    };
+    const upcoming = day(r.date) >= today;
+    return `<div class="release${upcoming ? ' upcoming' : ''}">
+      <div class="rel-head"${r.set ? ` data-set="${esc(r.set)}" role="button" tabindex="0"` : ''}>
+        <b>${esc(r.name)}</b><span>${esc(fmt(r.date))} · <span class="${upcoming ? 'up' : ''}">${esc(when(r.date))}</span></span>
+      </div>
+      ${items.slice(0, 5).map(row).join('')}
+      ${items.length > 5 ? `<details><summary>${items.length - 5} more products</summary>${items.slice(5).map((p, i) => row(p, i + 5)).join('')}</details>` : ''}
+    </div>`;
+  }).join('') + '<p class="muted small-note">Market prices from TCGplayer (presale prices before release) in AUD. RRP comparison uses the table in prices.js.</p>';
+  box.hidden = false;
+  const sortedItems = releases.map((r) => r.products.filter((p) => p.usd != null || p.presale)
+    .sort((a, b) => rank(a.type) - rank(b.type) || (b.usd ?? 0) - (a.usd ?? 0)));
+  box.querySelectorAll('.rel-row').forEach((b) => b.addEventListener('click', () => {
+    const r = releases[+b.dataset.r];
+    const p = sortedItems[+b.dataset.r][+b.dataset.i];
+    openSealedDetail({ id: `s${p.id}`, name: p.name, number: '', kind: 'sealed', type: p.type, setId: r.set,
+      setName: r.set ? db.sets[r.set]?.[0] ?? r.name : r.name, releaseDate: r.date, image: sealedImage(p.id), usd: p.usd });
+  }));
+  box.querySelectorAll('.rel-head[data-set]').forEach((h) => h.addEventListener('click', () => openSet(h.dataset.set)));
 }
 
 async function renderSetsList() {

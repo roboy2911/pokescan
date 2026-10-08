@@ -272,3 +272,10 @@ async function priceAgeNote() {
   const day = built.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
   return Date.now() - built > 2 * 86400000 ? `⚠ prices from ${day} — may be out of date` : `prices from ${day}`;
 }
+
+/* data/releases.json (release calendar), loaded when the Sets tab opens. */
+let releasesPromise = null;
+function getReleases() {
+  releasesPromise ??= fetch('data/releases.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  return releasesPromise;
+}

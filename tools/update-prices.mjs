@@ -171,6 +171,7 @@ const prettyLabel = (s) => s.replace(/\bPoke\b/g, 'Poké').replace(/\bPokemon\b/
 const SEALED_TYPES = [
   [/\bcase\b/i, 'Case'],
   [/display/i, 'Display'],
+  [/half booster box/i, 'Half Booster Box'],
   [/booster box/i, 'Booster Box'],
   [/pokemon center elite trainer box/i, 'Pokémon Center Elite Trainer Box'],
   [/elite trainer box/i, 'Elite Trainer Box'],
@@ -194,7 +195,52 @@ const SEALED_TYPES = [
 ];
 const sealedType = (name) => SEALED_TYPES.find(([re]) => re.test(name))?.[1] ?? 'Other';
 
-async function fromTcgcsv(cards, sealed, setsOut) {
+/* Release calendar: sets coming out soon or released in the last RELEASE_WINDOW_DAYS, with
+ * their sealed products (each product's own release date from TCGplayer's presale info). */
+const RELEASE_WINDOW_DAYS = 45;
+async function fetchReleases(groups, pairs, headers) {
+  const today = new Date().toISOString().slice(0, 10);
+  const since = new Date(Date.now() - RELEASE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+  const setOf = new Map(pairs.map((p) => [p.group.groupId, p.set]));
+  const recent = groups.filter((g) => (g.publishedOn || '').slice(0, 10) >= since);
+  const out = [];
+  await eachLimit(recent, 4, async (g) => {
+    const set = setOf.get(g.groupId);
+    const date = g.publishedOn.slice(0, 10);
+    let products, prices;
+    try {
+      [{ results: products }, { results: prices }] = await Promise.all([
+        getJson(`${TCGCSV}/${g.groupId}/products`, { headers, attempts: 3 }),
+        getJson(`${TCGCSV}/${g.groupId}/prices`, { headers, attempts: 3 }),
+      ]);
+    } catch (err) {
+      console.warn(`  releases: skipped ${g.name}: ${err.message}`);
+      return;
+    }
+    const usdOf = new Map();
+    for (const p of prices) if (!usdOf.has(p.productId)) usdOf.set(p.productId, p.marketPrice ?? p.midPrice ?? null);
+    const items = products
+      .filter((prod) => !(prod.extendedData ?? []).some((d) => d.name === 'Number' || d.name === 'Rarity') && !/^code card/i.test(prod.name))
+      .map((prod) => ({
+        id: prod.productId,
+        name: prod.name.replace(/\s+/g, ' ').trim(),
+        type: sealedType(prod.name),
+        date: prod.presaleInfo?.releasedOn?.slice(0, 10) || date,
+        presale: !!prod.presaleInfo?.isPresale,
+        usd: usdOf.get(prod.productId) != null ? cents(usdOf.get(prod.productId)) : null,
+      }))
+      .filter((p) => p.type !== 'Case');
+    // Real releases only: still to come, on presale, or a set of ours released recently.
+    // (Old groups TCGplayer re-dated, like the POP series, have none of these.)
+    const upcoming = date > today || items.some((p) => p.presale);
+    const recentSet = set && (set.releaseDate || '').replace(/\//g, '-') >= since;
+    if (!items.length || (!upcoming && !recentSet) || (g.isSupplemental && !set)) return;
+    out.push({ name: groupBaseName(g.name), set: set?.id ?? null, date, products: items });
+  });
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+async function fromTcgcsv(cards, sealed, setsOut, releasesOut) {
   const headers = { 'User-Agent': 'PokeScan price snapshot (github.com/roboy2911/pokescan)' };
   const [{ results: groups }, sets] = await Promise.all([
     getJson(`${TCGCSV}/groups`, { headers }),
@@ -324,6 +370,12 @@ async function fromTcgcsv(cards, sealed, setsOut) {
     }
   });
   console.log(`TCGCSV: priced ${filled} more cards, added ${extras} extra printings, ${sealed.size} sealed products`);
+  try {
+    releasesOut.push(...await fetchReleases(groups, pairs, headers));
+    console.log(`Releases: ${releasesOut.map((r) => `${r.name} (${r.date})`).join(', ') || 'none'}`);
+  } catch (err) {
+    console.warn(`Releases failed: ${err.message}`);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -333,6 +385,7 @@ const dataFile = (name) => new URL(`../data/${name}`, import.meta.url);
 const cards = {};
 const sealed = new Map();
 const setsInfo = {};
+const releases = [];
 let tcgUpdated = '';
 try {
   tcgUpdated = await fromPokemonTcg(cards);
@@ -340,7 +393,7 @@ try {
   console.warn(`pokemontcg.io failed: ${err.message}`);
 }
 try {
-  await fromTcgcsv(cards, sealed, setsInfo);
+  await fromTcgcsv(cards, sealed, setsInfo, releases);
 } catch (err) {
   console.warn(`TCGCSV failed: ${err.message}`);
 }
@@ -377,5 +430,6 @@ if (sealed.size > 500) {
   console.log(`Wrote data/sealed.json: ${items.length} products`);
 }
 if (Object.keys(setsInfo).length) await writeFile(dataFile('sets.json'), JSON.stringify(setsInfo));
+if (releases.length) await writeFile(dataFile('releases.json'), JSON.stringify({ built: out.built, currency: 'USD', releases }));
 
 await updateMarket(cards, sealed.size > 500 ? [...sealed.values()] : null);

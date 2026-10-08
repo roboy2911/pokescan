@@ -663,3 +663,22 @@ button.detail-price { width: 100%; border: 0; color: inherit; font: inherit; tex
 #bulkBtn.on { color: var(--accent); background: rgba(255, 203, 5, .18); }
 
 a.btn { text-decoration: none; }
+
+/* Release calendar (Sets tab) */
+.releases { margin-bottom: 8px; }
+.release { background: var(--panel); border-radius: 14px; padding: 10px 12px; margin-bottom: 10px; }
+.release.upcoming { border: 1px solid rgba(255, 203, 5, .45); }
+.rel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding-bottom: 6px; }
+.rel-head[data-set] { cursor: pointer; }
+.rel-head b { font-size: 1.02rem; }
+.rel-head > span { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.rel-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; min-height: 44px;
+  padding: 6px 0; border: 0; border-top: 1px solid var(--line); background: none; color: inherit; font: inherit;
+  text-align: left; cursor: pointer;
+}
+.rel-name { font-size: .88rem; min-width: 0; }
+.rel-name small { color: var(--muted); }
+.rel-price { display: flex; flex-direction: column; align-items: flex-end; font-weight: 700; font-size: .9rem; white-space: nowrap; }
+.rel-price small { font-size: .72rem; font-weight: 600; }
+.release details summary { cursor: pointer; color: var(--muted); font-size: .82rem; padding: 8px 0 2px; }

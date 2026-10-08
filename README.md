@@ -14,6 +14,9 @@ your phone's home screen like an app (PWA), and works offline after the first vi
 - **Search** — one box, results as you type, all offline. Mix names, sets and numbers in
   any order: `charizard 4/102`, `umbreon prismatic`, `mew 151`, `tg05`, `199/165`.
   Sealed product too (`151 etb`; ETB, UPC and PC shorthands work).
+- **Release calendar** (top of Sets) — upcoming sets and ones out in the last 45 days, with
+  each product's release date and market price vs Australian RRP (presale prices before
+  release). Built daily into `data/releases.json` from TCGplayer's presale listings.
 - **Sets** — every English set by series; open one to see all its cards in number order
   with prices, which you own (All / Owned / Missing), your progress and its sealed product.
 - **Collection** — cards and sealed product with quantities and finishes; search, sort,
