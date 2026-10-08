@@ -9,7 +9,7 @@
 // Set up (Cloudflare dashboard): see README → "AU sold prices".
 //   Secret   SOLDCOMPS_API_KEY  your sc_… key
 //   KV       AU_KV              a KV namespace (cache + daily counter)
-//   Optional variables: DAILY_LIMIT (default 400), CACHE_DAYS (default 3)
+//   Optional variables: DAILY_LIMIT (default 400), CACHE_DAYS (default 3; set to 14 in wrangler.jsonc)
 //
 // GET /?q=<search words>&n=<card number as printed, e.g. 161/131>
 //   → { ok: true, aud, n, low, high, asOf, recent: [{ title, aud, date, url }] }

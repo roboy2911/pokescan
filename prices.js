@@ -31,8 +31,8 @@ const VARIANTS = [
  * AU_SOLD_KEEP). Empty AU_SOLD_URL = off. */
 const AU_SOLD_URL = 'https://pokescan-au-sold.minecraftfishies.workers.dev/';
 const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v1';
-const AU_SOLD_MAX_AGE = 3 * 86400 * 1000;
-const AU_SOLD_KEEP = 30 * 86400 * 1000;
+const AU_SOLD_MAX_AGE = 14 * 86400 * 1000;
+const AU_SOLD_KEEP = 45 * 86400 * 1000;
 let auSoldMem = null;
 const auSoldKey = (q, n) => `${q.toLowerCase()}|${(n || '').toLowerCase()}`;
 const auSoldStore = () => (auSoldMem ??= readCache(AU_SOLD_CACHE_KEY) || {});
