@@ -1009,7 +1009,12 @@ function ebaySoldUrl(item, variant = null) {
 }
 const ebayButton = (url) => `<a class="btn ghost ebay-sold" href="${esc(url)}" target="_blank" rel="noopener">Check AU sold prices on eBay ↗</a>`;
 
+/* Each opened sheet gets a number; a price that arrives after another sheet has opened
+ * (they load asynchronously) is dropped instead of landing in the wrong sheet. */
+let sheetToken = 0;
+
 function openDetail(card, { entryKey = null } = {}) {
+  const token = ++sheetToken;
   const inCollection = entryKey !== null;
   let variant = card.variant ?? null; // finish picked in this sheet
   const rows = [
@@ -1080,6 +1085,7 @@ function openDetail(card, { entryKey = null } = {}) {
 
   // Price, with a chip per finish (picking one changes the saved card's finish).
   Promise.all([getTcgPrices([card.id]), getAudRate()]).then(([prices, rate]) => {
+    if (token !== sheetToken) return;
     const priceEl = $('detailPrice');
     if (!priceEl) return;
     const info = prices[card.id];
@@ -1436,6 +1442,7 @@ function sealedEntry(s) {
 
 /* Detail sheet for sealed product. Tapping the market price shows the Australian RRP. */
 async function openSealedDetail(item, { entryKey = null } = {}) {
+  const token = ++sheetToken;
   const inCollection = entryKey !== null;
   const productId = String(item.id).replace(/^s/, '');
   els.detailBody.innerHTML = `
@@ -1492,6 +1499,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
   els.detail.showModal();
 
   const [sealed, rate] = await Promise.all([getSealed(), getAudRate()]);
+  if (token !== sheetToken) return;
   const s = sealed.byKey.get(`s${productId}`) ?? (item.usd !== undefined ? item : null);
   const priceEl = $('detailPrice');
   if (!priceEl) return;
