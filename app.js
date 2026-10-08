@@ -1019,7 +1019,8 @@ function ebaySoldQuery(item, variant = null) {
     const num = !coded && (item.releaseDate || '') >= '2020' && /^\d+$/.test(digits) ? digits.padStart(3, '0') : digits;
     const total = num !== digits ? String(item.setTotal).padStart(3, '0') : item.setTotal;
     n = coded || !item.setTotal ? raw : `${num}/${total}`;
-    q = `${item.name} ${n}`;
+    // Sellers write "Gold Star", not ★ (and often leave out δ).
+    q = `${item.name.replace(/★/g, ' Gold Star').replace(/δ/g, '')} ${n}`;
     const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim() : EBAY_FINISH_WORDS[variant];
     if (finish) q += ` ${finish}`;
   }

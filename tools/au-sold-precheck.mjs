@@ -35,7 +35,8 @@ function ebaySoldQuery(card, variant) {
   const num = !coded && (card.releaseDate || '') >= '2020' && /^\d+$/.test(digits) ? digits.padStart(3, '0') : digits;
   const total = num !== digits ? String(card.setTotal).padStart(3, '0') : card.setTotal;
   const n = coded || !card.setTotal ? raw : `${num}/${total}`;
-  let q = `${card.name} ${n}`;
+  // Sellers write "Gold Star", not ★ (and often leave out δ).
+  let q = `${card.name.replace(/★/g, ' Gold Star').replace(/δ/g, '')} ${n}`;
   const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim() : EBAY_FINISH_WORDS[variant];
   if (finish) q += ` ${finish}`;
   return { q: q.replace(/\s+/g, ' ').trim(), n };
