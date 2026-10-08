@@ -5,9 +5,8 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
 
 ## Candidate ideas
 
-- **Want list + "cost to finish"** (owner-approved): star cards/sealed you're chasing, with
-  optional target prices and a flag when they drop to it; in Sets, "38 missing ≈ A$214" to
-  complete a set (and the cheap ones only).
+- **Want list** (owner-approved): star cards/sealed you're chasing, with optional target
+  prices and a flag when they drop to it. ("Cost to finish" part done in the 6pm run.)
 - Shareable trade / sell list — done in the 4pm run.
 - Card condition — done in the 5pm run.
 - Collection value over time + "Your movers" — planned for the 8pm run.
@@ -58,3 +57,12 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   conditions are kept as separate entries (changing one to match another merges them).
   Existing collections are all NM, so they look and add up exactly as before; backups keep
   the condition. *Remove:* "remove condition" (`git revert d870859`).
+
+## 6pm Thu — run 4
+
+- Bug sweep: all tabs, sealed sheet, search, bulk add, condition, trade list, backup/restore,
+  offline, scan flow; price Action last ran fine — passing, no bugs found.
+- **Feature: Cost to finish a set** — `3a7943e`. Under the progress bar on a set page: "To finish:
+  101 missing ≈ A$1,860 + 1 unpriced", using each missing card's cheapest finish; when the set
+  has secret rares it also shows the main set alone ("main set (128): A$82").
+  *Remove:* "remove cost to finish" (`git revert 3a7943e`).
