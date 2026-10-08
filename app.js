@@ -696,7 +696,7 @@ async function showPrice(card) {
     els.priceValue.textContent = au?.ok ? formatAudPlain(au.aud) : tcg;
     els.priceValue.className = 'price-value';
     label.textContent = au?.ok ? 'AU sold price' : 'Market price (AUD)';
-    els.priceNote.innerHTML = (au === undefined ? 'Checking Australian eBay sales… · ' : '')
+    els.priceNote.innerHTML = (au === undefined ? 'Checking Australian eBay sales (can take ~20 s)… · ' : '')
       + (au?.ok ? `${esc(auSoldText(au, tcg))}` : tcgNote) + soldLink();
   };
   let auReq = 0;
@@ -1187,7 +1187,7 @@ function openDetail(card, { entryKey = null } = {}) {
         label.textContent = 'Market price (AUD)';
       }
       priceEl.className = 'price-value';
-      $('detailNote').innerHTML = au === undefined ? 'Checking Australian eBay sales…'
+      $('detailNote').innerHTML = au === undefined ? 'Checking Australian eBay sales (can take ~20 s)…'
         : esc(auSoldText(au, au?.ok ? tcg : '')) + (info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : '');
       $('auRecent').innerHTML = auSoldRecent(au);
       showCondition();
@@ -1756,7 +1756,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
     priceEl.textContent = au?.ok ? formatAudPlain(au.aud) : tcg;
     priceEl.className = 'price-value';
     $('sealedPrice').querySelector('.price-label').textContent = au?.ok ? 'AU sold price' : 'Market price (AUD)';
-    source = au === undefined ? 'Checking Australian eBay sales…' : auSoldText(au, au?.ok ? tcg : '');
+    source = au === undefined ? 'Checking Australian eBay sales (can take ~20 s)…' : auSoldText(au, au?.ok ? tcg : '');
     $('sealedHint').textContent = $('sealedRrp').hidden ? `${source} · Tap to compare with Australian RRP` : source;
     $('sealedAuRecent').innerHTML = auSoldRecent(au);
     if (!$('sealedRrp').hidden) showRrp();

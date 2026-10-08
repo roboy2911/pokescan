@@ -46,11 +46,19 @@ function auSoldCached(q, n, { anyAge = false } = {}) {
 }
 
 /* { ok, aud, n, low, high, recent, asOf } or { ok: false, reason }; null if it couldn't ask. */
-async function getAuSold(q, n) {
+const auSoldPending = new Map(); // one search per card even if two screens ask at once
+function getAuSold(q, n) {
   const hit = auSoldCached(q, n);
-  if (hit || !AU_SOLD_URL) return hit;
+  if (hit || !AU_SOLD_URL) return Promise.resolve(hit);
+  const key = auSoldKey(q, n);
+  if (!auSoldPending.has(key)) {
+    auSoldPending.set(key, fetchAuSold(q, n).finally(() => auSoldPending.delete(key)));
+  }
+  return auSoldPending.get(key);
+}
+async function fetchAuSold(q, n) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 45000); // a search takes ~10–20 s
+  const timer = setTimeout(() => ctrl.abort(), 60000); // a new search takes ~10–30 s
   try {
     const res = await fetch(`${AU_SOLD_URL}?${new URLSearchParams({ q, n: n || '' })}`, { signal: ctrl.signal });
     const body = await res.json();

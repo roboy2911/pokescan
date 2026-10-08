@@ -112,7 +112,7 @@ export default {
 
     const api = new URL('https://api.sold-comps.com/v1/scrape');
     api.search = new URLSearchParams({
-      keyword: q, ebaySite: 'ebay.com.au', itemLocation: 'domestic', daysToScrape: '90', count: '240',
+      keyword: q, ebaySite: 'ebay.com.au', itemLocation: 'domestic', daysToScrape: '90', count: '60', // newest 60 sales: enough for a median, and much faster
     });
     const res = await fetch(api, { headers: { Authorization: `Bearer ${env.SOLDCOMPS_API_KEY}` } });
     if (!res.ok) return json({ ok: false, reason: `upstream-${res.status}` }, allow, 502);
