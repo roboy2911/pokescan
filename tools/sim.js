@@ -415,29 +415,77 @@ export async function simHard(card, bgUrl, rnd, conditions = [], opts = {}) {
  * images with opts.real = true. Returns, per
  * condition set, how often the right card is first / in the top 5, and how often the app
  * would have said "Found it" for a wrong card (wrongConfident — should stay 0). */
+/* Same as foldTwins in app.js (used when the app page provides it). */
+function foldTwinsLocal(ranked, jaStart, nameOf, { margin = 0.03, prefer = 'en' } = {}) {
+  const out = [];
+  for (const m of ranked) {
+    const isJa = m.i >= jaStart;
+    const twin = out.find((o) => (o.i >= jaStart) !== isJa && o.twin === undefined
+      && Math.abs(o.score - m.score) <= margin && nameOf(o.i) === nameOf(m.i));
+    if (!twin) { out.push({ ...m }); continue; }
+    if ((prefer === 'ja') === isJa) Object.assign(twin, { twin: twin.i, i: m.i });
+    else twin.twin = m.i;
+  }
+  return out;
+}
+const fold = (...a) => (globalThis.foldTwins ?? foldTwinsLocal)(...a);
+
 export async function testHard(n = 40, seed = 5, sets = [[], ['glare'], ['streak'], ['sleeve', 'streak'],
   ['toploader'], ['finger'], ['dim', 'glare'], ['sleeve', 'glare', 'finger']], opts = {}) {
-  matcher ??= createMatcher(await (await fetch('data/index.bin')).arrayBuffer());
+  // opts.ja: Japanese cards (data/index-ja.bin) join the search, folded with their English twins
+  // like the app does; the same English cards are sampled. opts.jaOnly: sample Japanese cards
+  // instead (pictures from opts.jaImg(id), e.g. served by the test harness).
+  let ja = null;
+  if (opts.ja || opts.jaOnly) {
+    const [en, jb, jm] = await Promise.all([fetch('data/index.bin').then((r) => r.arrayBuffer()),
+      fetch('data/index-ja.bin').then((r) => r.arrayBuffer()), fetch('data/cards-ja.json').then((r) => r.json())]);
+    const both = new Uint8Array(en.byteLength + jb.byteLength);
+    both.set(new Uint8Array(en), 0);
+    both.set(new Uint8Array(jb), en.byteLength);
+    const jaStart = en.byteLength / FP.DIM;
+    ja = { jaStart, cards: jm.cards, m: createMatcher(both.buffer) };
+    matcher ??= createMatcher(en);
+    ja.name = (i) => (i < jaStart ? db.cards[i].name : jm.cards[i - jaStart][1]);
+  }
+  const M = ja ? ja.m : (matcher ??= createMatcher(await (await fetch('data/index.bin')).arrayBuffer()));
+  const sampleCount = ja ? ja.jaStart : M.count;
   const confident = opts.confident ?? ((m) => m[0].score >= 0.88 && m[0].score - (m[1]?.score ?? 0) >= 0.015);
   const out = {};
   for (const conds of sets) {
     const rnd = mulberry(seed);
     const res = { top1: 0, top5: 0, confident: 0, wrongConfident: 0, ms: 0, skipped: 0 };
     for (let k = 0; k < n; k++) {
-      const i = Math.floor(rnd() * matcher.count);
+      let i = Math.floor(rnd() * sampleCount);
       let card;
       try {
-        // opts.real: the card's actual image (needs network; `db` from the app page).
-        card = opts.real ? await imgData(db.cards[i].imageLarge, 315, 440) : await synthCard(i, rnd);
+        if (opts.jaOnly) {
+          // A Japanese card with a picture (rows without one are all zero).
+          let j = i % ja.cards.length;
+          while (!ja.cards[j][5]) j = (j + 1) % ja.cards.length;
+          i = ja.jaStart + j;
+          card = await imgData(`${opts.jaBase}${ja.cards[j][0].replace(/[:/]/g, '_')}.jpg`, 315, 440);
+        } else {
+          // opts.real: the card's actual image (needs network; `db` from the app page).
+          card = opts.real ? await imgData(db.cards[i].imageLarge, 315, 440) : await synthCard(i, rnd);
+        }
       } catch {
         res.skipped++;
         continue;
       }
       const P = await simHard(card, BACKGROUNDS[k % 2 ? 0 : 0], rnd, conds, opts.photo || {});
       const t0 = performance.now();
-      const { matches } = matcher.match([{ data: P.d, w: P.W, h: P.H, guide: P.guide }], 12, opts.match || {});
+      const region = [{ data: P.d, w: P.W, h: P.H, guide: P.guide }];
+      let matches;
+      if (ja && opts.twoStep) {
+        // English first; the Japanese cards only join when English isn't sure (as the app does).
+        matches = matcher.match(region, 12, opts.match || {}).matches;
+        if (!confident(matches)) matches = fold(M.match(region, 12, opts.match || {}).matches, ja.jaStart, ja.name, { prefer: opts.jaOnly ? 'ja' : 'en' });
+      } else {
+        matches = M.match(region, 12, opts.match || {}).matches;
+        if (ja) matches = fold(matches, ja.jaStart, ja.name, { prefer: opts.jaOnly ? 'ja' : 'en' });
+      }
       res.ms += performance.now() - t0;
-      const rank = matches.findIndex((m) => m.i === i);
+      const rank = matches.findIndex((m) => m.i === i || m.twin === i);
       if (rank === 0) res.top1++;
       if (rank >= 0 && rank < 5) res.top5++;
       if (confident(matches)) {

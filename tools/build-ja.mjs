@@ -94,7 +94,7 @@ await mapLimit(groupsRes.results, async (g) => {
   }
   if (!byNumber.size) return; // sealed-only group
   setsWithCards++;
-  let code = (g.abbreviation || '').trim() || `g${g.groupId}`;
+  let code = ((g.abbreviation || '').trim() || `g${g.groupId}`).replace(/[^\w.-]+/g, '');
   if (usedSetIds.has(code.toLowerCase())) code = `${code}-${g.groupId}`;
   usedSetIds.add(code.toLowerCase());
   const setId = `ja:${code}`;
