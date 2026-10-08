@@ -144,3 +144,32 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   Celebrations / 30th Celebration reprint sales (A$285), and the reprints were searched as "4/25".
   Reprints now search the original's printed number and count only their own sales; the 53 reprinted
   originals ignore reprint sales. *Remove:* `git revert 2d7823e`.
+
+## 10pm Thu — run 8 (Japanese 2/4)
+
+- **Feature: Japanese cards (2/4): scanning index — built, not switched on** — `8dfe9d9`.
+  `data/index-ja.bin` (6.6 MB; the English index is 5.4 MB): 24,961 rows, same format as index.bin,
+  built by `tools/build-index-ja.mjs` with fingerprint.js exactly like the English one, from TCGplayer
+  photos (200 px; 415 MB downloaded, ~8 min; fingerprinting 2 min). 995 cards have no photo (empty row).
+- **Accuracy (testHard, n=60, seed 5, real images)** — English only / + Japanese in every scan /
+  + Japanese only when English isn't sure ("two-step"):
+
+  | | English | + Japanese | two-step |
+  |---|---|---|---|
+  | clean | 57 (0 wrong-conf.) | 58 (0) | 58 (0) |
+  | glare | 56 (1) | 55 (2) | 55 (2) |
+  | streak | 47 (3) | 44 (2) | 47 (3) |
+  | sleeve+streak | 45 (1) | 43 (2) | 42 (3) |
+  | toploader | 51 (2) | 49 (1) | 51 (2) |
+  | finger | 58 (0) | 57 (0) | 57 (0) |
+  | dim+glare | 52 (2) | 46 (4) | 48 (5) |
+  | sleeve+glare+finger | 51 (1) | 49 (3) | 51 (1) |
+
+  Both ways make English scanning worse in hard light, so the app doesn't load it yet.
+  Japanese-only (30 cards, Japanese preferred): clean 24/29, glare 28/29, sleeve+streak 17/28, no
+  wrong-confident answers.
+- **What's left:** switch it on behind a **"Scan Japanese cards"** toggle on the Scan screen (off by
+  default → English scanning exactly as now; on → Japanese and English searched together, the
+  preferred language first, the other print offered as its twin). Loader written and saved
+  (`scratchpad/ja-scan-loader.patch`: worker loads index-ja.bin after start-up and swaps it in; app
+  folds JA/EN twins of the same name within 0.03). To do in the 11pm / 12am runs with part 3.
