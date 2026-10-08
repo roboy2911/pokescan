@@ -3,6 +3,52 @@
 Every change is its own commit, so anything can be taken out on its own. Tell Claude
 "remove <name>" (it runs `git revert <commit>`), or do it yourself with that command.
 
+## ☀️ Morning summary (7am Fri 9 Oct)
+
+Everything is live on the site. The full test suite passed on every run, including the last one at 7am
+(all tabs, sealed, search 11.5 ms, backup/restore, offline, AU sold, Japanese, full-screen scan at
+390×844 / iPhone SE / desktop), with no page errors. To remove anything, run `git revert <hash>`, or tell
+Claude "remove <name>".
+
+**Features**
+- Bulk add mode (scan stacks/binders, Undo last) — `7c30b9f` → `git revert 7c30b9f`
+- "Check AU sold prices on eBay" button *(your request)* — `f54012a` → `git revert f54012a`
+- Release calendar in Sets *(your request)* — `33a4e3e` → `git revert 33a4e3e`
+- Shareable trade / sale list — `9139840` → `git revert 9139840`
+- Card condition NM/LP/MP/HP/DMG — `d870859` → `git revert d870859`
+- Cost to finish a set — `3a7943e` → `git revert 3a7943e`
+- AU sold price as the main price (SoldComps via Cloudflare Worker) *(your request)* — `46bf34d` → `git revert 46bf34d`
+- AU sold price on the scan result — `b4af18c` → `git revert b4af18c`
+- Collection value over time + "Your movers" — `98324b7` → `git revert 98324b7`
+- Nightly AU sold pre-check for A$50+ singles *(your request)* — `6fe981c` → `git revert 6fe981c`
+- Japanese cards (scan + search + prices, 24,961 cards) *(your request)* — `7a76dec` `62854e2` `8dfe9d9` `a735cf7` → revert all four, newest first
+- Full-screen scan view on phones *(your request)* — `65ac929` → `git revert 65ac929`
+
+**Fixes**
+- A card's price could land in the next sheet you opened — `301edfb` → `git revert 301edfb`
+- AU sold for sealed skips multi-item/vague listings — `d87aff1` → `git revert d87aff1`
+- AU sold lookups faster and never doubled — `f197913` → `git revert f197913`
+- Market tab listed SM/SWSH/SV cards as sealed — `669d522` → `git revert 669d522`
+- Gold Star cards searched as "Gold Star" — `162809f` → `git revert 162809f`
+- Daily price job names the app (TCGCSV blocks Node's default user agent) — `f3f7f16` → `git revert f3f7f16` (not recommended)
+- Classic Collection reprints vs originals in AU sold — `2d7823e` → `git revert 2d7823e`
+
+**Tweaks**
+- AU sold prices kept 14 days (was 3) — `598074d` → `git revert 598074d`
+- AU pre-check can be paced and stops cleanly — `370161b` → `git revert 370161b`
+- Full-screen panel fits short phones (iPhone SE) — `28eecc5` → `git revert 28eecc5`
+- Header counts the Japanese cards — `cf78ac0` → `git revert cf78ac0`
+
+**Still to check / your call**
+- Tonight's scheduled "Update prices" and "AU sold prices" jobs hadn't started by 7am (GitHub runs
+  them late; the last two days they started 22:45–23:15 UTC = 8:45–9:15am AEST). It will be the first
+  run of the Japanese price step, so check it went green.
+- AU sold: should sales far below the TCGplayer price (e.g. under 35%) be ignored? That would stop
+  reprint sales dragging down vintage originals (e.g. A$412 from 3 sales).
+- SoldComps: the 429 reply said `"plan": "free"` — check the 10,000 credits are on this key, and
+  whether they're monthly or one-off.
+- Not done: want list, Japanese sealed product, Japanese cards in Market movers.
+
 ## Candidate ideas
 
 - **Want list** (owner-approved): star cards/sealed you're chasing, with optional target
@@ -247,3 +293,7 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
 
 - Bug sweep: full regression passing (15 scripts, search 10.7 ms), no bugs found, no changes.
 - Price Action: still not started (both "Update prices" and "AU sold prices" are queued late by GitHub). Tried the Japanese price step locally; this sandbox blocks Node from reaching TCGCSV (its own network allowlist, not TCGCSV — curl gets 200), so the Action log is the real test.
+
+## 7am Fri — run 17 (final)
+
+- Bug sweep: full regression passing (15 scripts + full-screen layout at 390×844, 375×667, 1280×800), no bugs found, no changes. Morning summary written at the top.
