@@ -219,3 +219,11 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   panel never scrolls up/down and the page doesn't scroll (checked: page height = screen height).
   Camera buttons move to the top right; card guide stays card-shaped above the panel. Desktop
   (≥ 700 px wide) and the other tabs unchanged. *Remove:* "remove full-screen scan" (`git revert 65ac929`).
+
+## 2am Fri — run 12
+
+- Bug sweep: regression passing; checked the new full-screen scan view at 390×844, 375×667 and
+  1280×800 (desktop unchanged).
+- **Tweak: full-screen scan panel fits short phones** — `28eecc5`. On an iPhone SE the "Not it?" strip was
+  cut off and "Add to collection" wrapped; screens up to 740 px tall now get a tighter panel.
+  *Remove:* `git revert 28eecc5`.
