@@ -10,6 +10,11 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
 - Shareable trade / sell list — done in the 4pm run.
 - Card condition — done in the 5pm run.
 - Collection value over time + "Your movers" — planned for the 8pm run.
+- **Full-screen scan view** (owner request) — planned for the 7pm run: camera fills the screen,
+  see-through tab bar, see-through bottom panel (card, price, finish, Add) with "Not it?"
+  matches swiping sideways; panel doesn't scroll up/down; tap the card for the full sheet.
+- **Japanese cards** (owner request: scan + search + prices, all sets) — planned over the 9pm
+  (card list), 10pm (scanning index), 11pm (prices, search, Sets) and 12am (finish + test) runs.
 
 ## 3pm Thu — run 1
 
