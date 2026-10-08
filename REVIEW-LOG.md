@@ -35,3 +35,14 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   (Delta Reign, 6 Nov) and ones out in the last 45 days, with each product's release date,
   market/presale price in AUD and "+x% over RRP". Built daily into `data/releases.json`.
   *Remove:* "remove release calendar" (`git revert 33a4e3e`).
+
+## 4pm Thu — run 2
+
+- Bug sweep: all tabs, search, sets, release calendar, backup/restore — passing.
+- **Fix: a card's price could land in the next sheet opened** — `301edfb`. Opening a card
+  sheet and quickly another sheet put the first card's price into the new one (and threw
+  an error). Late prices for an older sheet are now ignored.
+- **Feature: Shareable trade / sale list** — `9139840`. "For trade / sale" switch in any
+  collection item's sheet; "⇄ Trade / sale list" in the Collection's set filter with total,
+  "list at N% of market" and **Share list** (ready-to-paste text with A$ prices, ×2 … each,
+  total). *Remove:* "remove trade list" (`git revert 9139840`).
