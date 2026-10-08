@@ -237,3 +237,8 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
 ## 4am Fri — run 14
 
 - Bug sweep: full regression passing (15 scripts, search 12.6 ms), no bugs found, no changes.
+
+## 5am Fri — run 15
+
+- Bug sweep: full regression passing (15 scripts, search 12.1 ms), no bugs found, no changes.
+- Price Action: today's scheduled "Update prices" (18:30 UTC) hasn't started yet. GitHub queues scheduled jobs late (yesterday's started 23:14 UTC), so it's the first run with the TCGCSV user-agent fix and Japanese prices — check its log in the morning.
