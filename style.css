@@ -697,3 +697,6 @@ a.btn { text-decoration: none; }
 }
 .trade-bar .btn { min-height: 40px; }
 .cond-box { margin-top: -4px; }
+
+.set-finish { margin-top: -6px; font-size: 0.85rem; }
+.set-finish:empty { display: none; }

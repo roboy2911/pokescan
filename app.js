@@ -1857,6 +1857,25 @@ setsEls.show.querySelectorAll('button').forEach((b) => b.addEventListener('click
   renderSetPage();
 }));
 
+/* "Cost to finish": the missing cards at market price (cheapest finish), for the whole set
+ * and for the main set (numbers up to the printed total, i.e. without secret rares). */
+function finishCostText(cards, qtyById, prices, printed, rate) {
+  const total = (list) => {
+    let usd = 0, unpriced = 0;
+    for (const c of list) {
+      const finishes = priceVariants(prices[c.id]?.prices).map((v) => v.usd).filter((u) => u != null);
+      if (finishes.length) usd += Math.min(...finishes);
+      else unpriced++;
+    }
+    return `${formatAud(usd, rate)}${unpriced ? ` + ${unpriced} unpriced` : ''}`;
+  };
+  const missing = cards.filter((c) => !qtyById.has(c.id));
+  if (!missing.length) return '';
+  const main = printed ? missing.filter((c) => /^\d+$/.test(c.number) && +c.number <= printed) : [];
+  const mainNote = main.length && main.length < missing.length ? ` · main set (${main.length}): ${total(main)}` : '';
+  return `To finish: ${missing.length} missing ≈ ${total(missing)}${mainNote}`;
+}
+
 let setToken = 0;
 async function renderSetPage() {
   const token = ++setToken;
@@ -1873,7 +1892,8 @@ async function renderSetPage() {
     <p class="detail-sub">${esc(series)} · ${esc(date || '')}${printed ? ` · ${printed} in the main set` : ''}</p>
     <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${cards.length}" aria-valuenow="${ownedCount}">
       <span style="width:${cards.length ? (100 * ownedCount / cards.length).toFixed(1) : 0}%"></span></div>
-    <p class="muted center" id="setSummary">You have ${ownedCount} of ${cards.length} cards</p>`;
+    <p class="muted center" id="setSummary">You have ${ownedCount} of ${cards.length} cards</p>
+    <p class="muted center set-finish" id="setFinish"></p>`;
 
   const shown = cards.filter((c) => setShowMode === 'all'
     || (setShowMode === 'owned' ? qtyById.has(c.id) : !qtyById.has(c.id)));
@@ -1904,6 +1924,7 @@ async function renderSetPage() {
     if (el && usd != null) el.textContent = formatAud(usd, rate.rate);
   }
   if (ownedCount) $('setSummary').textContent += ` · worth about ${formatAud(setValue, rate.rate)}`;
+  $('setFinish').textContent = finishCostText(cards, qtyById, prices, printed, rate.rate);
 
   const items = sealed.items.filter((s) => s.set === id && s.type !== 'Case')
     .sort((a, b) => (b.usd ?? 0) - (a.usd ?? 0));
