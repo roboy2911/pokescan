@@ -37,17 +37,36 @@ let auSoldMem = null;
 const auSoldKey = (q, n) => `${q.toLowerCase()}|${(n || '').toLowerCase()}`;
 const auSoldStore = () => (auSoldMem ??= readCache(AU_SOLD_CACHE_KEY) || {});
 
-/* A saved answer: fresh only (for the card sheet), or any age (for the collection value). */
+/* data/au-sold.json: the nightly pre-check of every single worth A$50+ (tools/au-sold-precheck.mjs).
+ * Rows are [aud, sales, low, high, date]; loaded once at start-up. */
+const AU_PRE_MAX_AGE = 21 * 86400 * 1000; // re-checked every ~14 days
+let auPre = null;
+const auPreReady = fetch('data/au-sold.json').then((r) => (r.ok ? r.json() : null))
+  .then((d) => { auPre = d?.items ?? null; }).catch(() => {});
+function auPreEntry(key) {
+  const row = auPre?.[key];
+  if (!row) return null;
+  const [aud, n, low, high, date] = row;
+  return aud != null ? { ok: true, aud, n, low, high, asOf: date, at: Date.parse(date), pre: true }
+    : { ok: false, reason: 'few-sales', n, asOf: date, at: Date.parse(date), pre: true };
+}
+
+/* A saved answer — the newer of this device's and the nightly pre-check's: fresh only (for
+ * the card sheet), or any age (for the collection value). */
 function auSoldCached(q, n, { anyAge = false } = {}) {
-  const hit = auSoldStore()[auSoldKey(q, n)];
+  const key = auSoldKey(q, n);
+  const own = auSoldStore()[key];
+  const pre = auPreEntry(key);
+  const hit = !own ? pre : !pre ? own : own.at >= pre.at ? own : pre;
   if (!hit) return null;
   const age = Date.now() - hit.at;
-  return age < (anyAge ? AU_SOLD_KEEP : AU_SOLD_MAX_AGE) ? hit : null;
+  return age < (anyAge ? AU_SOLD_KEEP : hit.pre ? AU_PRE_MAX_AGE : AU_SOLD_MAX_AGE) ? hit : null;
 }
 
 /* { ok, aud, n, low, high, recent, asOf } or { ok: false, reason }; null if it couldn't ask. */
 const auSoldPending = new Map(); // one search per card even if two screens ask at once
-function getAuSold(q, n) {
+async function getAuSold(q, n) {
+  await auPreReady;
   const hit = auSoldCached(q, n);
   if (hit || !AU_SOLD_URL) return Promise.resolve(hit);
   const key = auSoldKey(q, n);

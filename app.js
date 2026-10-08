@@ -1048,6 +1048,9 @@ function auSoldRecent(au) {
     `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(formatAudPlain(r.aud))} · ${esc(r.date)}</a> <span>${esc(r.title)}</span></li>`).join('')}</ul></details>`;
 }
 
+// The nightly AU sold list loads in the background; re-total the collection once it's in.
+auPreReady.then(() => { if (collectionPrices) renderCollection(); });
+
 /* Value of one collection entry in USD: the AU sold price when one has been looked up,
  * otherwise TCGplayer. */
 function entryUsd(e, prices, sealed, rate) {
