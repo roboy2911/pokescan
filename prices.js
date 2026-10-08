@@ -30,7 +30,8 @@ const VARIANTS = [
  * the device (refreshed after AU_SOLD_MAX_AGE, kept for the collection value up to
  * AU_SOLD_KEEP). Empty AU_SOLD_URL = off. */
 const AU_SOLD_URL = 'https://pokescan-au-sold.minecraftfishies.workers.dev/';
-const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v1';
+const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v2'; // v1 held promo prices from other cards' sales
+try { localStorage.removeItem('pokescan.auSold.v1'); } catch { /* storage blocked */ }
 const AU_SOLD_MAX_AGE = 14 * 86400 * 1000;
 const AU_SOLD_KEEP = 45 * 86400 * 1000;
 let auSoldMem = null;

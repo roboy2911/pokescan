@@ -29,7 +29,26 @@ function numberMatcher(n) {
     const re = new RegExp(`(^|[^0-9])0*${strip(parts[0])}\\s*/\\s*0*${strip(parts[1])}([^0-9]|$)`);
     return (title) => re.test(title.toLowerCase());
   }
+  // A promo's bare number ("44"): on its own ("#44", "SVP 044", "SVP044"), not "44/64" or "144".
+  if (/^\d+$/.test(parts[0])) {
+    const re = new RegExp(`(^|[^0-9/])0*${strip(parts[0])}(?![0-9]|\\s*/)`);
+    return (title) => re.test(title.toLowerCase());
+  }
   return (title) => title.toLowerCase().replace(/[\s-]/g, '').includes(parts[0].replace(/[\s-]/g, ''));
+}
+
+// The card's name is the part of the query before its number ("Charmander 44 …" → "charmander").
+// Every word of it must be in the title, so a "Geodude 44/64" sale can't price Charmander 44.
+const plain = (s) => s.toLowerCase().normalize('NFD').replace(/['’]s\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+function nameMatcher(q, n) {
+  const at = n ? q.toLowerCase().indexOf(` ${n.toLowerCase()}`) : -1;
+  if (at <= 0) return () => true;
+  // "Gold Star" is also written ★ / ☆; one-letter words ("V", "d") are left out.
+  const words = plain(q.slice(0, at)).split(' ').filter((w) => w.length >= 2 && w !== 'gold' && w !== 'star');
+  return (title) => {
+    const t = plain(title).replace(/ /g, '');
+    return words.every((w) => t.includes(w));
+  };
 }
 
 // Classic Collection reprints (Celebrations 2021, 30th Celebration 2026) carry the original card's
@@ -45,6 +64,7 @@ const MODES = {
 
 export function summarise(items, n, wantsOtherLang, q = '', mode = '') {
   const hasNumber = numberMatcher(n);
+  const hasName = nameMatcher(q, n);
   const inMode = MODES[mode] ?? (() => true);
   // Words searched for don't count as junk ("Booster Bundle" is a product, not a lot).
   const qWords = new RegExp(`\\b(${q.toLowerCase().split(/\s+/).filter((w) => /^[a-z]+$/.test(w)).join('|') || '$^'})\\b`, 'gi');
@@ -58,7 +78,7 @@ export function summarise(items, n, wantsOtherLang, q = '', mode = '') {
   };
   let sales = items
     .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
-    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasWords(it.title) && inMode(it.title))
+    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasName(it.title) && hasWords(it.title) && inMode(it.title))
     .map((it) => ({ title: it.title, aud: Number(it.soldPrice), date: (it.endedAt || '').slice(0, 10), url: it.url }));
   if (sales.length >= 4) {
     // Drop outliers: outside 0.5×–2× the median (mislabelled lots, damaged copies, typos).

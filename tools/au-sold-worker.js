@@ -42,7 +42,7 @@ export default {
     if (q.length < 3) return json({ ok: false, reason: 'query' }, allow, 400);
 
     const cacheDays = Number(env.CACHE_DAYS) || 3;
-    const key = `v3:${q.toLowerCase()}|${n.toLowerCase()}|${t}`;
+    const key = `v4:${q.toLowerCase()}|${n.toLowerCase()}|${t}`;
     const cached = env.AU_KV && await env.AU_KV.get(key, 'json');
     if (cached) return json({ ...cached, cached: true }, allow);
 
