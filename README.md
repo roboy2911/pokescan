@@ -116,6 +116,27 @@ TCGplayer (US) market prices converted to AUD at the day's exchange rate
 
 These are US market prices, not Australian sold prices — see **Ideas** below.
 
+## AU sold prices (Cloudflare middleman)
+
+`tools/au-sold-worker.js` is a tiny Cloudflare Worker that holds the SoldComps key. When
+someone opens a card, the app asks it for that card's eBay.com.au sales by Australian sellers
+in the last 90 days. It drops graded, other-language, lot and fake listings, and returns the median.
+Answers are kept for 3 days (re-opening a card is free), and it stops at 400 searches a day.
+
+Set up (free Cloudflare account, all in the browser):
+1. dash.cloudflare.com → **Compute (Workers)** → **Create** → **Start with Hello World** → name it
+   `pokescan-au-sold` → **Deploy**.
+2. **Edit code** → replace everything with `tools/au-sold-worker.js` → **Deploy**.
+3. **Storage & Databases → KV** → **Create** a namespace called `pokescan-au-sold`.
+4. Back in the worker → **Bindings** → **Add binding** → **KV namespace**: variable name `AU_KV`,
+   namespace `pokescan-au-sold` → **Add**.
+5. Worker → **Settings → Variables and Secrets** → **Add** → type **Secret**, name
+   `SOLDCOMPS_API_KEY`, value your `sc_…` key → **Deploy**. (Optional plain variables:
+   `DAILY_LIMIT`, `CACHE_DAYS`.)
+6. Copy the worker's URL (`https://pokescan-au-sold.<you>.workers.dev`) into `AU_SOLD_URL` in
+   `prices.js`.
+
+
 ## Run it on your computer
 
 ```
