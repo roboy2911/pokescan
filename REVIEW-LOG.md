@@ -71,3 +71,14 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   101 missing ≈ A$1,860 + 1 unpriced", using each missing card's cheapest finish; when the set
   has secret rares it also shows the main set alone ("main set (128): A$82").
   *Remove:* "remove cost to finish" (`git revert 3a7943e`).
+
+## Owner request (Thu evening) — AU sold prices
+
+- **Feature: AU sold prices as the main price** — `46bf34d`. Paid SoldComps key (owner's) behind a
+  Cloudflare Worker (`tools/au-sold-worker.js`, deployed from `wrangler.jsonc`; key is a Cloudflare
+  secret). Opening a card/sealed sheet looks up eBay.com.au sales **by Australian sellers**, last 90
+  days, without graded/other-language/lot/custom listings and outliers; ≥3 sales → the median
+  replaces the main price ("AU sold price", range, recent sales, TCGplayer in the note). Saved on the
+  device 3 days (and in the worker's KV 3 days); collection value and trade list use it where known.
+  Worker caps at 400 searches/day. *Remove:* "remove AU sold prices" (`git revert 46bf34d`; the worker can
+  stay or be deleted in Cloudflare).
