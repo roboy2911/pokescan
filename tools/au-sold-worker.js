@@ -20,6 +20,8 @@ const MIN_SALES = 3;
 
 // Listings that aren't a single raw copy of the card.
 const JUNK = /\b(psa|cgc|bgs|beckett|ace\s?\d|tag\s?\d|sgc|graded|slab|gem\s?mint\s?10|lot|bundle|bulk|mystery|repack|custom|proxy|replica|fake|orica|metal|gold\s?(card|plated|foil)|coin|sticker|poster|art\s?print|digital|code\s?card|choose|pick\s?(your|a|one)|you\s?pick|empty|case\s?only|toploader\s?only)\b/i;
+// More than one item: "x 2", "2x", "x3", "set of", "pair".
+const MULTI = /(\bx\s?[2-9]\d?\b|\b[2-9]\d?\s?x\b|\bset of\b|\bpair\b|\b[2-9]\d? (packs|boxes|bundles|etbs|tins)\b)/i;
 const OTHER_LANG = /\b(japanese|japan|jpn|chinese|korean|kor|thai|indonesian|german|french|italian|spanish|portuguese)\b|\bjp\b/i;
 
 const json = (body, origin, status = 200) => new Response(JSON.stringify(body), {
@@ -53,10 +55,17 @@ function summarise(items, n, wantsOtherLang, q = '') {
   const hasNumber = numberMatcher(n);
   // Words searched for don't count as junk ("Booster Bundle" is a product, not a lot).
   const qWords = new RegExp(`\\b(${q.toLowerCase().split(/\s+/).filter((w) => /^[a-z]+$/.test(w)).join('|') || '$^'})\\b`, 'gi');
-  const isJunk = (title) => JUNK.test(title.replace(qWords, ' '));
+  const isJunk = (title) => JUNK.test(title.replace(qWords, ' ')) || MULTI.test(title);
+  // Without a card number (sealed product) every searched word must be in the title.
+  const words = n ? [] : q.toLowerCase().split(/\s+/).filter((w) => w.length >= 3 || /\d/.test(w))
+    .map((w) => w.normalize('NFD').replace(/[^a-z0-9]/g, '').replace(/(.{4})s$/, '$1')).filter(Boolean); // "evolutions" ~ "evolution"
+  const hasWords = (title) => {
+    const t = title.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, ' ');
+    return words.every((w) => t.includes(w));
+  };
   let sales = items
     .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
-    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title))
+    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasWords(it.title))
     .map((it) => ({ title: it.title, aud: Number(it.soldPrice), date: (it.endedAt || '').slice(0, 10), url: it.url }));
   if (sales.length >= 4) {
     // Drop outliers: outside 0.5×–2× the median (mislabelled lots, damaged copies, typos).
@@ -90,7 +99,7 @@ export default {
     if (q.length < 3) return json({ ok: false, reason: 'query' }, allow, 400);
 
     const cacheDays = Number(env.CACHE_DAYS) || 3;
-    const key = `v1:${q.toLowerCase()}|${n.toLowerCase()}`;
+    const key = `v2:${q.toLowerCase()}|${n.toLowerCase()}`;
     const cached = env.AU_KV && await env.AU_KV.get(key, 'json');
     if (cached) return json({ ...cached, cached: true }, allow);
 
