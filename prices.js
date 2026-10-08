@@ -25,13 +25,15 @@ const VARIANTS = [
 ];
 
 /* Australian sold prices: the median of eBay.com.au sales by Australian sellers over the last
- * 90 days, from the PokeScan Cloudflare worker (tools/au-sold-worker.js, which holds the
+ * 90 days (cards with fewer than 3: every seller on eBay.com.au, and 1–2 sales as "last
+ * sold"), from the PokeScan Cloudflare worker (tools/au-sold-worker.js, which holds the
  * SoldComps key). Looked up only when someone opens a card or product; answers are kept on
  * the device (refreshed after AU_SOLD_MAX_AGE, kept for the collection value up to
  * AU_SOLD_KEEP). Empty AU_SOLD_URL = off. */
 const AU_SOLD_URL = 'https://pokescan-au-sold.minecraftfishies.workers.dev/';
-const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v2'; // v1 held promo prices from other cards' sales
-try { localStorage.removeItem('pokescan.auSold.v1'); } catch { /* storage blocked */ }
+// v1 held promo prices from other cards' sales; v2 had no overseas / "last sold" answers.
+const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v3';
+try { ['v1', 'v2'].forEach((v) => localStorage.removeItem(`pokescan.auSold.${v}`)); } catch { /* storage blocked */ }
 const AU_SOLD_MAX_AGE = 14 * 86400 * 1000;
 const AU_SOLD_KEEP = 45 * 86400 * 1000;
 let auSoldMem = null;
@@ -54,34 +56,39 @@ function auPreEntry(key) {
 }
 
 /* A saved answer — the newer of this device's and the nightly pre-check's: fresh only (for
- * the card sheet), or any age (for the collection value). */
+ * the card sheet), or any age (for the collection value). The pre-check only asks Australian
+ * sellers, so its "too few sales" is not an answer for the card sheet: that asks the worker,
+ * which widens to every seller. */
 function auSoldCached(q, n, t = '', { anyAge = false } = {}) {
   const key = auSoldKey(q, n, t);
   const own = auSoldStore()[key];
   const pre = auPreEntry(key);
   const hit = !own ? pre : !pre ? own : own.at >= pre.at ? own : pre;
   if (!hit) return null;
+  if (!anyAge && hit.pre && !hit.ok) return null;
   const age = Date.now() - hit.at;
   return age < (anyAge ? AU_SOLD_KEEP : hit.pre ? AU_PRE_MAX_AGE : AU_SOLD_MAX_AGE) ? hit : null;
 }
 
 /* { ok, aud, n, low, high, recent, asOf } or { ok: false, reason }; null if it couldn't ask. */
 const auSoldPending = new Map(); // one search per card even if two screens ask at once
-async function getAuSold(q, n, t = '') {
+// s: the card's set name, for a reprinted original (t 'o'), whose sales must name it.
+async function getAuSold(q, n, t = '', s = '') {
   await auPreReady;
   const hit = auSoldCached(q, n, t);
   if (hit || !AU_SOLD_URL) return Promise.resolve(hit);
   const key = auSoldKey(q, n, t);
   if (!auSoldPending.has(key)) {
-    auSoldPending.set(key, fetchAuSold(q, n, t).finally(() => auSoldPending.delete(key)));
+    const wide = auPreEntry(key)?.ok === false; // Australian sellers already checked
+    auSoldPending.set(key, fetchAuSold(q, n, t, s, wide).finally(() => auSoldPending.delete(key)));
   }
   return auSoldPending.get(key);
 }
-async function fetchAuSold(q, n, t) {
+async function fetchAuSold(q, n, t, s, wide) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60000); // a new search takes ~10–30 s
   try {
-    const res = await fetch(`${AU_SOLD_URL}?${new URLSearchParams({ q, n: n || '', ...(t && { t }) })}`, { signal: ctrl.signal });
+    const res = await fetch(`${AU_SOLD_URL}?${new URLSearchParams({ q, n: n || '', ...(t && { t }), ...(s && { s }), ...(wide && { w: '1' }) })}`, { signal: ctrl.signal });
     const body = await res.json();
     // Don't remember "try again later" answers.
     if (!res.ok || body.reason === 'daily-limit') return { ok: false, reason: body.reason || 'error' };

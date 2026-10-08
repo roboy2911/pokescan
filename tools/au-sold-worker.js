@@ -11,11 +11,14 @@
 //   KV       AU_KV              a KV namespace (cache + daily counter)
 //   Optional variables: DAILY_LIMIT (default 400; set to 50 in wrangler.jsonc), CACHE_DAYS (default 3; set to 14 in wrangler.jsonc)
 //
-// GET /?q=<search words>&n=<card number as printed, e.g. 161/131>
-//   → { ok: true, aud, n, low, high, asOf, recent: [{ title, aud, date, url }] }
+// GET /?q=<search words>&n=<card number as printed, e.g. 161/131>[&t=<mode>][&s=<set name>][&w=1]
+//   → { ok: true, aud, n, low, high, asOf, recent: [{ title, aud, date, url }], wide?, few? }
+// Australian sellers first; with fewer than 3 of their sales, every seller on eBay.com.au
+// (wide: true), and 1–2 sales are still an answer (few: true, the app shows "last sold").
+// w=1 skips the Australian-only search (the nightly pre-check already found too few).
 //   → { ok: false, reason: 'few-sales' | 'daily-limit' | … }
 
-import { summarise, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-filter.mjs';
+import { summarise, ebayKeyword, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-filter.mjs';
 
 const ALLOWED_ORIGINS = ['https://roboy2911.github.io', 'http://localhost:8080', 'http://localhost:8765'];
 const json = (body, origin, status = 200) => new Response(JSON.stringify(body), {
@@ -39,27 +42,49 @@ export default {
     const q = (url.searchParams.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 120);
     const n = (url.searchParams.get('n') || '').trim().slice(0, 20);
     const t = ['o', 'r25', 'r30', 'ja'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
+    const set = (url.searchParams.get('s') || '').trim().slice(0, 60);
+    const wideOnly = url.searchParams.get('w') === '1' && !!n;
     if (q.length < 3) return json({ ok: false, reason: 'query' }, allow, 400);
 
     const cacheDays = Number(env.CACHE_DAYS) || 3;
-    const key = `v4:${q.toLowerCase()}|${n.toLowerCase()}|${t}`;
+    const key = `v5:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
     const cached = env.AU_KV && await env.AU_KV.get(key, 'json');
     if (cached) return json({ ...cached, cached: true }, allow);
 
-    // Daily cap (approximate: KV counters are eventually consistent, which is fine here).
+    // Daily cap, counted per SoldComps search (approximate: KV counters are eventually
+    // consistent, which is fine here).
     const day = new Date().toISOString().slice(0, 10);
     const limit = Number(env.DAILY_LIMIT) || 400;
-    const used = Number(env.AU_KV && await env.AU_KV.get(`count:${day}`)) || 0;
-    if (used >= limit) return json({ ok: false, reason: 'daily-limit' }, allow);
-    if (env.AU_KV) await env.AU_KV.put(`count:${day}`, String(used + 1), { expirationTtl: 2 * 86400 });
-
-    const api = new URL('https://api.sold-comps.com/v1/scrape');
-    api.search = new URLSearchParams({ keyword: q, ...SOLDCOMPS_PARAMS });
-    const res = await fetch(api, { headers: { Authorization: `Bearer ${env.SOLDCOMPS_API_KEY}` } });
-    if (!res.ok) return json({ ok: false, reason: `upstream-${res.status}` }, allow, 502);
-    const body = await res.json();
-
-    const result = { ...summarise(body.items || [], n, OTHER_LANG.test(q), q, t), asOf: day };
+    const countKey = `count:${day}`;
+    let used = Number(env.AU_KV && await env.AU_KV.get(countKey)) || 0;
+    const search = async (itemLocation) => {
+      if (used >= limit) return null;
+      used++;
+      if (env.AU_KV) await env.AU_KV.put(countKey, String(used), { expirationTtl: 2 * 86400 });
+      const api = new URL('https://api.sold-comps.com/v1/scrape');
+      api.search = new URLSearchParams({ ...SOLDCOMPS_PARAMS, keyword: ebayKeyword(q, t), itemLocation });
+      const res = await fetch(api, { headers: { Authorization: `Bearer ${env.SOLDCOMPS_API_KEY}` } });
+      if (!res.ok) throw new Error(`upstream-${res.status}`);
+      return (await res.json()).items || [];
+    };
+    const other = OTHER_LANG.test(q);
+    let result;
+    try {
+      const local = wideOnly ? null : await search('domestic');
+      if (local === null && !wideOnly) return json({ ok: false, reason: 'daily-limit' }, allow);
+      result = local && summarise(local, n, other, q, t, { set });
+      // Single cards only: overseas sealed product is mostly shipping.
+      if (!result?.ok && n) {
+        const all = await search('worldwide');
+        // Out of searches for today: answer "try tomorrow" and save nothing.
+        if (all === null) return json({ ok: false, reason: 'daily-limit' }, allow);
+        const wide = summarise(all, n, other, q, t, { set, min: 1 });
+        result = wide.ok ? { ...wide, wide: true } : result ?? wide;
+      }
+    } catch (err) {
+      return json({ ok: false, reason: err.message }, allow, 502);
+    }
+    result = { ...result, asOf: day };
     // Cards with too few sales are remembered too, so they don't cost a search every view.
     if (env.AU_KV) await env.AU_KV.put(key, JSON.stringify(result), { expirationTtl: cacheDays * 86400 });
     return json(result, allow);

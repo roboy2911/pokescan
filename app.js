@@ -777,7 +777,7 @@ async function showPrice(card) {
     const tcg = formatAud(v.usd, rate.rate);
     els.priceValue.textContent = au?.ok ? formatAudPlain(au.aud) : tcg;
     els.priceValue.className = 'price-value';
-    label.textContent = au?.ok ? 'AU sold price' : 'Market price (AUD)';
+    label.textContent = au?.ok ? auLabel(au) : 'Market price (AUD)';
     els.priceNote.innerHTML = (au === undefined ? 'Checking Australian eBay sales (can take ~20 s)… · ' : '')
       + (au?.ok ? `${esc(auSoldText(au, tcg))}` : tcgNote) + soldLink();
   };
@@ -786,12 +786,14 @@ async function showPrice(card) {
     shownVariant = v.key;
     if (remember) rememberFinish(card.id, v.key);
     els.variantChips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
-    const { q, n, t } = ebaySoldQuery(card, v.key);
+    const { q, n, t, s } = ebaySoldQuery(card, v.key);
     const req = ++auReq;
+    // Bulk mode: saved answers only (any age), so a big session costs no searches.
+    if (bulk.on) return showAu(v, auSoldCached(q, n, t, { anyAge: true }));
     const cached = auSoldCached(q, n, t);
-    if (cached || bulk.on) return showAu(v, cached);
+    if (cached) return showAu(v, cached);
     showAu(v, undefined);
-    const au = await getAuSold(q, n, t);
+    const au = await getAuSold(q, n, t, s);
     if (token === priceToken && req === auReq && shownVariant === v.key) showAu(v, au);
   };
   if (variants.length > 1) {
@@ -1127,7 +1129,8 @@ function reprintInfo(item) {
   return reprintIndex.originals.has(item.id) ? { t: 'o' } : {};
 }
 
-/* What to search eBay for: { q: words, n: the number as printed ('' for sealed), t: reprint mode }. */
+/* What to search eBay for: { q: words, n: the number as printed ('' for sealed), t: reprint mode,
+ * s: set name a reprinted original's sales must mention }. */
 function ebaySoldQuery(item, variant = null) {
   let q;
   let n = '';
@@ -1154,7 +1157,7 @@ function ebaySoldQuery(item, variant = null) {
     // Japanese cards: search "… Japanese" and count only sales that say so (au-sold-filter).
     if (item.lang === 'ja') { q += ' Japanese'; t = 'ja'; }
   }
-  return { q: q.replace(/\s+/g, ' ').trim(), n, t };
+  return { q: q.replace(/\s+/g, ' ').trim(), n, t, s: t === 'o' ? item.setName || '' : '' };
 }
 function ebaySoldUrl(item, variant = null) {
   const q = `pokemon ${ebaySoldQuery(item, variant).q}`;
@@ -1162,20 +1165,28 @@ function ebaySoldUrl(item, variant = null) {
 }
 
 /* AU sold price box under the main price. `show(au)` gets the answer (or null). */
+const auLabel = (au) => (au.few ? 'Last sold (eBay AU)' : 'AU sold price');
 function auSoldText(au, tcgText) {
   const tcg = tcgText ? ` · TCGplayer ${tcgText}` : '';
   if (au?.ok) {
-    return `Median of ${au.n} Australian eBay sales, last 90 days (${formatAudPlain(au.low)}–${formatAudPlain(au.high)})${tcg}`;
+    // wide: too few Australian sellers' sales, so every seller on eBay.com.au counted.
+    const who = au.wide ? 'eBay Australia sale' : 'Australian eBay sale';
+    const plural = au.n === 1 ? '' : 's';
+    const range = au.n > 1 ? ` (${formatAudPlain(au.low)}–${formatAudPlain(au.high)})` : '';
+    const what = au.few
+      ? `Only ${au.n} ${who}${plural} in 90 days${au.n > 1 ? ', middle price' : ''}${range}`
+      : `Median of ${au.n} ${who}s, last 90 days${range}`;
+    return `${what}${au.wide ? ', incl. overseas sellers' : ''}${tcg}`;
   }
   const why = !au ? "Couldn't check Australian sales"
-    : au.reason === 'few-sales' ? 'Not enough Australian sales to price it'
+    : au.reason === 'few-sales' ? 'Not enough sales on eBay Australia to price it'
       : au.reason === 'daily-limit' ? 'Australian sold lookups are paused until tomorrow'
         : "Couldn't check Australian sales";
   return `${why} — showing TCGplayer (US) market price`;
 }
 function auSoldRecent(au) {
   if (!au?.ok || !au.recent?.length) return '';
-  return `<details class="au-recent"><summary>Recent Australian sales</summary><ul>${au.recent.map((r) =>
+  return `<details class="au-recent"><summary>Recent ${au.wide ? 'eBay Australia' : 'Australian'} sales</summary><ul>${au.recent.map((r) =>
     `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(formatAudPlain(r.aud))} · ${esc(r.date)}</a> <span>${esc(r.title)}</span></li>`).join('')}</ul></details>`;
 }
 
@@ -1185,7 +1196,8 @@ auPreReady.then(() => { if (collectionPrices) renderCollection(); });
 /* Value of one collection entry in USD: the AU sold price when one has been looked up,
  * otherwise TCGplayer. */
 function entryUsd(e, prices, sealed, rate) {
-  const au = rate && auSoldCached(...Object.values(ebaySoldQuery(e, e.variant)), { anyAge: true });
+  const { q, n, t } = ebaySoldQuery(e, e.variant);
+  const au = rate && auSoldCached(q, n, t, { anyAge: true });
   if (au?.ok) return (au.aud / rate.rate) * (e.kind === 'sealed' ? 1 : conditionFactor(e.condition));
   return e.kind === 'sealed' ? sealed?.byKey.get(e.id)?.usd ?? null : cardUsd(e, prices[e.id]);
 }
@@ -1314,7 +1326,7 @@ function openDetail(card, { entryKey = null } = {}) {
       if (au?.ok) {
         unitUsd = au.aud / rate.rate;
         priceEl.textContent = formatAudPlain(au.aud);
-        label.textContent = 'AU sold price';
+        label.textContent = auLabel(au);
       } else {
         unitUsd = v.usd;
         priceEl.textContent = tcg;
@@ -1328,12 +1340,12 @@ function openDetail(card, { entryKey = null } = {}) {
       if (inCollection && au?.ok) renderCollection();
     };
     const lookupAu = async (v) => {
-      const { q, n, t } = ebaySoldQuery(card, v.key);
+      const { q, n, t, s } = ebaySoldQuery(card, v.key);
       const req = ++auReq;
       const cached = auSoldCached(q, n, t);
       showAu(v, cached ?? undefined);
       if (cached) return;
-      const au = await getAuSold(q, n, t);
+      const au = await getAuSold(q, n, t, s);
       if (token === sheetToken && req === auReq && $('detailNote')) showAu(v, au);
     };
     const pick = (v, save) => {

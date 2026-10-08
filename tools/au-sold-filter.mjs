@@ -9,10 +9,10 @@ export const SOLDCOMPS_PARAMS = {
 const MIN_SALES = 3;
 
 // Listings that aren't a single raw copy of the card.
-const JUNK = /\b(psa|cgc|bgs|beckett|ace\s?\d|tag\s?\d|sgc|graded|slab|gem\s?mint\s?10|lot|bundle|bulk|mystery|repack|custom|proxy|replica|fake|orica|metal|gold\s?(card|plated|foil)|coin|sticker|poster|art\s?print|digital|code\s?card|choose|pick\s?(your|a|one)|you\s?pick|empty|case\s?only|toploader\s?only)\b/i;
+const JUNK = /\b(psa|cgc|bgs|beckett|ace\s?\d|tag\s?\d|ags\s?\d|sgc|graded|slab|gem\s?mint\s?10|lot|bundle|bulk|mystery|repack|custom|proxy|replica|fake|diy|inspired|fan\s?art|handmade|unofficial|orica|metal|gold\s?(card|plated|foil)|coin|sticker|poster|art\s?print|digital|code\s?card|choose|pick\s?(your|a|one)|you\s?pick|empty|case\s?only|toploader\s?only)\b/i;
 // More than one item: "x 2", "2x", "x3", "set of", "pair".
 const MULTI = /(\bx\s?[2-9]\d?\b|\b[2-9]\d?\s?x\b|\bset of\b|\bpair\b|\b[2-9]\d? (packs|boxes|bundles|etbs|tins)\b)/i;
-export const OTHER_LANG = /\b(japanese|japan|jpn|chinese|korean|kor|thai|indonesian|german|french|italian|spanish|portuguese)\b|\bjp\b/i;
+export const OTHER_LANG = /\b(japanese|japan|jpn|chinese|korean|kor|thai|indonesian|german|french|italian|italiano|ita|spanish|portuguese)\b|\bjp\b/i;
 
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
@@ -62,9 +62,29 @@ const MODES = {
   ja: (t) => /japanese|japan|\bjpn?\b/i.test(t),
 };
 
-export function summarise(items, n, wantsOtherLang, q = '', mode = '') {
+// An original that was reprinted ('o') must also name its set ("POP Series 5" → "pop"), as a
+// reprint listing often leaves out "Celebrations". Any one word of the set name will do.
+const SET_FILLER = new Set(['the', 'set', 'series', 'collection', 'and', 'black', 'star', 'promos', 'promo']);
+function setMatcher(set, mode) {
+  const words = mode === 'o' && set ? plain(set).split(' ').filter((w) => w.length >= 3 && !SET_FILLER.has(w)) : [];
+  if (!words.length) return () => true;
+  return (title) => {
+    const t = plain(title).replace(/ /g, '');
+    return words.some((w) => t.includes(w));
+  };
+}
+
+// What to ask eBay for: the query, minus graded slabs (they'd fill the 60 newest sales), and for
+// a reprinted original, minus the reprints.
+export function ebayKeyword(q, mode = '') {
+  return `${q} -psa -cgc -bgs${mode === 'o' ? ' -celebrations -classic -25th -30th' : ''}`;
+}
+
+// min: fewest sales that make a price (1 for the "last sold" fallback, see au-sold-worker.js).
+export function summarise(items, n, wantsOtherLang, q = '', mode = '', { min = MIN_SALES, set = '' } = {}) {
   const hasNumber = numberMatcher(n);
   const hasName = nameMatcher(q, n);
+  const hasSet = setMatcher(set, mode);
   const inMode = MODES[mode] ?? (() => true);
   // Words searched for don't count as junk ("Booster Bundle" is a product, not a lot).
   const qWords = new RegExp(`\\b(${q.toLowerCase().split(/\s+/).filter((w) => /^[a-z]+$/.test(w)).join('|') || '$^'})\\b`, 'gi');
@@ -78,20 +98,21 @@ export function summarise(items, n, wantsOtherLang, q = '', mode = '') {
   };
   let sales = items
     .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
-    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasName(it.title) && hasWords(it.title) && inMode(it.title))
+    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasName(it.title) && hasSet(it.title) && hasWords(it.title) && inMode(it.title))
     .map((it) => ({ title: it.title, aud: Number(it.soldPrice), date: (it.endedAt || '').slice(0, 10), url: it.url }));
   if (sales.length >= 4) {
     // Drop outliers: outside 0.5×–2× the median (mislabelled lots, damaged copies, typos).
     const m = median(sales.map((s) => s.aud));
     sales = sales.filter((s) => s.aud >= m * 0.5 && s.aud <= m * 2);
   }
-  if (sales.length < MIN_SALES) return { ok: false, reason: 'few-sales', n: sales.length };
+  if (sales.length < min) return { ok: false, reason: 'few-sales', n: sales.length };
   const prices = sales.map((s) => s.aud);
   sales.sort((a, b) => b.date.localeCompare(a.date));
   return {
     ok: true,
     aud: Math.round(median(prices) * 100) / 100,
     n: sales.length,
+    ...(sales.length < MIN_SALES && { few: true }),
     low: Math.min(...prices),
     high: Math.max(...prices),
     recent: sales.slice(0, 5),

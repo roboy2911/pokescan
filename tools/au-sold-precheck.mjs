@@ -12,7 +12,7 @@
 // data/au-sold.json: { asOf, minAud, items: { "<query>|<number>": [aud, sales, low, high, date] |
 //   [null, 0, null, null, date] (too few sales) } } — keys match the app's AU sold cache keys.
 import { readFile, writeFile } from 'node:fs/promises';
-import { summarise, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-filter.mjs';
+import { summarise, ebayKeyword, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-filter.mjs';
 
 const MIN_AUD = Number(process.env.MIN_AUD) || 50;
 const REFRESH_DAYS = 14;
@@ -93,7 +93,8 @@ function targets(cardsMeta, prices, rate) {
       const { q, n, t } = ebaySoldQuery(card, variant);
       const key = cacheKey(q, n, t);
       const aud = usd * rate;
-      if (!list.has(key) || list.get(key).aud < aud) list.set(key, { key, q, n, t, aud, id });
+      // set: a reprinted original's listing must name its set (au-sold-filter.mjs).
+      if (!list.has(key) || list.get(key).aud < aud) list.set(key, { key, q, n, t, aud, id, set: t === 'o' ? setName : '' });
     };
     // Holo / normal / unlimited share one search (no finish word); the rest have their own.
     const plain = ['h', 'n', 'u', 'uh'].map((k) => row[k]).filter((v) => v != null);
@@ -107,7 +108,7 @@ function targets(cardsMeta, prices, rate) {
 
 async function lookup(t) {
   const url = new URL('https://api.sold-comps.com/v1/scrape');
-  url.search = new URLSearchParams({ keyword: t.q, ...SOLDCOMPS_PARAMS });
+  url.search = new URLSearchParams({ ...SOLDCOMPS_PARAMS, keyword: ebayKeyword(t.q, t.t) });
   const res = await fetch(url, { headers: { Authorization: `Bearer ${process.env.SOLDCOMPS_API_KEY}` } });
   if (!res.ok) {
     const err = new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -115,7 +116,7 @@ async function lookup(t) {
     throw err;
   }
   const body = await res.json();
-  return summarise(body.items || [], t.n, OTHER_LANG.test(t.q), t.q, t.t);
+  return summarise(body.items || [], t.n, OTHER_LANG.test(t.q), t.q, t.t, { set: t.set });
 }
 
 const [cardsMeta, pricesFile, store] = await Promise.all([
