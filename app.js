@@ -48,7 +48,6 @@ const els = {
   toast: $('toast'),
   searchForm: $('searchForm'),
   qName: $('qName'),
-  qNumber: $('qNumber'),
   searchStatus: $('searchStatus'),
   searchResults: $('searchResults'),
   historyList: $('historyList'),
@@ -77,6 +76,7 @@ function showView(name) {
   if (name === 'collection') refreshCollection();
   if (name === 'sets') showSets();
   if (name === 'market') renderMarket();
+  if (name === 'search' && !els.qName.value) els.qName.focus();
   // Don't keep the camera busy while looking at other screens.
   if (name !== 'scan' && stream) stopCamera();
 }
@@ -682,62 +682,136 @@ els.heroImg.addEventListener('click', () => shownCard && openDetail({ ...shownCa
 
 const normName = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-els.searchForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const name = normName(els.qName.value.trim());
-  // Accept "25", "025" or "025/198".
-  const m = els.qNumber.value.trim().toUpperCase().match(/^([A-Z]*)0*(\d*[A-Z]*\d*)(?:\s*\/\s*0*(\d+))?$/);
-  const number = m ? m[1] + m[2] : '';
-  const total = m?.[3] ?? '';
+/* One search box, results as you type. Every word must match: name or set words for text
+ * ("char", "prismatic"), the card number for numbers ("4", "025", "TG05"), or number and
+ * set size together ("199/165"). So "charizard 4", "pikachu 25/102", "umbreon prismatic"
+ * and "151 etb" all work. Sealed product is searched by name / set / type. */
 
-  if (!name && !number) {
-    setStatus(els.searchStatus, 'Enter a name and/or number.', 'err');
+// "025" → "25", "TG05" → "TG5", "SWSH020" → "SWSH20": compare numbers without padding.
+const normNumber = (s) => String(s).toUpperCase().replace(/(^|[A-Z])0+(?=\d)/g, '$1');
+
+let searchIndex = null;
+function getSearchIndex() {
+  searchIndex ??= db.cards.map((c) => ({
+    c,
+    words: ` ${normName(`${c.name} ${c.setName}`)} `,
+    name: normName(c.name),
+    number: normNumber(c.number),
+    total: String(c.setTotal ?? ''),
+  }));
+  return searchIndex;
+}
+
+function parseQuery(q) {
+  return normName(q).split(/\s+/).filter(Boolean).map((t) => {
+    const m = t.replace(/^#/, '').match(/^([a-z]*\d+[a-z]*)(?:\/0*(\d+))?$/i);
+    return m ? { text: t, number: normNumber(m[1]), total: m[2] ?? '' } : { text: t };
+  });
+}
+
+function cardMatches(e, tokens) {
+  return tokens.every((t) => {
+    if (t.number) {
+      if (e.number === t.number && (!t.total || e.total === t.total)) return true;
+      return !t.total && e.words.includes(` ${t.text} `); // a number that's part of a name, e.g. "151"
+    }
+    return e.words.includes(t.text);
+  });
+}
+
+/* Best first: the exact name, then names containing the typed words as whole words ("mew"
+ * finds Mew ex before Mewtwo), then names starting with them; newest set first within each. */
+function rankCards(list, tokens) {
+  const text = tokens.filter((t) => !t.number).map((t) => t.text);
+  const phrase = text.join(' ');
+  const tier = (e) => {
+    if (!text.length) return 0;
+    if (e.name === phrase) return 0;
+    const n = ` ${e.name} `;
+    if (text.every((t) => n.includes(` ${t} `))) return 1;
+    if (e.name.startsWith(phrase)) return 2;
+    if (text.every((t) => n.includes(` ${t}`))) return 3; // starts a word
+    return 4;
+  };
+  for (const e of list) e.tier = tier(e);
+  return list.sort((x, y) => x.tier - y.tier
+    || (y.c.releaseDate || '').localeCompare(x.c.releaseDate || '') || byNumber(x.c, y.c));
+}
+
+const SEARCH_LIMIT = 60;
+const SEALED_WORDS = /\b(box|tin|pack|bundle|collection|blister|etb|upc|deck|display|case|premium|booster)\b/i;
+let searchToken = 0;
+let searchTimer = null;
+
+async function runSearch() {
+  const token = ++searchToken;
+  const query = els.qName.value;
+  const tokens = parseQuery(query);
+  if (!tokens.length) {
+    els.searchResults.innerHTML = '';
+    setStatus(els.searchStatus, '');
     return;
   }
-  els.searchResults.innerHTML = '';
   try {
     await dbReady;
   } catch (err) {
     setStatus(els.searchStatus, `Card database didn't load: ${esc(err.message)}`, 'err');
     return;
   }
-  const found = db.cards
-    .filter((c) => (!name || normName(c.name).includes(name))
-      && (!number || c.number.toUpperCase() === number)
-      && (!total || String(c.setTotal) === total))
-    .sort((a, b) => (b.releaseDate || '').localeCompare(a.releaseDate || ''));
+  const found = rankCards(getSearchIndex().filter((e) => cardMatches(e, tokens)), tokens).map((e) => e.c);
+  // Don't hold results up for the exchange rate (slow offline): sealed prices need it, so
+  // use it if it's ready within a moment, otherwise show them without and fill in later.
+  const ratePromise = getAudRate();
+  const [sealed, rate] = await Promise.all([searchSealed(query),
+    Promise.race([ratePromise, sleep(250).then(() => null)])]);
+  if (token !== searchToken) return; // a newer search has started
+  if (!rate && sealed.length) ratePromise.then(() => { if (token === searchToken) runSearch(); });
 
-  const sealed = name && !number ? await searchSealed(els.qName.value.trim()) : [];
   const parts = [
-    found.length ? `${found.length} card${found.length === 1 ? '' : 's'}${found.length > 100 ? ' (showing 100)' : ''}` : '',
-    sealed.length ? `${sealed.length} sealed product${sealed.length === 1 ? '' : 's'}${sealed.length > 40 ? ' (showing 40)' : ''}` : '',
+    found.length ? `${found.length.toLocaleString()} card${found.length === 1 ? '' : 's'}` : '',
+    sealed.length ? `${sealed.length} sealed` : '',
   ].filter(Boolean);
-  setStatus(els.searchStatus, parts.length ? parts.join(' · ') : 'Nothing found.', parts.length ? 'ok' : 'err');
-  // Sealed product goes first when the search is clearly for it (or no card matched).
-  const sealedFirst = !found.length || /\b(box|tin|pack|bundle|collection|blister|etb|deck|display|case|premium)\b/i.test(els.qName.value);
-  const showCards = () => found.slice(0, 100).forEach((c) => els.searchResults.appendChild(cardRow(c)));
-  if (!sealedFirst) showCards();
-  if (sealed.length) {
+  setStatus(els.searchStatus,
+    parts.length ? parts.join(' · ') + (found.length > SEARCH_LIMIT ? ` — showing the top ${SEARCH_LIMIT}, keep typing to narrow it down` : '')
+      : 'Nothing found — try fewer words, or just the card number.',
+    parts.length ? 'ok' : 'err');
+
+  const frag = document.createDocumentFragment();
+  const heading = (text) => {
     const h = document.createElement('h3');
     h.className = 'sub-title';
-    h.textContent = 'Sealed product';
-    els.searchResults.appendChild(h);
-    const rate = await getAudRate();
-    for (const sp of sealed.slice(0, 40)) {
+    h.textContent = text;
+    frag.appendChild(h);
+  };
+  const showCards = () => {
+    if (found.length && sealed.length) heading('Cards');
+    for (const c of found.slice(0, SEARCH_LIMIT)) frag.appendChild(cardRow(c));
+  };
+  const showSealed = () => {
+    if (!sealed.length) return;
+    heading('Sealed product');
+    for (const sp of sealed.slice(0, 20)) {
       const e = sealedEntry(sp);
-      els.searchResults.appendChild(cardRow({ ...e, number: '', setTotal: '', rarity: sp.type, releaseDate: '' }, {
+      frag.appendChild(cardRow({ ...e, number: '', setTotal: '', rarity: sp.type, releaseDate: '' }, {
         onClick: () => openSealedDetail(e),
-        extra: sp.usd != null ? formatAud(sp.usd, rate.rate) : '',
+        extra: sp.usd != null && rate ? formatAud(sp.usd, rate.rate) : '',
       }));
     }
-    if (found.length && sealedFirst) {
-      const h2 = document.createElement('h3');
-      h2.className = 'sub-title';
-      h2.textContent = 'Cards';
-      els.searchResults.appendChild(h2);
-    }
-  }
-  if (sealedFirst) showCards();
+  };
+  // Sealed product first when the search is clearly for it (or no card matched).
+  if (!found.length || SEALED_WORDS.test(query)) { showSealed(); showCards(); } else { showCards(); showSealed(); }
+  els.searchResults.replaceChildren(frag);
+}
+
+els.qName.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 120);
+});
+els.searchForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  clearTimeout(searchTimer);
+  runSearch();
+  els.qName.blur(); // close the phone keyboard to see the results
 });
 
 /* ------------------------------------------------------------------ */

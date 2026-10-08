@@ -85,10 +85,8 @@
     <!-- SEARCH -->
     <section id="view-search" class="view">
       <h2 class="view-title">Search cards &amp; sealed</h2>
-      <form id="searchForm" class="search-form">
-        <input id="qName" type="search" aria-label="Card or product name" placeholder="Card or product, e.g. Charizard ex" autocomplete="off" enterkeyhint="search">
-        <input id="qNumber" type="text" aria-label="Card number" placeholder="Number, e.g. 199 or 199/165" autocomplete="off" enterkeyhint="search">
-        <button class="btn primary" type="submit">Search</button>
+      <form id="searchForm" class="search-form" role="search">
+        <input id="qName" type="search" aria-label="Search cards and sealed product" placeholder="Name, set or number — e.g. charizard 4/102" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
       </form>
       <div id="searchStatus" class="status" role="status" aria-live="polite" hidden></div>
       <div id="searchResults" class="results"></div>

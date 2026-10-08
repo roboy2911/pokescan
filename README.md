@@ -11,8 +11,9 @@ your phone's home screen like an app (PWA), and works offline after the first vi
   (holo, reverse holo, Poké Ball / Master Ball pattern, 1st Edition…) and lets you add it.
   The finish you pick is remembered per card. "Not it?" thumbnails swap in one tap.
   Optional beep when a card is found.
-- **Search** — cards by name and/or number, and sealed product by name (ETB, UPC and PC
-  shorthands work), all offline.
+- **Search** — one box, results as you type, all offline. Mix names, sets and numbers in
+  any order: `charizard 4/102`, `umbreon prismatic`, `mew 151`, `tg05`, `199/165`.
+  Sealed product too (`151 etb`; ETB, UPC and PC shorthands work).
 - **Sets** — every English set by series; open one to see all its cards in number order
   with prices, which you own (All / Owned / Missing), your progress and its sealed product.
 - **Collection** — cards and sealed product with quantities and finishes; search, sort,
@@ -143,7 +144,8 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 - Glare or a shiny sleeve? Keep the phone moving a little — the scanner combines the
   last few frames, and the reflection moves while the card doesn't.
 - If it isn't sure, it shows the closest matches. Tap the right one.
-- The **Search** tab finds cards by name and/or number (`199` or `199/165`), offline.
+- The **Search** tab finds cards as you type — name, set and/or number (`199` or
+  `199/165`), offline.
 
 ## Files
 
