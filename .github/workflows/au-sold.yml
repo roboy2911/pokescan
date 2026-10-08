@@ -11,6 +11,9 @@ on:
       budget:
         description: 'Searches to use this run (blank = the nightly share, ~270)'
         default: ''
+      rate:
+        description: 'Searches started per minute (blank = 6 at a time)'
+        default: ''
 
 permissions:
   contents: write
@@ -22,7 +25,7 @@ concurrency:
 jobs:
   au-sold:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,6 +35,7 @@ jobs:
         env:
           SOLDCOMPS_API_KEY: ${{ secrets.SOLDCOMPS_API_KEY }}
           BUDGET: ${{ inputs.budget }}
+          RATE: ${{ inputs.rate }}
         run: node tools/au-sold-precheck.mjs
       - name: Commit if changed
         run: |

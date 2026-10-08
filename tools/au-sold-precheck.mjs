@@ -6,6 +6,7 @@
 // Run by .github/workflows/au-sold.yml with the SoldComps key in the SOLDCOMPS_API_KEY secret.
 //   BUDGET=270        searches tonight (default: list size / REFRESH_DAYS)
 //   MIN_AUD=50        cheapest card (per finish) to pre-check
+//   RATE=60           searches started per minute (default: 6 at a time, unpaced)
 //   DRY_RUN=1         print what would be checked, no searches
 //
 // data/au-sold.json: { asOf, minAud, items: { "<query>|<number>": [aud, sales, low, high, date] |
@@ -110,27 +111,53 @@ if (DRY_RUN) {
 }
 if (!process.env.SOLDCOMPS_API_KEY) throw new Error('SOLDCOMPS_API_KEY is not set');
 
-let done = 0, priced = 0, failed = 0, stop = null;
+let done = 0, priced = 0, failed = 0, stop = null, rateLimited = 0;
 const queue = [...tonight];
 const started = Date.now();
-await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
-  while (queue.length && !stop) {
-    const t = queue.shift();
-    try {
-      const r = await lookup(t);
-      store.items[t.key] = r.ok ? [r.aud, r.n, r.low, r.high, today] : [null, r.n ?? 0, null, null, today];
-      done++;
-      if (r.ok) priced++;
-    } catch (err) {
-      failed++;
-      console.log(`  ✗ ${t.q}: ${err.message}`);
-      if (err.fatal) stop = err.message;
+const RATE = Number(process.env.RATE) || 0;
+const TIME_LIMIT = (Number(process.env.TIME_LIMIT_MIN) || 100) * 60000; // stop cleanly before the job's timeout
+const save = () => writeFile(dataFile('au-sold.json'), JSON.stringify({ ...store, asOf: today, minAud: MIN_AUD }));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function checkOne(t) {
+  try {
+    const r = await lookup(t);
+    store.items[t.key] = r.ok ? [r.aud, r.n, r.low, r.high, today] : [null, r.n ?? 0, null, null, today];
+    done++;
+    if (r.ok) priced++;
+    if (done % 100 === 0) {
+      await save();
+      console.log(`  … ${done} checked (${priced} priced), ${Math.round((Date.now() - started) / 60000)} min`);
     }
+  } catch (err) {
+    if (/HTTP 429/.test(err.message) && ++rateLimited <= 20) { // slow down and try again later
+      queue.push(t);
+      await sleep(30000);
+      return;
+    }
+    failed++;
+    console.log(`  ✗ ${t.q}: ${err.message}`);
+    if (err.fatal) stop = err.message;
   }
-}));
-store.asOf = today;
-store.minAud = MIN_AUD;
-await writeFile(dataFile('au-sold.json'), JSON.stringify(store));
+}
+
+if (RATE) {
+  // Paced: start one search every 60/RATE s (each takes ~15–20 s, so many run at once).
+  const inFlight = new Set();
+  while ((queue.length || inFlight.size) && !stop && Date.now() - started < TIME_LIMIT) {
+    if (!queue.length || inFlight.size >= 40) { await Promise.race(inFlight); continue; }
+    const p = checkOne(queue.shift()).finally(() => inFlight.delete(p));
+    inFlight.add(p);
+    await sleep(60000 / RATE);
+  }
+  await Promise.all(inFlight);
+} else {
+  await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
+    while (queue.length && !stop && Date.now() - started < TIME_LIMIT) await checkOne(queue.shift());
+  }));
+}
+if (queue.length && !stop) console.log(`Time limit reached: ${queue.length} left for the next run.`);
+await save();
 console.log(`Checked ${done} (${priced} priced, ${done - priced} too few sales), ${failed} failed, `
   + `${Math.round((Date.now() - started) / 1000)} s. File holds ${Object.keys(store.items).length}.`);
 if (stop) console.log(`Stopped early: ${stop}`);
