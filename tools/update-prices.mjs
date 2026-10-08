@@ -66,11 +66,14 @@ const GROUP_ALIASES = {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const cents = (usd) => Math.round(usd * 100) / 100;
 
+// TCGCSV blocks generic user agents (like Node's default), so name the app.
+const USER_AGENT = 'PokeScan/1.0 (+https://github.com/roboy2911/pokescan)';
+
 // Both APIs return occasional errors, so retry generously.
 async function getJson(url, { attempts = 8, headers = {} } = {}) {
   for (let i = 1; i <= attempts; i++) {
     try {
-      const res = await fetch(url, { headers });
+      const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT, ...headers } });
       if (res.ok) return await res.json();
       console.warn(`HTTP ${res.status} (attempt ${i}) ${url}`);
     } catch (err) {
