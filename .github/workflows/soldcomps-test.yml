@@ -10,6 +10,9 @@ on:
       sites:
         description: 'ebaySite values to try (comma-separated)'
         default: 'ebay.com.au'
+      item_location:
+        description: 'itemLocation: default, domestic (sellers in that country) or worldwide'
+        default: 'domestic'
 
 permissions:
   contents: read
@@ -28,4 +31,5 @@ jobs:
           SOLDCOMPS_API_KEY: ${{ secrets.SOLDCOMPS_API_KEY }}
           KEYWORD: ${{ inputs.keyword }}
           SITES: ${{ inputs.sites }}
+          ITEM_LOCATION: ${{ inputs.item_location }}
         run: node tools/soldcomps-test.mjs

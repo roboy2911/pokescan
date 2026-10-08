@@ -8,10 +8,10 @@ const sites = (process.env.SITES || 'ebay.com.au').split(',');
 
 for (const site of sites) {
   const url = new URL('https://api.sold-comps.com/v1/scrape');
-  url.search = new URLSearchParams({ keyword, count: '20', daysToScrape: '90', ebaySite: site });
+  url.search = new URLSearchParams({ keyword, count: '20', daysToScrape: '90', ebaySite: site, ...(process.env.ITEM_LOCATION && { itemLocation: process.env.ITEM_LOCATION }) });
   const res = await fetch(url, { headers: { Authorization: `Bearer ${KEY}` } });
   const text = await res.text();
-  console.log(`\n=== ebaySite=${site}: HTTP ${res.status}`);
+  console.log(`\n=== ebaySite=${site} itemLocation=${process.env.ITEM_LOCATION || '(default)'}: HTTP ${res.status}`);
   let body;
   try { body = JSON.parse(text); } catch { console.log(text.slice(0, 500)); continue; }
   const items = body.items ?? body.results ?? body.data ?? (Array.isArray(body) ? body : []);
