@@ -9,7 +9,7 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   prices and a flag when they drop to it. ("Cost to finish" part done in the 6pm run.)
 - Shareable trade / sell list — done in the 4pm run.
 - Card condition — done in the 5pm run.
-- Collection value over time + "Your movers" — planned for the 8pm run.
+- Collection value over time + "Your movers" — done in the 8pm run.
 - **Full-screen scan view** (owner request) — planned for the 7pm run: camera fills the screen,
   see-through tab bar, see-through bottom panel (card, price, finish, Add) with "Not it?"
   matches swiping sideways; panel doesn't scroll up/down; tap the card for the full sheet.
@@ -84,3 +84,17 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   stay or be deleted in Cloudflare).
 - **Feature: AU sold price on the scan result** — `b4af18c`. Same as the card sheet; bulk mode uses saved answers only (no searches). *Remove:* `git revert b4af18c`.
 - **Tweak: AU sold prices kept 14 days** (was 3), on the phone and in the worker — `598074d`. *Remove:* `git revert 598074d`.
+
+## 8pm Thu — run 6
+
+- Bug sweep: all tabs, sealed sheet, search, bulk, condition, trade, backup/restore, offline,
+  scan flow, AU sold — passing except the Market bug below.
+- **Fix: Market tab put Sun & Moon / Sword & Shield / Scarlet & Violet cards under "Sealed"**
+  — `669d522`. Sealed product keys are "s" + a number, but card ids like `sv8pt5-161` start with
+  "s" too, so those cards were listed as sealed and missing from Cards. Fixed in
+  `tools/market.mjs` and the app; market data rebuilt.
+- **Feature: Collection value over time + "Your movers"** — `98324b7`. In the value card: 1 / 7 / 30
+  day switch, "−A$3.84 since 6 Oct ▼ 0.1%" (honest "since 6 Oct" while history is short), a
+  small line chart of the daily total, and "Your risers / fallers" (top 5 each, tap to open).
+  From TCGplayer history × quantity × condition; hidden when the collection is empty.
+  *Remove:* "remove value over time" (`git revert 98324b7`).
