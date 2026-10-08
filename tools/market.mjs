@@ -29,6 +29,9 @@ const readJson = async (name, fallback) => {
 const MAIN_FINISH = ['h', 'n', '1h', 'uh', '1n', 'u', 'r'];
 const mainFinish = (row) => MAIN_FINISH.find((k) => row?.[k] != null) ?? null;
 
+// Sealed keys are "s" + a number; card ids can start with "s" too ("sv8pt5-161", "swsh7-215").
+const isSealedKey = (key) => /^s\d+$/.test(key);
+
 const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 
 /* Record today's prices and rebuild market.json. `cards` = prices.json's cards; `sealed` =
@@ -57,7 +60,7 @@ export async function updateMarket(cards, sealed, { date = new Date().toISOStrin
   // Sealed prices unknown today: carry yesterday's forward rather than dropping them.
   if (!sealed && col > 0) {
     for (const [key, series] of Object.entries(history.items)) {
-      if (key[0] === 's' && series[col] == null) series[col] = series[col - 1];
+      if (isSealedKey(key) && series[col] == null) series[col] = series[col - 1];
     }
   }
   const drop = Math.max(0, history.dates.length - HISTORY_DAYS);
@@ -83,7 +86,7 @@ export async function updateMarket(cards, sealed, { date = new Date().toISOStrin
 
   // Movers: compare today with the latest day at least N days ago (or the oldest day there
   // is, while history is still short — the app shows which date it's comparing with).
-  const kind = (key) => (key[0] === 's' ? 'sealed' : 'cards');
+  const kind = (key) => (isSealedKey(key) ? 'sealed' : 'cards');
   const movers = {};
   for (const days of WINDOWS) {
     let from = -1;

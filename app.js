@@ -2076,7 +2076,7 @@ async function renderMarket() {
 
   // [key, nowCents, otherCents, pct?] → a row.
   const resolve = (key) => {
-    if (key[0] === 's') {
+    if (/^s\d+$/.test(key)) { // card ids can start with "s" too (sv8pt5-161)
       const s = sealed.byKey.get(key);
       return s && { item: sealedEntry(s), sub: `${db.sets?.[s.set]?.[0] ?? ''} · ${s.type}`, open: () => openSealedDetail(sealedEntry(s)) };
     }
