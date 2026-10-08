@@ -1397,6 +1397,7 @@ function renderCollection() {
   const { prices, rate, sealed } = collectionPrices ?? {};
   let total = 0;
   let pricedCards = 0;
+  renderValueTrend(list);
   for (const e of list) {
     const usd = !prices ? null : entryUsd(e, prices, sealed, rate);
     e.unit = usd;
@@ -1467,6 +1468,7 @@ async function refreshCollection() {
   renderCollection();
   const list = loadCollection();
   if (!list.length) return;
+  getHistory().then((h) => { valueHistory = h; renderValueTrend(); });
   const ids = [...new Set(list.filter((e) => e.kind !== 'sealed').map((e) => e.id))];
   const [prices, rate, sealed] = await Promise.all([getTcgPrices(ids), getAudRate(),
     list.some((e) => e.kind === 'sealed') ? getSealed() : null]);
@@ -1547,6 +1549,108 @@ function renderTradeBar(list, rate) {
   $('tradeTotal').textContent = rate
     ? `${n} · ${formatAud(usd * pct / 100, rate.rate)}${pct !== 100 ? ` (${pct}% of ${formatAud(usd, rate.rate)})` : ''}`
     : n;
+}
+
+/* ------------------------------------------------------------------ */
+/* Collection value over time + "Your movers"                          */
+/* ------------------------------------------------------------------ */
+
+/* From data/history.json (TCGplayer prices per day, USD cents, keyed "cardId:finish" or
+ * "s" + product id) × each entry's quantity and condition. Entries with no history for
+ * their finish count at today's price on every day, so they don't show as a move. */
+let valueHistory = null;
+let valueWindow = 7;
+
+$('valueWindow').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+  valueWindow = +b.dataset.v;
+  $('valueWindow').querySelectorAll('button').forEach((x) => {
+    x.classList.toggle('active', x === b);
+    x.setAttribute('aria-pressed', String(x === b));
+  });
+  renderValueTrend();
+}));
+
+const HISTORY_FINISHES = ['h', 'n', '1h', 'uh', '1n', 'u', 'r'];
+function historyKey(e, items) {
+  if (e.kind === 'sealed') return items[e.id] ? e.id : null;
+  const short = VARIANTS.find(([k]) => k === e.variant)?.[1];
+  if (short) return items[`${e.id}:${short}`] ? `${e.id}:${short}` : null;
+  if (e.variant) return null; // pattern / special finishes aren't tracked
+  const f = HISTORY_FINISHES.find((x) => items[`${e.id}:${x}`]);
+  return f ? `${e.id}:${f}` : null;
+}
+
+function renderValueTrend(list = loadCollection()) {
+  const box = $('valueTrend');
+  const h = valueHistory;
+  const { prices, rate, sealed } = collectionPrices ?? {};
+  if (!h || !prices || !list.length || h.dates.length < 2) { box.hidden = true; return; }
+  const days = h.dates.length;
+  const last = days - 1;
+  let from = 0;
+  for (let i = last - 1; i >= 0; i--) {
+    if ((Date.parse(h.dates[last]) - Date.parse(h.dates[i])) / 86400000 >= valueWindow) { from = i; break; }
+  }
+  // Daily totals (USD) and per-item moves.
+  const totals = Array(days).fill(0);
+  const moves = [];
+  for (const e of list) {
+    const factor = e.kind === 'sealed' ? 1 : conditionFactor(e.condition);
+    const key = historyKey(e, h.items);
+    const series = key && h.items[key];
+    const today = e.kind === 'sealed' ? sealed?.byKey.get(e.id)?.usd ?? null : cardUsd({ variant: e.variant }, prices[e.id]);
+    let prev = today != null ? today * 100 : null;
+    for (let d = 0; d < days; d++) {
+      const cents = series?.[d] ?? null;
+      const v = cents ?? prev; // carry the last known price through gaps
+      if (v != null) totals[d] += (v / 100) * factor * e.qty;
+      if (cents != null) prev = cents;
+    }
+    const a = series?.[from], b = series?.[last];
+    if (a && b && a !== b) moves.push({ e, now: b / 100, pct: ((b - a) / a) * 100, gain: ((b - a) / 100) * factor * e.qty });
+  }
+  box.hidden = false;
+  const change = totals[last] - totals[from];
+  const pct = totals[from] ? (change / totals[from]) * 100 : 0;
+  const since = from === 0 && (Date.parse(h.dates[last]) - Date.parse(h.dates[0])) / 86400000 < valueWindow
+    ? `since ${shortDate(h.dates[0])}` : valueWindow === 1 ? 'since yesterday' : valueWindow === 7 ? 'this week' : 'this month';
+  const cents = Math.round(change * rate.rate * 100);
+  $('valueChange').innerHTML = !cents ? `<span class="muted">No change ${esc(since)}</span>`
+    : `<b class="${cents > 0 ? 'up' : 'down'}">${cents > 0 ? '+' : '−'}${esc(formatAud(Math.abs(change), rate.rate))}</b> ${esc(since)}`
+      + ` <span class="${cents > 0 ? 'up' : 'down'}">${cents > 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}%</span>`;
+  $('valueTrendNote').textContent = `TCGplayer price history, ${shortDate(h.dates[0])} – ${shortDate(h.dates[last])}`;
+
+  // Inline SVG line of the daily totals (whole history; the window's start is marked).
+  const W = 300, H = 64, pad = 4;
+  const min = Math.min(...totals), max = Math.max(...totals), span = max - min || 1;
+  const x = (d) => pad + (d / last) * (W - 2 * pad);
+  const y = (v) => H - pad - ((v - min) / span) * (H - 2 * pad);
+  const pts = totals.map((v, d) => `${x(d).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  $('valueChart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+      aria-label="Collection value per day, ${esc(formatAud(min, rate.rate))} to ${esc(formatAud(max, rate.rate))}">
+    <line x1="${x(from).toFixed(1)}" x2="${x(from).toFixed(1)}" y1="0" y2="${H}" class="mark"/>
+    <polyline points="${pts}" fill="none" class="${change >= 0 ? 'up' : 'down'}"/>
+    <circle cx="${x(last).toFixed(1)}" cy="${y(totals[last]).toFixed(1)}" r="3" class="${change >= 0 ? 'up' : 'down'}"/>
+  </svg>`;
+
+  // Your movers: up to 5 risers and 5 fallers by percentage.
+  const row = (m, i, dir) => `<button type="button" class="card-row mover" data-dir="${dir}" data-i="${i}">
+      <img src="${esc(m.e.image || '')}" alt="" loading="lazy">
+      <div class="meta"><div class="name">${esc(m.e.name)}</div><div class="sub">${esc(m.e.kind === 'sealed' ? m.e.type || '' : `${m.e.setName} · #${m.e.number}`)}${m.e.qty > 1 ? ` · ×${m.e.qty}` : ''}</div></div>
+      <div class="mv"><b>${esc(formatAud(m.now, rate.rate))}</b>
+        <span class="${m.pct >= 0 ? 'up' : 'down'}">${m.pct >= 0 ? '▲' : '▼'} ${Math.abs(m.pct).toFixed(Math.abs(m.pct) >= 10 ? 0 : 1)}%</span></div>
+    </button>`;
+  const up = moves.filter((m) => m.pct > 0).sort((a, b) => b.pct - a.pct).slice(0, 5);
+  const down = moves.filter((m) => m.pct < 0).sort((a, b) => a.pct - b.pct).slice(0, 5);
+  const groups = { up, down };
+  $('yourMovers').innerHTML = !moves.length ? '<p class="muted small-note">None of your items has moved yet.</p>'
+    : (up.length ? `<h4 class="sub-title">Your risers</h4><div class="results">${up.map((m, i) => row(m, i, 'up')).join('')}</div>` : '')
+      + (down.length ? `<h4 class="sub-title">Your fallers</h4><div class="results">${down.map((m, i) => row(m, i, 'down')).join('')}</div>` : '');
+  $('yourMovers').querySelectorAll('.mover').forEach((b) => b.addEventListener('click', () => {
+    const { e } = groups[b.dataset.dir][+b.dataset.i];
+    if (e.kind === 'sealed') openSealedDetail(e, { entryKey: e.key });
+    else openDetail(e, { entryKey: e.key });
+  }));
 }
 
 /* The list as plain text, ready to paste into Facebook / Discord / Messenger. */

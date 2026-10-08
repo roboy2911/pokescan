@@ -310,6 +310,13 @@ function getSetsInfo() {
 
 /* data/market.json (movers and highs/lows), loaded when the Market tab opens. */
 let marketPromise = null;
+/* data/history.json: 31 days of daily prices, loaded when the Collection tab opens. */
+let historyPromise = null;
+function getHistory() {
+  historyPromise ??= fetch('data/history.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  return historyPromise;
+}
+
 function getMarket() {
   marketPromise ??= fetch('data/market.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
   return marketPromise;

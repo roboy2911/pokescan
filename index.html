@@ -160,6 +160,17 @@
         <span class="price-label">Estimated value</span>
         <span class="value-total" id="valueTotal">—</span>
         <span class="price-note" id="valueNote"></span>
+        <div class="value-trend" id="valueTrend" hidden>
+          <div class="seg" id="valueWindow" role="group" aria-label="Period">
+            <button type="button" data-v="1" aria-pressed="false">1 day</button>
+            <button type="button" data-v="7" class="active" aria-pressed="true">7 days</button>
+            <button type="button" data-v="30" aria-pressed="false">30 days</button>
+          </div>
+          <p class="value-change" id="valueChange"></p>
+          <div class="value-chart" id="valueChart"></div>
+          <p class="price-note" id="valueTrendNote"></p>
+          <div id="yourMovers"></div>
+        </div>
         <details class="by-set" id="valueBySet" hidden>
           <summary>Value by set</summary>
           <div id="valueBySetList"></div>
