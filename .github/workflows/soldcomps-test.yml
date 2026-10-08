@@ -1,0 +1,31 @@
+name: Test AU sold prices
+
+# Manual one-off check that the SoldComps key works and returns eBay Australia sales.
+on:
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: 'eBay search'
+        default: 'charizard 4/102'
+      sites:
+        description: 'ebaySite values to try (comma-separated)'
+        default: 'AU,EBAY_AU,ebay.com.au,au'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Query SoldComps
+        env:
+          SOLDCOMPS_API_KEY: ${{ secrets.SOLDCOMPS_API_KEY }}
+          KEYWORD: ${{ inputs.keyword }}
+          SITES: ${{ inputs.sites }}
+        run: node tools/soldcomps-test.mjs
