@@ -724,3 +724,64 @@ a.btn { text-decoration: none; }
 .jp-badge { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 0.65em; font-weight: 700;
   line-height: 1.5; vertical-align: middle; color: #fff; background: #bc002d; letter-spacing: 0.04em; }
 .icon-btn.jp-btn { font-weight: 800; font-size: 0.8rem; letter-spacing: 0.04em; }
+
+/* ---------- Full-screen scan view (phones) ----------
+ * The camera fills the screen behind a floating header and the see-through tab bar; results sit
+ * in a see-through panel above the tab bar that never scrolls up/down (only its strips scroll
+ * sideways); tap the card for the full sheet. Desktop keeps the framed layout. */
+@media (max-width: 699px) {
+  body.scan-full { padding-bottom: 0; }
+  body.scan-full .topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 4;
+    background: linear-gradient(rgba(11, 12, 16, .75), rgba(11, 12, 16, 0));
+  }
+  body.scan-full #view-scan .camera-wrap,
+  body.scan-full #view-scan.has-result .camera-wrap {
+    position: fixed; inset: 0; z-index: 0;
+    width: 100vw; height: 100dvh; min-height: 0; max-height: none; aspect-ratio: auto;
+    border-radius: 0; transition: none;
+  }
+  body.scan-full .bottom-nav { background: rgba(14, 16, 21, .62); }
+  /* Card guide: card-shaped, above where the result panel goes. */
+  body.scan-full .guide { height: auto; width: min(76vw, 340px); aspect-ratio: 63 / 88; top: 44%; max-width: none; }
+  body.scan-full .pill { top: calc(58px + env(safe-area-inset-top)); }
+  body.scan-full .cam-controls {
+    top: calc(58px + env(safe-area-inset-top)); bottom: auto; right: 10px;
+    flex-direction: column;
+  }
+  body.scan-full .bulk-bar { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 10px); }
+
+  body.scan-full .result-panel {
+    position: fixed; z-index: 4; margin: 0;
+    left: 8px; right: 8px; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 8px);
+    max-height: 52dvh; overflow: hidden;
+    padding: 12px; border-radius: 18px;
+    background: rgba(14, 16, 21, .8); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  body.scan-full .result-panel[hidden] { display: none; }
+  body.scan-full .result-title { margin: 0; font-size: .92rem; }
+  body.scan-full .hero { gap: 12px; align-items: center; }
+  body.scan-full .hero img { width: 78px; flex: 0 0 78px; box-shadow: none; }
+  body.scan-full .hero-name { font-size: 1.1rem; }
+  body.scan-full .hero-sub, body.scan-full .hero-tags { font-size: .8rem; margin-top: 2px; }
+  body.scan-full .hero-tags { display: none; }
+  body.scan-full .price-slot { margin-top: 4px; }
+  body.scan-full .price-note { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .72rem; }
+  body.scan-full .variant-chips { flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; }
+  body.scan-full .variant-chips .chip { flex: 0 0 auto; scroll-snap-align: start; }
+  body.scan-full .result-actions { display: flex; gap: 8px; margin: 0; }
+  body.scan-full .result-actions .btn { flex: 1; padding: 10px 12px; font-size: .92rem; }
+  body.scan-full .alt-strip { margin: 0; scroll-snap-type: x proximity; }
+  body.scan-full .alt-strip-label { display: none; }
+  body.scan-full .alt-thumb { scroll-snap-align: start; }
+  body.scan-full .alt-thumb img { width: 52px; }
+  body.scan-full .alt-thumb { flex-basis: 52px; }
+  /* "Not this card?" / closest matches: a sideways strip of rows instead of a long list. */
+  body.scan-full .alt-wrap { margin: 0; min-height: 0; }
+  body.scan-full .alt-wrap .results { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 4px; }
+  body.scan-full .alt-wrap .card-row { flex: 0 0 78%; scroll-snap-align: start; }
+  /* Nothing of the scan view's own scrolls the page. */
+  body.scan-full main { min-height: 0; }
+}

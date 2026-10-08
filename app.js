@@ -73,6 +73,7 @@ function showView(name) {
     else b.removeAttribute('aria-current');
   });
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
+  document.body.classList.toggle('scan-full', name === 'scan'); // full-screen camera on phones (style.css)
   if (name === 'collection') refreshCollection();
   if (name === 'sets') showSets();
   if (name === 'market') renderMarket();
