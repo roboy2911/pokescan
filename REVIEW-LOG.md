@@ -30,4 +30,4 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   you pick: reverse holo, Master Ball pattern, 1st edition…), the sealed sheet, and as
   "AU sold ↗" on the scan result. Opens ebay.com.au sold + completed listings, located in
   Australia, newest first, searching the number as printed ("4/102", "025/165", "SWSH020").
-  Works because you're signed in to eBay in your browser. *Remove:* "remove AU sold button".
+  Works because you're signed in to eBay in your browser. *Remove:* "remove AU sold button" (`git revert f54012a`).
