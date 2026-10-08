@@ -8,8 +8,8 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
 - **Want list + "cost to finish"** (owner-approved): star cards/sealed you're chasing, with
   optional target prices and a flag when they drop to it; in Sets, "38 missing ≈ A$214" to
   complete a set (and the cheap ones only).
-- Shareable trade / sell list — planned for the 4pm run.
-- Card condition (NM/LP/MP/HP/DMG) with value multipliers — planned for the 5pm run.
+- Shareable trade / sell list — done in the 4pm run.
+- Card condition — done in the 5pm run.
 - Collection value over time + "Your movers" — planned for the 8pm run.
 
 ## 3pm Thu — run 1
@@ -46,3 +46,15 @@ Every change is its own commit, so anything can be taken out on its own. Tell Cl
   collection item's sheet; "⇄ Trade / sale list" in the Collection's set filter with total,
   "list at N% of market" and **Share list** (ready-to-paste text with A$ prices, ×2 … each,
   total). *Remove:* "remove trade list" (`git revert 9139840`).
+
+## 5pm Thu — run 3
+
+- Bug sweep: all tabs, search, bulk add (all five cases), scan flow, trade list,
+  backup/restore — passing, no bugs found.
+- **Feature: Card condition** — `d870859`. "Your copy's condition" chips (NM / LP / MP / HP /
+  DMG) in a collection item's sheet. Non-NM copies are valued at a share of market (LP 85%,
+  MP 70%, HP 50%, DMG 30%), with a note like "Lightly Played: valued at 85% = A$1,183.61
+  each"; tiles show "Holo · LP" and the trade list adds the condition. Copies in different
+  conditions are kept as separate entries (changing one to match another merges them).
+  Existing collections are all NM, so they look and add up exactly as before; backups keep
+  the condition. *Remove:* "remove condition" (`git revert d870859`).
