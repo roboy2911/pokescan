@@ -62,9 +62,19 @@ repo, redeployed by Cloudflare on every push to main (Pages project: no build co
      reflection can't skew the colours of the whole card. Pale, washed-out patches
      (reflection streaks, sleeve haze) are also tried with those patches left out. A
      match that relies on only part of the card counts for a bit less.
+   - **Toploaders:** outlines are also cropped where a card sits inside a toploader
+     (smaller, low or to one side).
+   - **Heavy glare (glare memory):** glare on thick plastic moves with the slightest tilt,
+     so the last few views of the same card are lined up (by their edges) and combined:
+     block by block, the newest view unless it's glared there, else the view with the least
+     glare. That combined view is matched too, and a see-through veil of glare is also taken
+     out mathematically ("dark channel"). When the card is heavily glared the app says
+     "Glare on the card — tilt it slightly".
+   - **Plain surfaces:** areas without card-like detail (a white playmat, even with a
+     reflection) aren't matched.
    - **Lock in:** when the same card wins clearly on two frames in a row — or wins most of
      the last 5 frames with a clear lead on average (glare moves as the phone moves) — the
-     result is shown.
+     result is shown. A combined view needs a slightly lower score (still two frames).
 
 No text reading and no network calls while scanning. The app only says "Found it" when the
 match is clear; otherwise it shows the closest matches to pick from.

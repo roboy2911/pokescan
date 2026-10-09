@@ -305,12 +305,15 @@ function showJapaneseScan() {
 $('jpScanBtn').addEventListener('click', () => setJapaneseScan(!jpScan));
 
 /* Ask the worker to identify the card in a captured region. */
-async function identify(region) {
-  const res = await ask({ type: 'scan', regions: [region] }, [region.data]);
+// live: a camera frame (the worker combines the last few to see past glare); a photo isn't.
+async function identify(region, { live = false } = {}) {
+  const res = await ask({ type: 'scan', regions: [region], live }, [region.data]);
   const ranked = jpScan ? foldTwins(res.matches, db.enCount, (i) => db.cards[i]?.name, { prefer: 'ja' }) : res.matches;
   return {
     matches: ranked.filter(({ i }) => db.cards[i]).map(({ i, score, twin }) => ({ card: db.cards[i], score, ...(twin !== undefined && { twin: db.cards[twin] }) })),
     where: res.where,
+    glare: res.glare || 0,
+    combined: res.combined || 0,
     ms: res.ms,
   };
 }
@@ -491,10 +494,10 @@ async function scanLoop() {
       const region = captureVideo();
       const { w, h } = region;
       const t0 = performance.now();
-      const { matches, where } = await identify(region);
+      const { matches, where, glare, combined } = await identify(region, { live: true });
       if (typeof devFrame === 'function') devFrame(matches, performance.now() - t0);
       if (auto.state !== 'scanning') break;
-      onFrame(matches, where, { w, h });
+      onFrame(matches, where, { w, h }, glare, combined);
       await sleep(80);
     }
   } catch (err) {
@@ -532,17 +535,29 @@ function fuseFrames(frames) {
 }
 
 /* Decide, frame by frame, when a result is solid enough to show. */
-function onFrame(matches, where, region) {
+/* Heavy glare (fraction of the card) for a few frames → ask for a tilt: the reflection moves
+ * and the scanner combines frames to see past it. */
+const GLARE_HINT = 0.25;
+/* A result from the combined view of several frames (glare memory, matcher.js) rests on more
+ * evidence, so a slightly lower score is enough — still two such frames in a row to lock in.
+ * Tuned on tools/sim.js live scans incl. card swaps: no wrong lock-ins. */
+const COMBINED_CONFIDENT = { score: 0.86, gap: 0.03 };
+const isConfidentCombined = ([best, second]) => best && best.score >= COMBINED_CONFIDENT.score
+  && best.score - (second?.score ?? 0) >= COMBINED_CONFIDENT.gap;
+function onFrame(matches, where, region, glare = 0, combined = 0) {
+  auto.glary = glare >= GLARE_HINT ? (auto.glary || 0) + 1 : 0;
+  const tiltHint = auto.glary >= 2 ? 'Glare on the card — tilt it slightly' : null;
   auto.recent.push(matches);
   if (auto.recent.length > FUSE_FRAMES) auto.recent.shift();
-  const fusedCard = !isConfident(matches) ? fuseFrames(auto.recent) : null;
+  const sure = isConfident(matches) || (combined >= 2 && isConfidentCombined(matches));
+  const fusedCard = !sure ? fuseFrames(auto.recent) : null;
   if (fusedCard) {
     // Put the card that won across frames first, and treat it as found.
     matches = [matches.find((m) => m.card.id === fusedCard.id) ?? { card: fusedCard, score: matches[0].score },
       ...matches.filter((m) => m.card.id !== fusedCard.id)];
   }
   const [best] = matches;
-  const confident = isConfident(matches) || !!fusedCard;
+  const confident = sure || !!fusedCard;
   bulkTrack(best);
   // Bulk add: the card just added stays "done" while it's in view, even on unsure frames.
   if (bulk.on && bulk.last && best && best.score >= 0.75 && best.card.name === bulk.last.name
@@ -567,12 +582,12 @@ function onFrame(matches, where, region) {
   showOutline(key && !ignored ? where : null, region);
 
   if (!key || ignored) {
-    setStatus(els.status, ignored ? 'Got it — point at the next card' : 'Looking for a card…', 'busy');
+    setStatus(els.status, ignored ? 'Got it — point at the next card' : tiltHint || 'Looking for a card…', 'busy');
     return;
   }
   const needed = fusedCard ? 1 : confident ? devVal('lockFrames', 2) : 4;
   if (auto.streak < needed) {
-    setStatus(els.status, 'Hold still…', 'busy');
+    setStatus(els.status, !confident && tiltHint ? tiltHint : 'Hold still…', 'busy');
     return;
   }
 

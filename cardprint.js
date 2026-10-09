@@ -160,6 +160,45 @@ function fpNormalise(g, w = null) {
   return out;
 }
 
+/* Veil glare (thick plastic like a toploader): a see-through white sheen, I = J(1-a) + 255a,
+ * that washes colours out without being blown-out white. Card artwork has some dark detail
+ * (text, outlines, shading) almost everywhere, so how far the darkest bit of each area has
+ * been lifted gives the veil there ("dark channel"). Per 8x11 cell: the darkest of its 4x4
+ * sub-cells (min channel), then the lowest of its 3x3 neighbours (a veil is smooth; a pale
+ * patch of artwork usually has a darker neighbour). Returns per-cell a (0-1). */
+// omega: how much of the estimated veil to take out; min: only when some cell's veil is at
+// least this strong (a pale card isn't glare); cap: cells veiled more than this are left out.
+// Tuned on tools/sim.js ('tlglare': live scans, toploader / sleeve).
+const FP_VEIL = { omega: 0.95, min: 0.3, cap: 0.8, smooth: 1 };
+function fpVeil(d, W, H, x0, y0, x1, y1) {
+  const k = FP_VEIL;
+  const SX = 4, SY = 4, fw = FP.GW * SX, fh = FP.GH * SY;
+  const f = fpBoxGrid(d, W, H, fw, fh, x0, y0, x1, y1);
+  const dark = new Float64Array(FP.GW * FP.GH).fill(255);
+  for (let y = 0; y < fh; y++) {
+    for (let x = 0; x < fw; x++) {
+      const i = (y * fw + x) * 3;
+      const m = Math.min(f[i], f[i + 1], f[i + 2]);
+      const c = Math.floor(y / SY) * FP.GW + Math.floor(x / SX);
+      if (m < dark[c]) dark[c] = m;
+    }
+  }
+  const a = new Float64Array(FP.GW * FP.GH);
+  for (let cy = 0; cy < FP.GH; cy++) {
+    for (let cx = 0; cx < FP.GW; cx++) {
+      let m = 255;
+      for (let dy = -k.smooth; dy <= k.smooth; dy++) {
+        for (let dx = -k.smooth; dx <= k.smooth; dx++) {
+          const x = cx + dx, y = cy + dy;
+          if (x >= 0 && y >= 0 && x < FP.GW && y < FP.GH) m = Math.min(m, dark[y * FP.GW + x]);
+        }
+      }
+      a[cy * FP.GW + cx] = Math.min(0.99, (m / 255) * k.omega);
+    }
+  }
+  return a;
+}
+
 /* Photo fingerprints of the fractional rectangle x0..x1, y0..y1: one with glare cells
  * left out (see the top of this file) and, when part of the card looks washed out, a
  * second one leaving that out too. Too little left to go on → all cells are used. */
@@ -192,6 +231,19 @@ function fpQueries(d, W, H, x0, y0, x1, y1) {
     || (floor(c) - typical > FP_WASH_RELATIVE && Math.max(g[c * 3], g[c * 3 + 1], g[c * 3 + 2]) - floor(c) <= FP_WASH_SPREAD);
   const w2 = w.map((v, c) => (v && !washed(c) ? 1 : 0));
   if (usedOf(w2) < used && enough(w2)) out.push(fpNormalise(g, w2));
+  // Veil glare: also try with the veil taken out (and cells that are nearly all veil left out).
+  {
+    const k = FP_VEIL;
+    const a = fpVeil(d, W, H, x0, y0, x1, y1);
+    if (Math.max(...a) > k.min) {
+      const j = new Float64Array(g.length);
+      const w4 = w.map((v, c) => (v && a[c] <= k.cap ? 1 : 0));
+      for (let c = 0; c < cells; c++) {
+        for (let ch = 0; ch < 3; ch++) j[c * 3 + ch] = (g[c * 3 + ch] - 255 * a[c]) / (1 - a[c]);
+      }
+      if (enough(w4)) out.push(usedOf(w4) === cells ? fpNormalise(j) : fpNormalise(j, w4));
+    }
+  }
   return out;
 }
 

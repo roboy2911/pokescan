@@ -43,6 +43,22 @@ const TOPLOADER = { penalty: 0.02, coarse: [[0.84, 0, 0.035]], fine: { s: [0.82,
 // like many cards, so a heavily masked match must not seem as sure as a clear one.
 const MASK_PENALTY = 0.2;
 
+// Glare memory (live scanning): glare on plastic moves with the slightest tilt, so the last
+// few straightened views of the same card are combined, keeping each pixel's darkest value —
+// glare only ever adds light, so any spot one frame saw without glare comes back. Views are
+// lined up by the strongest card-sized outline (a toploader / sleeve / card edge), and the
+// memory starts again when that outline jumps (another card, or the phone moved a lot).
+const MEMORY_FRAMES = 8;
+const MEMORY_MOVE = 0.35;  // outline centre may move this much (in guide heights) between frames
+const MEMORY_SIZE = 0.35;  // ...and change size by this much
+const ALIGN_MIN = 0.4;     // views whose edges line up worse than this aren't combined
+// A block comes from an older view only when the newest is this much more glared there
+// (min-channel level, 0-255).
+const GLARE_MARGIN = 25;
+const COMBINED_BONUS = 0.03; // preference for the combined view when choosing the card's position
+// A cell counts as glare for the "tilt it" hint when blown out or under a veil this strong.
+const GLARE_VEIL = 0.35;
+
 function createMatcher(indexBuffer) {
   const dim = FP.DIM;
   const vectors = new Int8Array(indexBuffer);
@@ -269,7 +285,7 @@ function createMatcher(indexBuffer) {
     for (const c of indices) {
       const base = c * dim;
       const inv = 1 / norms[c];
-      let top = -Infinity;
+      let top = -Infinity, topQ = -1;
       for (let qi = 0; qi < queries.length; qi++) {
         const q = queries[qi];
         // Glare-masked query: compare its usable cells with the card re-standardised there.
@@ -300,9 +316,9 @@ function createMatcher(indexBuffer) {
         }
         for (let j = 0; j < qDrop; j++) sum -= worst[j];
         const score = 1 - (sum * used / (used - qDrop)) / 2 - maskPenalty * (1 - used / cells);
-        if (score > top) top = score;
+        if (score > top) { top = score; topQ = qi; }
       }
-      out.push({ i: c, score: top });
+      out.push({ i: c, score: top, q: topQ });
     }
     out.sort((a, b) => b.score - a.score);
     return out.slice(0, topN);
@@ -315,6 +331,197 @@ function createMatcher(indexBuffer) {
     const out = [];
     for (let i = 0; i < arr.length && out.length < k; i++) if (arr[i] >= cut) out.push(i);
     return out;
+  }
+
+  /* Glare memory (see MEMORY_FRAMES). */
+  let memory = [];
+  const quadInfo = (q) => {
+    const x = q.reduce((s, p) => s + p.x, 0) / 4, y = q.reduce((s, p) => s + p.y, 0) / 4;
+    const h = (Math.hypot(q[3].x - q[0].x, q[3].y - q[0].y) + Math.hypot(q[2].x - q[1].x, q[2].y - q[1].y)) / 2;
+    return { x, y, h };
+  };
+  /* The outline to line frames up by: about card / toploader size and in the guide — the one
+   * most like the previous frame's, else the strongest (outlines come strongest first). */
+  function anchorOf(cands, prev = null) {
+    let best = null, bestD = Infinity;
+    for (const c of cands) {
+      if (c.kind !== 'outline' || c.combined) continue;
+      const { guide } = c.region;
+      const gh = guide.y1 - guide.y0;
+      const info = quadInfo(c.q);
+      if (!(info.h >= 0.55 * gh && info.x > guide.x0 && info.x < guide.x1 && info.y > guide.y0 && info.y < guide.y1)) continue;
+      if (!prev) return c;
+      const d = Math.hypot(info.x - prev.x, info.y - prev.y) / gh + Math.abs(info.h / prev.h - 1);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    return best;
+  }
+  /* Add this frame's anchor view; returns a combined (darkest-pixel) candidate, or null. */
+  /* Line views up: each view's edges (gradient of a small grey copy), and the zoom + shift that
+   * best maps view `v` onto the reference (normalised correlation of edges; glare is smooth,
+   * so its edges barely count). The outline used can be the toploader one frame and the card
+   * the next, so zooms from 0.8 to 1.25 are tried. */
+  const AL_W = 42, AL_H = 59;
+  function edgesOf(d) {
+    const g = fpBoxGrid(d, WARP_W, WARP_H, AL_W, AL_H, 0, 0, 1, 1);
+    const L = new Float32Array(AL_W * AL_H);
+    for (let c = 0; c < L.length; c++) L[c] = 0.299 * g[c * 3] + 0.587 * g[c * 3 + 1] + 0.114 * g[c * 3 + 2];
+    const E = new Float32Array(AL_W * AL_H);
+    for (let y = 1; y < AL_H - 1; y++) {
+      for (let x = 1; x < AL_W - 1; x++) {
+        const c = y * AL_W + x;
+        E[c] = Math.hypot(L[c + 1] - L[c - 1], L[c + AL_W] - L[c - AL_W]);
+      }
+    }
+    return E;
+  }
+  function align(refE, E) {
+    let best = { ncc: -1, s: 1, sy: 1, dx: 0, dy: 0 };
+    const tryAt = (s, dx, dy, sy = s) => {
+      let sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0, n = 0;
+      for (let y = 2; y < AL_H - 2; y += 1) {
+        const v = 0.5 + ((y + 0.5) / AL_H - 0.5) * sy + dy;
+        const yy = Math.floor(v * AL_H);
+        if (yy < 1 || yy >= AL_H - 1) continue;
+        for (let x = 2; x < AL_W - 2; x += 1) {
+          const u = 0.5 + ((x + 0.5) / AL_W - 0.5) * s + dx;
+          const xx = Math.floor(u * AL_W);
+          if (xx < 1 || xx >= AL_W - 1) continue;
+          const a = refE[y * AL_W + x], b = E[yy * AL_W + xx];
+          sa += a; sb += b; saa += a * a; sbb += b * b; sab += a * b; n++;
+        }
+      }
+      if (n < AL_W * AL_H * 0.5) return;
+      const cov = sab - sa * sb / n, va = saa - sa * sa / n, vb = sbb - sb * sb / n;
+      const ncc = va > 0 && vb > 0 ? cov / Math.sqrt(va * vb) : -1;
+      if (ncc > best.ncc) best = { ncc, s, sy, dx, dy };
+    };
+    for (let s = 0.8; s <= 1.25; s += 0.025) {
+      for (let dx = -0.12; dx <= 0.12001; dx += 0.03) for (let dy = -0.12; dy <= 0.12001; dy += 0.03) tryAt(s, dx, dy);
+    }
+    // Refine around the best: zoom across and down separately (a toploader isn't card-shaped).
+    for (const step of [0.01, 0.005]) {
+      const b0 = { ...best };
+      for (let s = b0.s - 2 * step; s <= b0.s + 2.001 * step; s += step) {
+        for (let sy = b0.sy - 2 * step; sy <= b0.sy + 2.001 * step; sy += step) {
+          for (let dx = b0.dx - 2 * step; dx <= b0.dx + 2.001 * step; dx += step) {
+            for (let dy = b0.dy - 2 * step; dy <= b0.dy + 2.001 * step; dy += step) tryAt(s, dx, dy, sy);
+          }
+        }
+      }
+    }
+    return best;
+  }
+  /* View `d` resampled into the reference's frame (zoom s, shift dx/dy as found by align). */
+  function resample(d, { s, sy = s, dx, dy }) {
+    const out = new Uint8ClampedArray(d.length); // alpha 0 = outside the view
+    for (let y = 0; y < WARP_H; y++) {
+      const yy = Math.floor((0.5 + ((y + 0.5) / WARP_H - 0.5) * sy + dy) * WARP_H);
+      if (yy < 0 || yy >= WARP_H) continue;
+      for (let x = 0; x < WARP_W; x++) {
+        const xx = Math.floor((0.5 + ((x + 0.5) / WARP_W - 0.5) * s + dx) * WARP_W);
+        if (xx < 0 || xx >= WARP_W) continue;
+        const o = (y * WARP_W + x) * 4, i = (yy * WARP_W + xx) * 4;
+        out[o] = d[i]; out[o + 1] = d[i + 1]; out[o + 2] = d[i + 2]; out[o + 3] = 255;
+      }
+    }
+    return out;
+  }
+
+  /* Per colour channel: the 30th-percentile value of a view (glare covers the bright end). */
+  function levels(d) {
+    const hist = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
+    for (let p = 0; p < d.length; p += 16) { hist[0][d[p]]++; hist[1][d[p + 1]]++; hist[2][d[p + 2]]++; }
+    const n = Math.floor(d.length / 16) * 0.3;
+    return hist.map((h) => { let s = 0; for (let v = 0; v < 256; v++) { s += h[v]; if (s >= n) return v; } return 255; });
+  }
+  let lastAnchor = null, lastComp = null, lastViews = [], lastNcc = [];
+  let memoryFrames = MEMORY_FRAMES, blockSize = 8;
+  function remember(cands) {
+    const last = memory.info ?? null;
+    const a = anchorOf(cands, last);
+    lastAnchor = null;
+    if (!a) return null;
+    const gh = a.region.guide.y1 - a.region.guide.y0;
+    const now = quadInfo(a.q);
+    lastAnchor = { x: +(now.x / gh).toFixed(3), y: +(now.y / gh).toFixed(3), h: +(now.h / gh).toFixed(3) };
+    // A big jump (another card, or the phone moved a lot): start again.
+    if (last && (Math.hypot(now.x - last.x, now.y - last.y) > MEMORY_MOVE * gh || Math.abs(now.h / last.h - 1) > MEMORY_SIZE)) memory = [];
+    memory.info = now;
+    if (!memory.length) {
+      // The first view is the reference frame every later view is lined up with.
+      memory.push(a.warped);
+      memory.target = edgesOf(a.warped);
+      memory.misses = 0;
+      return null;
+    }
+    // Line this view up with the combined view so far (least glare, so the best edges).
+    const t = align(memory.target, edgesOf(a.warped));
+    lastNcc = [+t.ncc.toFixed(2)];
+    if (t.ncc < ALIGN_MIN) {
+      // Doesn't fit: a bad frame, or another card — twice in a row starts again from this one.
+      // (The old combined view isn't offered: right after a swap it would be the last card.)
+      if (++memory.misses >= 2) { memory = [a.warped]; memory.info = now; memory.target = edgesOf(a.warped); memory.misses = 0; }
+      return null;
+    }
+    memory.misses = 0;
+    memory.push(resample(a.warped, t));
+    while (memory.length > memoryFrames) memory.shift();
+    const views = [...memory];
+    // Frames differ in exposure / white balance: bring each to the newest one's levels first
+    // (per channel, by a darkish percentile that glare doesn't reach), then take the darkest.
+    const ref = levels(views[views.length - 1]);
+    const scaled = views.map((w) => {
+      const lv = levels(w);
+      const gain = lv.map((v, ch) => (v > 4 ? ref[ch] / v : 1));
+      const o = new Uint8ClampedArray(w.length);
+      for (let p = 0; p < w.length; p += 4) {
+        o[p] = w[p] * gain[0]; o[p + 1] = w[p + 1] * gain[1]; o[p + 2] = w[p + 2] * gain[2]; o[p + 3] = w[p + 3];
+      }
+      return o;
+    });
+    // Block by block: the newest view, unless it's clearly glared there — then the view with
+    // the least glare (glare lifts the darkest colours and blows pixels out). Each block keeps
+    // one view's own colours, and without glare the combined view is just the newest frame
+    // (so a card swapped in can't be mixed with the last one).
+    const comp = new Uint8ClampedArray(views[0].length);
+    const B = blockSize;
+    for (let by = 0; by < WARP_H; by += B) {
+      for (let bx = 0; bx < WARP_W; bx += B) {
+        let pick = 0, pickV = Infinity, newestV = Infinity;
+        scaled.forEach((w, k) => {
+          let sum = 0, n = 0, blown = 0, missing = 0;
+          for (let y = by; y < Math.min(WARP_H, by + B); y++) {
+            for (let x = bx; x < Math.min(WARP_W, bx + B); x++) {
+              const p = (y * WARP_W + x) * 4;
+              if (!w[p + 3]) { missing++; continue; }
+              const lo = Math.min(w[p], w[p + 1], w[p + 2]);
+              sum += lo; n++;
+              if (lo >= FP_GLARE_MIN) blown++;
+            }
+          }
+          const v = !n || missing > n ? Infinity : sum / n + 120 * (blown / n);
+          if (k === scaled.length - 1) newestV = v;
+          if (v < pickV) { pickV = v; pick = k; }
+        });
+        if (newestV - pickV < GLARE_MARGIN) pick = scaled.length - 1;
+        const w = scaled[pick];
+        for (let y = by; y < Math.min(WARP_H, by + B); y++) {
+          for (let x = bx; x < Math.min(WARP_W, bx + B); x++) {
+            const p = (y * WARP_W + x) * 4;
+            comp[p] = w[p]; comp[p + 1] = w[p + 1]; comp[p + 2] = w[p + 2]; comp[p + 3] = 255;
+          }
+        }
+      }
+    }
+    lastComp = comp;
+    lastViews = views;
+    memory.target = edgesOf(comp);
+    fpPrepare(comp, WARP_W, WARP_H);
+    const coarse = [...fpQueries(comp, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1), fpCrops(comp, WARP_W, WARP_H, [0.91], [0])[0],
+      ...TOPLOADER.coarse.map(([s, dx, dy]) => fpCropsXY(comp, WARP_W, WARP_H, [s], [dx], [dy])[0])].filter(Boolean);
+    memory.comp = { kind: 'outline', warped: comp, coarse, combined: views.length };
+    return { ...memory.comp, q: a.q, region: a.region };
   }
 
   /* How far a candidate is from the middle of the view, in guide heights (0 = centred). */
@@ -337,9 +544,15 @@ function createMatcher(indexBuffer) {
    * can't be recognised: each candidate position is scored on its own, minus a penalty
    * for being off-centre. */
   function match(regions, topN = 12,
-    { fineTop = 8, shortlistSize = 800, perCandidate = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER, plain = PLAIN } = {}) {
+    { fineTop = 8, shortlistSize = 800, perCandidate = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER, plain = PLAIN, live = false, combinedBonus = COMBINED_BONUS, memFrames = 0, block = 0 } = {}) {
     const t0 = performance.now();
     const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines, tl, plain }).map((c) => ({ ...c, region: r })));
+    // Live scanning: also the combined view of the last few frames (glare memory).
+    if (!live) memory = [];
+    if (memFrames) memoryFrames = memFrames;
+    if (block) blockSize = block;
+    const combined = live ? remember(cands) : null;
+    if (combined) cands.push(combined);
     if (!cands.length) return { matches: [], where: null };
     const t1 = performance.now();
     // Each candidate has one or more quick-pass fingerprints.
@@ -362,13 +575,15 @@ function createMatcher(indexBuffer) {
     const order = Array.from(cands.keys()).sort((a, b) => cands[b].prio - cands[a].prio);
     // The centred full-size window (a card filling the guide) is always checked closely too.
     const centre = cands.findIndex((c) => c.kind === 'window' && c.rect.s === 1);
-    const chosen = [...new Set([...order.slice(0, fineTop), ...(centre >= 0 ? [centre] : [])])];
+    const comb = combined ? cands.length - 1 : -1;
+    const chosen = [...new Set([...order.slice(0, fineTop), ...(centre >= 0 ? [centre] : []), ...(comb >= 0 ? [comb] : [])])];
 
     // Testing aid (tools/sim.js): how the correct card fares at each candidate position.
     const debug = debugIdx === null ? null : {
       inShortlist: shortlist.includes(debugIdx),
       coarseRank: Array.from(cardBest.keys()).filter((c) => cardBest[c] > cardBest[debugIdx]).length,
       cands: [],
+      lists: [],
     };
 
     let best = null;
@@ -400,9 +615,15 @@ function createMatcher(indexBuffer) {
         }
         ranked = [...byCard.values()].sort((a, b) => b.score - a.score).slice(0, topN);
       }
-      const score = ranked[0].score - c.penalty;
+      // The combined view (glare memory) rests on several frames, so it's preferred a little
+      // when choosing where the card is — its scores themselves aren't changed.
+      const score = ranked[0].score - c.penalty + (c.combined ? combinedBonus : 0);
       if (!best || score > best.score) best = { score, ranked, c };
+      const tq = fine[ranked[0].q] ?? fineTl?.[ranked[0].q];
+      debug?.lists?.push({ penalty: c.penalty, ranked: ranked.map((r) => [r.i, +r.score.toFixed(4)]) });
       debug?.cands.push({
+        used: tq?.w ? tq.w.reduce((a, b) => a + b, 0) : 88,
+        detail: (() => { const dd = c.kind === 'outline' ? fpDetail(c.warped, WARP_W, WARP_H) : null; return dd ? `${dd.edges.toFixed(0)}/${dd.chroma.toFixed(0)}` : ''; })(),
         kind: c.kind === 'outline' ? 'outline' : `win${c.rect.s}`,
         dist: +c.dist.toFixed(2),
         top: +ranked[0].score.toFixed(3),
@@ -410,13 +631,28 @@ function createMatcher(indexBuffer) {
       });
     }
     if (!best) return { matches: [], where: null };
+    // How much of the card is glare (blown out, or a heavy veil): the app asks for a tilt.
+    const gc = best.c.kind === 'outline' ? best.c : anchorOf(cands);
+    let glare = 0;
+    if (gc) {
+      const a = fpVeil(gc.warped, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1);
+      const q = fpQueries(gc.warped, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1)[0];
+      let n = 0;
+      for (let cell = 0; cell < a.length; cell++) if ((q.w && !q.w[cell]) || a[cell] > GLARE_VEIL) n++;
+      glare = n / a.length;
+    }
     return {
       matches: best.ranked,
+      glare,
+      combined: best.c.combined || 0,
+      memory: { frames: memory.length, anchor: lastAnchor, ncc: lastNcc, ...(debugIdx !== null && { comp: lastComp, views: lastViews }) },
       where: best.c.kind === 'outline' ? best.c.q : best.c.rect,
       debug,
       timing: { candidates: Math.round(t1 - t0), quick: Math.round(t2 - t1), fine: Math.round(performance.now() - t2) },
     };
   }
 
-  return { count, match };
+  // Testing aid (tools/sim.js): robust scores of `queries` against index cards `indices`.
+  const score = (queries, indices, topN = 12, keep = MATCH_ROBUST_KEEP) => robustScores(queries, indices, topN, keep, MASK_PENALTY);
+  return { count, match, score, forget: () => { memory = []; } };
 }
