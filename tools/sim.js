@@ -401,15 +401,22 @@ function writeOn(card, rnd) {
  *   toploader — card in a toploader (outline much bigger, card sits low)
  *   toploader2 — a more realistic toploader (card off-centre, rim, scratches)
  *   writing   — numbers written in marker on the sleeve over the card
+ *   tlglare   — heavy toploader glare: broad washed-out sheen, light-tube bands, hot spot
  *   finger    — a finger over one edge / corner
  *   dim       — dark, low-contrast lighting */
 export async function simHard(card, bgUrl, rnd, conditions = [], opts = {}) {
   const r = (a, b) => a + rnd() * (b - a);
   let img = card;
-  if (conditions.includes('sleeve')) img = encase(img, 'sleeve', rnd);
-  if (conditions.includes('toploader')) img = encase(img, 'toploader', rnd);
-  if (conditions.includes('toploader2')) img = encase(img, 'toploader2', rnd);
-  if (conditions.includes('writing')) img = writeOn(img, rnd);
+  // opts.caseCache: the same sleeve / toploader (and writing) for every frame of one card.
+  if (opts.caseCache?.img) {
+    img = opts.caseCache.img;
+  } else {
+    if (conditions.includes('sleeve')) img = encase(img, 'sleeve', rnd);
+    if (conditions.includes('toploader')) img = encase(img, 'toploader', rnd);
+    if (conditions.includes('toploader2')) img = encase(img, 'toploader2', rnd);
+    if (conditions.includes('writing')) img = writeOn(img, rnd);
+    if (opts.caseCache) opts.caseCache.img = img;
+  }
   const P = await simPhoto(img, bgUrl, rnd, opts);
   const c = new OffscreenCanvas(P.W, P.H);
   const x = c.getContext('2d');
@@ -456,6 +463,52 @@ export async function simHard(card, bgUrl, rnd, conditions = [], opts = {}) {
     x.fillStyle = g;
     x.fillRect(-2 * P.W, -bw, 4 * P.W, 2 * bw);
     x.restore();
+    x.globalCompositeOperation = 'source-over';
+  }
+  if (conditions.includes('tlglare')) {
+    // Toploader glare (thick glossy plastic): a broad washed-out sheen over much of the card,
+    // 1-2 long reflections of ceiling lights / a window (blown out in the middle), and
+    // sometimes a hot spot. Strength 0.6-1 so some frames are bad and some terrible.
+    const k = r(0.6, 1);
+    x.globalCompositeOperation = 'screen';
+    // Sheen: big soft veil, partly see-through.
+    const sp = at(r(0.2, 0.8), r(0.2, 0.8));
+    const srad = cardW * r(0.6, 1.1);
+    const sg = x.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, srad);
+    sg.addColorStop(0, `rgba(255,255,255,${r(0.35, 0.65) * k})`);
+    sg.addColorStop(0.6, `rgba(255,255,255,${r(0.15, 0.35) * k})`);
+    sg.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = sg;
+    x.fillRect(0, 0, P.W, P.H);
+    // Light bands.
+    const bands = 1 + (rnd() < 0.45 ? 1 : 0);
+    const angle = r(-0.5, 0.5) + (rnd() < 0.3 ? Math.PI / 2 : 0);
+    for (let i = 0; i < bands; i++) {
+      const p = at(r(0.1, 0.9), r(0.1, 0.9));
+      x.save();
+      x.translate(p.x, p.y);
+      x.rotate(angle + r(-0.1, 0.1));
+      const bw = cardW * r(0.06, 0.22);
+      const g = x.createLinearGradient(0, -bw * 1.6, 0, bw * 1.6);
+      g.addColorStop(0, 'rgba(255,255,255,0)');
+      g.addColorStop(0.3, `rgba(255,255,255,${r(0.4, 0.7) * k})`);
+      g.addColorStop(0.5, `rgba(255,255,255,${Math.min(1, r(0.85, 1.05) * k)})`);
+      g.addColorStop(0.7, `rgba(255,255,255,${r(0.4, 0.7) * k})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = g;
+      x.fillRect(-2 * P.W, -bw * 1.6, 4 * P.W, bw * 3.2);
+      x.restore();
+    }
+    if (rnd() < 0.4) {
+      const p = at(r(0.15, 0.85), r(0.15, 0.85));
+      const rad = cardW * r(0.1, 0.22);
+      const g = x.createRadialGradient(p.x, p.y, 0, p.x, p.y, rad);
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.5, `rgba(255,255,255,${0.8 * k})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      x.fillStyle = g;
+      x.fillRect(p.x - rad, p.y - rad, 2 * rad, 2 * rad);
+    }
     x.globalCompositeOperation = 'source-over';
   }
   if (conditions.includes('finger')) {
@@ -609,9 +662,11 @@ export async function testFusion(n = 40, seed = 21, conds = ['glare'], opts = {}
     } catch { continue; }
     const seen = [];
     let single = null, fused = null;
+    matcher.forget?.(); // opts.live: glare memory starts afresh for each card
+    const caseCache = {};
     for (let f = 0; f < frames; f++) {
-      const P = await simHard(card, 'plain', rnd, conds, opts.photo || {});
-      const { matches } = matcher.match([{ data: P.d, w: P.W, h: P.H, guide: P.guide }], 12, opts.match || {});
+      const P = await simHard(card, opts.bg || 'plain', rnd, conds, { ...(opts.photo || {}), caseCache });
+      const { matches } = matcher.match([{ data: P.d, w: P.W, h: P.H, guide: P.guide }], 12, { ...(opts.match || {}), live: !!opts.live });
       const ms = matches.map((m) => ({ card: db.cards[m.i], score: m.score }));
       seen.push(ms);
       if (!single && f > 0 && confident(seen[f - 1]) && confident(ms) && seen[f - 1][0].card.id === ms[0].card.id) single = ms[0].card.id;
