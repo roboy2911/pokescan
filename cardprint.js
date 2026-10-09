@@ -138,6 +138,7 @@ function fpNormalise(g, w = null) {
   const n = g.length / 3;
   const used = w ? w.reduce((a, b) => a + b, 0) : n;
   const out = new Float32Array(g.length);
+  let sdSum = 0;
   for (let k = 0; k < 3; k++) {
     let mean = 0;
     for (let c = 0; c < n; c++) if (!w || w[c]) mean += g[c * 3 + k];
@@ -145,8 +146,12 @@ function fpNormalise(g, w = null) {
     let v = 0;
     for (let c = 0; c < n; c++) if (!w || w[c]) v += (g[c * 3 + k] - mean) ** 2;
     const sd = Math.sqrt(v / (used || 1)) || 1;
+    sdSum += sd;
     for (let c = 0; c < n; c++) out[c * 3 + k] = !w || w[c] ? (g[c * 3 + k] - mean) / sd : 0;
   }
+  // How much the used cells vary before standardising (photo fingerprints: with glare cells
+  // left out, a plain mat under a reflection has almost nothing left — see matcher.js).
+  out.sd = sdSum / 3;
   let len = 0;
   for (const x of out) len += x * x;
   len = Math.sqrt(len) || 1;
@@ -209,6 +214,36 @@ function fpContrast(d, W, H, x0 = FP.X0, y0 = FP.Y0, x1 = FP.X1, y1 = FP.Y1) {
   }
   mean /= n;
   return Math.sqrt(Math.max(0, sq / n - mean * mean));
+}
+
+/* How much a card-like area really has, to tell a card from a plain mat / table:
+ *   edges  — mean brightness change between neighbouring cells of a 32x44 grid (0–255):
+ *            text, outlines and artwork. A plain mat has almost none, even with uneven light
+ *            or a soft reflection — which can give it as much contrast as a dim card.
+ *   chroma — how much the colour (not brightness) varies across the 8x11 grid. A white or
+ *            grey mat with a white reflection has almost none; nearly every card has some. */
+function fpDetail(d, W, H, x0 = FP.X0, y0 = FP.Y0, x1 = FP.X1, y1 = FP.Y1) {
+  const g = fpBoxGrid(d, W, H, FP.GW, FP.GH, x0, y0, x1, y1);
+  const n = FP.GW * FP.GH;
+  let ma = 0, mb = 0, sa = 0, sb = 0;
+  for (let c = 0; c < n; c++) { ma += g[c * 3] - g[c * 3 + 1]; mb += g[c * 3 + 1] - g[c * 3 + 2]; }
+  ma /= n; mb /= n;
+  for (let c = 0; c < n; c++) { sa += (g[c * 3] - g[c * 3 + 1] - ma) ** 2; sb += (g[c * 3 + 1] - g[c * 3 + 2] - mb) ** 2; }
+  return { edges: fpEdges(d, W, H, x0, y0, x1, y1), chroma: Math.sqrt(sa / n + sb / n) };
+}
+function fpEdges(d, W, H, x0 = FP.X0, y0 = FP.Y0, x1 = FP.X1, y1 = FP.Y1) {
+  const gw = 32, gh = 44;
+  const g = fpBoxGrid(d, W, H, gw, gh, x0, y0, x1, y1);
+  const L = new Float64Array(gw * gh);
+  for (let c = 0; c < gw * gh; c++) L[c] = 0.299 * g[c * 3] + 0.587 * g[c * 3 + 1] + 0.114 * g[c * 3 + 2];
+  let e = 0;
+  for (let y = 0; y < gh - 1; y++) {
+    for (let x = 0; x < gw - 1; x++) {
+      const c = y * gw + x;
+      e += Math.abs(L[c + 1] - L[c]) + Math.abs(L[c + gw] - L[c]);
+    }
+  }
+  return e / ((gw - 1) * (gh - 1));
 }
 
 /* Fingerprint of a whole, tightly-cropped card image (used for the index). */

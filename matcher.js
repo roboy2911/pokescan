@@ -23,6 +23,15 @@ const SEARCH_STEP = 0.3;
 const WARP_W = 168, WARP_H = 235;
 // Areas with less brightness variation than this (0–255) are blank, not cards.
 const MIN_CONTRAST = 6;
+// ...and areas with too little fine detail (fpDetail) are a plain mat / table, not a card: on
+// a white playmat, uneven light or a reflection gave the mat enough contrast to be "matched"
+// to a random card. Plain = edges < e1, or edges < e2 with almost no colour variation (< c).
+// Tuned on tools/sim.js (testEmpty on a white mat, testHard incl. dim toploaders).
+// sd: a position whose quick-pass fingerprints' usable (non-glare) cells vary less than this
+// (0–255) is a plain surface once the reflection is left out, and isn't a candidate.
+const PLAIN = { e1: 6, e2: 10, c: 3, sd: 4 };
+const solid = (q, p) => !(q.sd < p.sd);
+const isPlain = ({ edges, chroma }, p) => edges < p.e1 || (edges < p.e2 && chroma < p.c);
 const MATCH_ROBUST_KEEP = 0.85;
 // Cards in a toploader: the card is ~83% of the toploader's outline and usually sits low or
 // off to one side, so outlines are also cropped there. `coarse`: [scale, dx, dy] crops for
@@ -80,7 +89,7 @@ function createMatcher(indexBuffer) {
   }
 
   /* All candidate card positions in one frame: detected outlines + plain windows. */
-  function candidates(region, { step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER } = {}) {
+  function candidates(region, { step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER, plain = PLAIN } = {}) {
     const { data, w, h } = region;
     const gray = detGray(data, w, h);
     fpPrepare(data, w, h); // many crops of this frame get fingerprinted
@@ -99,12 +108,12 @@ function createMatcher(indexBuffer) {
       const warped = warpQuad(data, w, h, q, WARP_W, WARP_H);
       fpPrepare(warped, WARP_W, WARP_H);
       if (fpContrast(warped, WARP_W, WARP_H) < MIN_CONTRAST) continue; // blank area, not a card
+      if (isPlain(fpDetail(warped, WARP_W, WARP_H), plain)) continue; // plain mat / table
       // As found, and zoomed in a little in case the outline is a sleeve / binder pocket.
-      cands.push({
-        kind: 'outline', q, warped,
-        coarse: [...fpQueries(warped, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1), fpCrops(warped, WARP_W, WARP_H, [0.91], [0])[0],
-          ...(tl?.coarse ? tl.coarse.map(([s, dx, dy]) => fpCropsXY(warped, WARP_W, WARP_H, [s], [dx], [dy])[0]).filter(Boolean) : [])],
-      });
+      const coarse = [...fpQueries(warped, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1), fpCrops(warped, WARP_W, WARP_H, [0.91], [0])[0],
+        ...(tl?.coarse ? tl.coarse.map(([s, dx, dy]) => fpCropsXY(warped, WARP_W, WARP_H, [s], [dx], [dy])[0]) : [])]
+        .filter((f) => f && solid(f, plain));
+      if (coarse.length) cands.push({ kind: 'outline', q, warped, coarse });
     }
     // Plain windows too (centred, every size), in case no outline is found.
     for (const win of searchWindows(region).filter((v) => Math.abs((v.x0 + v.x1) / 2 - (region.guide.x0 + region.guide.x1) / 2) < 1
@@ -112,8 +121,10 @@ function createMatcher(indexBuffer) {
       const rw = win.x1 - win.x0, rh = win.y1 - win.y0;
       const contrast = fpContrast(data, w, h,
         (win.x0 + FP.X0 * rw) / w, (win.y0 + FP.Y0 * rh) / h, (win.x0 + FP.X1 * rw) / w, (win.y0 + FP.Y1 * rh) / h);
-      if (win.s < 1 && contrast < MIN_CONTRAST) continue; // the full-size box is always kept
-      cands.push({ kind: 'window', rect: win, coarse: fpCropsRect(data, w, h, win, [0.95], [0]) });
+      if (win.s < 1 && contrast < MIN_CONTRAST) continue; // the full-size box is kept unless it's plain:
+      if (isPlain(fpDetail(data, w, h, (win.x0 + FP.X0 * rw) / w, (win.y0 + FP.Y0 * rh) / h, (win.x0 + FP.X1 * rw) / w, (win.y0 + FP.Y1 * rh) / h), plain)) continue;
+      const coarse = fpCropsRect(data, w, h, win, [0.95], [0]).filter((f) => solid(f, plain));
+      if (coarse.length) cands.push({ kind: 'window', rect: win, coarse });
     }
     return cands;
   }
@@ -326,9 +337,9 @@ function createMatcher(indexBuffer) {
    * can't be recognised: each candidate position is scored on its own, minus a penalty
    * for being off-centre. */
   function match(regions, topN = 12,
-    { fineTop = 8, shortlistSize = 800, perCandidate = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER } = {}) {
+    { fineTop = 8, shortlistSize = 800, perCandidate = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER, plain = PLAIN } = {}) {
     const t0 = performance.now();
-    const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines, tl }).map((c) => ({ ...c, region: r })));
+    const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines, tl, plain }).map((c) => ({ ...c, region: r })));
     if (!cands.length) return { matches: [], where: null };
     const t1 = performance.now();
     // Each candidate has one or more quick-pass fingerprints.
@@ -365,10 +376,11 @@ function createMatcher(indexBuffer) {
       const c = cands[qi];
       // Outlines can be a sleeve/binder pocket slightly bigger than the card, so also try
       // zooming in a little — or a lot, for a toploader (fineTl).
-      const fine = c.kind === 'outline'
+      const fine = (c.kind === 'outline'
         ? fpCrops(c.warped, WARP_W, WARP_H, [0.91, 0.96, 1], [-0.015, 0, 0.015])
-        : fpCropsRect(c.region.data, c.region.w, c.region.h, c.rect);
+        : fpCropsRect(c.region.data, c.region.w, c.region.h, c.rect));
       const fineTl = c.kind === 'outline' && tl?.fine ? fpCropsXY(c.warped, WARP_W, WARP_H, tl.fine.s, tl.fine.dx, tl.fine.dy) : null;
+      if (!fine.length) continue;
       // Narrow the shortlist with this position's few quick fingerprints first, then
       // compare all the crops against the best of it only.
       // Its own best coarse matches join the shared shortlist: a position that really is the
@@ -397,6 +409,7 @@ function createMatcher(indexBuffer) {
         target: +robustScores(fine, [debugIdx], 1, keep, maskPenalty)[0].score.toFixed(3),
       });
     }
+    if (!best) return { matches: [], where: null };
     return {
       matches: best.ranked,
       where: best.c.kind === 'outline' ? best.c.q : best.c.rect,

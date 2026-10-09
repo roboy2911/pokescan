@@ -850,6 +850,7 @@ function renderScanResults(matches, { found = null } = {}) {
     els.resultTitle.className = 'result-title';
     els.resultTitle.textContent = 'No match found — try again closer, flat, and in good light.';
     els.altWrap.hidden = true;
+    setStatus(els.status, ''); // not "Matching artwork…" any more
     return;
   }
   const confident = found ?? isConfident(matches);
