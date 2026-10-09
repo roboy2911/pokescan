@@ -21,6 +21,9 @@
 import { summarise, ebayKeyword, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-filter.mjs';
 
 const ALLOWED_ORIGINS = ['https://roboy2911.github.io', 'http://localhost:8080', 'http://localhost:8765'];
+// The Cloudflare Pages copy of the app (pokescan.pages.dev, and its preview links).
+const PAGES_ORIGIN = /^https:\/\/([a-z0-9-]+\.)?pokescan[a-z0-9-]*\.pages\.dev$/;
+const isAllowed = (origin) => ALLOWED_ORIGINS.includes(origin) || PAGES_ORIGIN.test(origin);
 const json = (body, origin, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: {
@@ -33,10 +36,10 @@ const json = (body, origin, status = 200) => new Response(JSON.stringify(body), 
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('origin') || '';
-    const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+    const allow = isAllowed(origin) ? origin : ALLOWED_ORIGINS[0];
     if (request.method === 'OPTIONS') return json({}, allow);
     if (request.method !== 'GET') return json({ ok: false, reason: 'method' }, allow, 405);
-    if (origin && !ALLOWED_ORIGINS.includes(origin)) return json({ ok: false, reason: 'origin' }, allow, 403);
+    if (origin && !isAllowed(origin)) return json({ ok: false, reason: 'origin' }, allow, 403);
 
     const url = new URL(request.url);
     const q = (url.searchParams.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 120);

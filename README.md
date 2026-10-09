@@ -34,6 +34,8 @@ your phone's home screen like an app (PWA), and works offline after the first vi
   other types are marked estimates — edit them there).
 
 Live: https://roboy2911.github.io/pokescan/
+Also on Cloudflare Pages (for computers where GitHub is blocked): https://pokescan.pages.dev — the same
+repo, redeployed by Cloudflare on every push to main (Pages project: no build command, output directory `/`).
 
 ## How it identifies a card
 
