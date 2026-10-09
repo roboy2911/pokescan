@@ -318,3 +318,4 @@ Claude "remove <name>".
 - **Fix: app wouldn't start with an ad blocker ("FP is not defined")** — `1c6e4e6`. `fingerprint.js` renamed to `cardprint.js` (blockers block that name). *Remove:* `git revert 1c6e4e6`.
 - **AU sold worker accepts the Cloudflare Pages copy** (`pokescan*.pages.dev`) — `6f862b9`.
 - **Feature: hidden developer mode** — `311bf61`. Tap the "PokeScan" title 7 times quickly, then the PIN. Scan tuning (match score, lead, lock-in frames, bulk timing, score overlay), data tools (clear AU answers / live prices / offline cache, reload data, export debug info), status panel. This device only; a small dot by the title while scan settings differ from normal. *Remove:* `git revert 311bf61`.
+- **Tweak: no double-tap zoom or sideways scrolling on phones** — `9529319`. Double-tap zoom off (pinch still works), page can't slide sideways, phone text boxes 16px so iPhones don't zoom in on tap. *Remove:* `git revert 9529319`.
