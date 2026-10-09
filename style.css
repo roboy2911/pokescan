@@ -27,6 +27,16 @@ html, body {
 
 body { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); }
 
+/* Feel like an app on phones: no double-tap zoom (pinch still works), and the page never
+ * slides sideways (strips meant to scroll sideways still do). */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+html, body { overflow-x: hidden; overflow-x: clip; }
+/* iPhones zoom in on a text box with text under 16px when it's tapped (then the page can be
+ * dragged sideways), so phone text boxes are 16px. */
+@media (max-width: 699px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
 svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- Top bar ---------- */
