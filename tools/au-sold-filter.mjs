@@ -12,6 +12,12 @@ const MIN_SALES = 3;
 const JUNK = /\b(psa|cgc|bgs|beckett|ace\s?\d|tag\s?\d|ags\s?\d|sgc|graded|slab|gem\s?mint\s?10|lot|bundle|bulk|mystery|repack|custom|proxy|replica|fake|diy|inspired|fan\s?art|handmade|unofficial|orica|metal|gold\s?(card|plated|foil)|coin|sticker|poster|art\s?print|digital|code\s?card|choose|pick\s?(your|a|one)|you\s?pick|empty|case\s?only|toploader\s?only)\b/i;
 // More than one item: "x 2", "2x", "x3", "set of", "pair".
 const MULTI = /(\bx\s?[2-9]\d?\b|\b[2-9]\d?\s?x\b|\bset of\b|\bpair\b|\b[2-9]\d? (packs|boxes|bundles|etbs|tins)\b)/i;
+// Not Near Mint: prices are for NM copies (the app values other conditions from it), so
+// played / damaged copies don't count. "Never played", "no creases" and "120 HP" are fine.
+const NOT_NM = /\b(lp|mp|dmg|damaged?|(lightly|moderately|heavily|light|heavy)[\s-]?played|played|poor|creas(e|ed|es|ing)|bent|water[\s-]?damage|torn|tears?|ripped|stain(ed|s)?|scratch(ed|es)?|heavy[\s-]?wear|excellent)\b|(?<!\d\s?)\bhp\b(?!\s?\d)/i;
+const NOT_NM_CONDITION = /played|poor|damaged|excellent|\bgood\b/i; // eBay's card condition field
+const NEGATED = /\b(no|never|without|zero|not|free\s+of)\b(\s+[\w-]+){1,3}/gi;
+const notNearMint = (it) => NOT_NM.test((it.title || '').replace(NEGATED, ' ')) || NOT_NM_CONDITION.test(it.condition || '');
 export const OTHER_LANG = /\b(japanese|japan|jpn|chinese|korean|kor|thai|indonesian|german|french|italian|italiano|ita|spanish|portuguese)\b|\bjp\b/i;
 
 const median = (xs) => {
@@ -98,7 +104,7 @@ export function summarise(items, n, wantsOtherLang, q = '', mode = '', { min = M
   };
   let sales = items
     .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
-    .filter((it) => !isJunk(it.title) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasName(it.title) && hasSet(it.title) && hasWords(it.title) && inMode(it.title))
+    .filter((it) => !isJunk(it.title) && !notNearMint(it) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasName(it.title) && hasSet(it.title) && hasWords(it.title) && inMode(it.title))
     .map((it) => ({ title: it.title, aud: Number(it.soldPrice), date: (it.endedAt || '').slice(0, 10), url: it.url }));
   if (sales.length >= 4) {
     // Drop outliers: outside 0.5×–2× the median (mislabelled lots, damaged copies, typos).

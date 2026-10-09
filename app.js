@@ -1176,7 +1176,7 @@ function auSoldText(au, tcgText) {
   const tcg = tcgText ? ` · TCGplayer ${tcgText}` : '';
   if (au?.ok) {
     // wide: too few Australian sellers' sales, so every seller on eBay.com.au counted.
-    const who = au.wide ? 'eBay Australia sale' : 'Australian eBay sale';
+    const who = au.wide ? 'near-mint eBay Australia sale' : 'near-mint Australian eBay sale';
     const plural = au.n === 1 ? '' : 's';
     const range = au.n > 1 ? ` (${formatAudPlain(au.low)}–${formatAudPlain(au.high)})` : '';
     const what = au.few
