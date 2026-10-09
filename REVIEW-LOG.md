@@ -307,3 +307,8 @@ Claude "remove <name>".
 ## Owner request (Fri morning) — pause SoldComps credits for 2 weeks
 
 - **All SoldComps searches paused until 23 Oct 2026** — `66c4e92`. Nightly "AU sold prices" schedule removed (manual only); `tools/au-sold-precheck.mjs` exits before searching until then; the worker has `PAUSED_UNTIL` in `wrangler.jsonc` (saved answers still served, no new searches; app says "New Australian sold lookups are paused for now" and shows TCGplayer). Checked live: worker answers "paused". The 87 promo and 32 original answers removed earlier stay unpriced (TCGplayer) until the pause ends. *Undo:* put the cron back in `au-sold.yml`, remove `PAUSED_UNTIL` from `wrangler.jsonc` and the script.
+
+## 10am Fri — price job check (no SoldComps)
+
+- "Update prices" ran at 23:29 UTC (9:29am AEST) and passed: 20,554 cards, 1,633 sealed, market history 6–8 Oct, and the first daily **Japanese prices: 21,407 cards** (the user-agent fix works). Committed `e067103`.
+- No "AU sold prices" run happened (schedule removed; SoldComps paused until 23 Oct). No credits used.
