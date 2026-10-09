@@ -3,8 +3,8 @@ name: AU sold prices
 # Nightly pre-check of Australian sold prices (eBay.com.au, Australian sellers) for every
 # single worth A$50+, a share each night so each is re-checked about every 2 weeks.
 # Uses the SOLDCOMPS_API_KEY secret; writes data/au-sold.json for the app.
-# PAUSED by the owner until 23 Oct 2026 (no SoldComps credits to be used). To resume, put the
-# schedule back:
+# Nightly re-check PAUSED by the owner until 23 Oct 2026 (live lookups when a card is opened
+# still work, via the worker). To resume, put the schedule back:
 #   schedule:
 #     - cron: '15 19 * * *'   # 05:15 AEST, after the price update
 # (tools/au-sold-precheck.mjs also refuses to search before PAUSED_UNTIL.)
