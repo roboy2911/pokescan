@@ -312,3 +312,9 @@ Claude "remove <name>".
 
 - "Update prices" ran at 23:29 UTC (9:29am AEST) and passed: 20,554 cards, 1,633 sealed, market history 6–8 Oct, and the first daily **Japanese prices: 21,407 cards** (the user-agent fix works). Committed `e067103`.
 - No "AU sold prices" run happened (schedule removed; SoldComps paused until 23 Oct). No credits used.
+
+## Owner request (Fri) — fixes and developer mode
+
+- **Fix: app wouldn't start with an ad blocker ("FP is not defined")** — `1c6e4e6`. `fingerprint.js` renamed to `cardprint.js` (blockers block that name). *Remove:* `git revert 1c6e4e6`.
+- **AU sold worker accepts the Cloudflare Pages copy** (`pokescan*.pages.dev`) — `6f862b9`.
+- **Feature: hidden developer mode** — `311bf61`. Tap the "PokeScan" title 7 times quickly, then the PIN. Scan tuning (match score, lead, lock-in frames, bulk timing, score overlay), data tools (clear AU answers / live prices / offline cache, reload data, export debug info), status panel. This device only; a small dot by the title while scan settings differ from normal. *Remove:* `git revert 311bf61`.
