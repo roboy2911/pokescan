@@ -24,6 +24,12 @@ const WARP_W = 168, WARP_H = 235;
 // Areas with less brightness variation than this (0–255) are blank, not cards.
 const MIN_CONTRAST = 6;
 const MATCH_ROBUST_KEEP = 0.85;
+// Cards in a toploader: the card is ~83% of the toploader's outline and usually sits low or
+// off to one side, so outlines are also cropped there. `coarse`: [scale, dx, dy] crops for
+// the quick pass; `fine`: scales × sideways × downward shifts. Tuned on tools/sim.js
+// testHard (real images, 'toploader' / 'toploader2'). `penalty`: those crops score a little
+// lower, so a zoomed-in part of a sleeved card can't beat the real match by chance.
+const TOPLOADER = { penalty: 0.02, coarse: [[0.84, 0, 0.035]], fine: { s: [0.82, 0.86], dx: [-0.05, 0, 0.05], dy: [0, 0.035, 0.07] } };
 // Score taken off per fraction of the card hidden by glare: a few visible cells can look
 // like many cards, so a heavily masked match must not seem as sure as a clear one.
 const MASK_PENALTY = 0.2;
@@ -74,7 +80,7 @@ function createMatcher(indexBuffer) {
   }
 
   /* All candidate card positions in one frame: detected outlines + plain windows. */
-  function candidates(region, { step = SEARCH_STEP, maxOutlines = 16 } = {}) {
+  function candidates(region, { step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER } = {}) {
     const { data, w, h } = region;
     const gray = detGray(data, w, h);
     fpPrepare(data, w, h); // many crops of this frame get fingerprinted
@@ -96,7 +102,8 @@ function createMatcher(indexBuffer) {
       // As found, and zoomed in a little in case the outline is a sleeve / binder pocket.
       cands.push({
         kind: 'outline', q, warped,
-        coarse: [...fpQueries(warped, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1), fpCrops(warped, WARP_W, WARP_H, [0.91], [0])[0]],
+        coarse: [...fpQueries(warped, WARP_W, WARP_H, FP.X0, FP.Y0, FP.X1, FP.Y1), fpCrops(warped, WARP_W, WARP_H, [0.91], [0])[0],
+          ...(tl?.coarse ? tl.coarse.map(([s, dx, dy]) => fpCropsXY(warped, WARP_W, WARP_H, [s], [dx], [dy])[0]).filter(Boolean) : [])],
       });
     }
     // Plain windows too (centred, every size), in case no outline is found.
@@ -319,9 +326,9 @@ function createMatcher(indexBuffer) {
    * can't be recognised: each candidate position is scored on its own, minus a penalty
    * for being off-centre. */
   function match(regions, topN = 12,
-    { fineTop = 8, shortlistSize = 800, perCandidate = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16 } = {}) {
+    { fineTop = 8, shortlistSize = 800, perCandidate = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER } = {}) {
     const t0 = performance.now();
-    const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines }).map((c) => ({ ...c, region: r })));
+    const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines, tl }).map((c) => ({ ...c, region: r })));
     if (!cands.length) return { matches: [], where: null };
     const t1 = performance.now();
     // Each candidate has one or more quick-pass fingerprints.
@@ -357,10 +364,11 @@ function createMatcher(indexBuffer) {
     for (const qi of chosen) {
       const c = cands[qi];
       // Outlines can be a sleeve/binder pocket slightly bigger than the card, so also try
-      // zooming in a little.
+      // zooming in a little — or a lot, for a toploader (fineTl).
       const fine = c.kind === 'outline'
         ? fpCrops(c.warped, WARP_W, WARP_H, [0.91, 0.96, 1], [-0.015, 0, 0.015])
         : fpCropsRect(c.region.data, c.region.w, c.region.h, c.rect);
+      const fineTl = c.kind === 'outline' && tl?.fine ? fpCropsXY(c.warped, WARP_W, WARP_H, tl.fine.s, tl.fine.dx, tl.fine.dy) : null;
       // Narrow the shortlist with this position's few quick fingerprints first, then
       // compare all the crops against the best of it only.
       // Its own best coarse matches join the shared shortlist: a position that really is the
@@ -369,7 +377,17 @@ function createMatcher(indexBuffer) {
       const own = perCandidate ? topIndices(candBest[qi], perCandidate) : [];
       const list = own.length ? [...new Set([...shortlist, ...own])] : shortlist;
       const pre = preTop ? robustScores(c.coarse, list, preTop, keep, maskPenalty).map((r) => r.i) : list;
-      const ranked = robustScores(fine, pre, topN, keep, maskPenalty);
+      let ranked = robustScores(fine, pre, topN, keep, maskPenalty);
+      if (fineTl?.length) {
+        // Toploader crops: a small handicap, so a zoomed-in part of a sleeved card can't
+        // beat the real match just by resembling another card.
+        const byCard = new Map(ranked.map((r) => [r.i, r]));
+        for (const r of robustScores(fineTl, pre, topN, keep, maskPenalty)) {
+          const sc = r.score - (tl.penalty ?? 0);
+          if (!byCard.has(r.i) || byCard.get(r.i).score < sc) byCard.set(r.i, { i: r.i, score: sc });
+        }
+        ranked = [...byCard.values()].sort((a, b) => b.score - a.score).slice(0, topN);
+      }
       const score = ranked[0].score - c.penalty;
       if (!best || score > best.score) best = { score, ranked, c };
       debug?.cands.push({

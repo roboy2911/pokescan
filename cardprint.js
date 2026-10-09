@@ -241,6 +241,23 @@ function fpCropsRect(d, W, H, r, scales = [0.88, 0.95, 1.02], shifts = [-0.035, 
   return out;
 }
 
+/* Like fpCrops, with separate horizontal and vertical shifts: a card in a toploader is
+ * much smaller than the toploader's outline and can sit low or off to one side. */
+function fpCropsXY(d, W, H, scales, dxs, dys) {
+  const out = [];
+  for (const s of scales) {
+    for (const dx of dxs) {
+      for (const dy of dys) {
+        const x0 = 0.5 + dx + (FP.X0 - 0.5) * s, x1 = 0.5 + dx + (FP.X1 - 0.5) * s;
+        const y0 = 0.5 + dy + (FP.Y0 - 0.5) * s, y1 = 0.5 + dy + (FP.Y1 - 0.5) * s;
+        if (x0 < 0 || y0 < 0 || x1 > 1 || y1 > 1) continue;
+        out.push(...fpQueries(d, W, H, x0, y0, x1, y1));
+      }
+    }
+  }
+  return out;
+}
+
 /* A coarser 4x5 version of a fingerprint (60 values instead of 264), used for a fast first
  * pass over the whole index. Works on index vectors and photo fingerprints alike. */
 const FP_POOL_COLS = [[0, 1], [2, 3], [4, 5], [6, 7]];
