@@ -1,5 +1,5 @@
 /* Card matching: find the card anywhere in a camera frame and identify it against the index.
- * Needs fingerprint.js and detect.js. Runs inside worker.js; tools/sim.js also loads it
+ * Needs cardprint.js and detect.js. Runs inside worker.js; tools/sim.js also loads it
  * on a page for accuracy tests.
  *
  * 1. Candidate positions: search windows (card-shaped boxes) at several sizes — from
@@ -11,7 +11,7 @@
  * 3. Fine pass: many slightly shifted crops of those few candidates, full fingerprints,
  *    glare-tolerant scoring, against the shortlist only.
  *
- * Fingerprints with glare cells (`q.w`, see fingerprint.js) are compared on their usable
+ * Fingerprints with glare cells (`q.w`, see cardprint.js) are compared on their usable
  * cells only: the index card is re-standardised over those same cells first, so the score
  * means the same as for a glare-free photo.
  */

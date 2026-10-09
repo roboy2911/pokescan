@@ -166,7 +166,7 @@ Then open http://localhost:8080. The app is plain HTML/JS, with no build step.
    It downloads ~3.5 GB of images and takes roughly 15–30 minutes.
 3. Commit and push `data/cards.json` and `data/index.bin`.
 
-If you change anything in `fingerprint.js`, you must rebuild the index. The app and
+If you change anything in `cardprint.js`, you must rebuild the index. The app and
 the index must fingerprint cards the same way.
 
 ## Get it on your phone
@@ -193,7 +193,7 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 | `app.js` | Camera, auto-scan, results, search, sets, collection, market |
 | `worker.js`, `matcher.js` | Background matching: finding the card and identifying it |
 | `detect.js` | Card outline detection and perspective correction |
-| `fingerprint.js` | Fingerprint maths, shared by the app and the index builder |
+| `cardprint.js` | Fingerprint maths, shared by the app and the index builder |
 | `prices.js` | TCGplayer prices → AUD; sealed product and the Australian RRP table |
 | `data/` | Card index, prices, sealed product, set logos, price history, market lists |
 | `tools/build-index.html` | Builds the card index |

@@ -139,7 +139,7 @@ export async function testDetect(n = 40, seed = 7) {
 }
 
 /* End-to-end accuracy with the real matcher (matcher.js), on a page where `db` (card list)
- * is loaded and fingerprint.js / detect.js / matcher.js are available. Collects scores of
+ * is loaded and cardprint.js / detect.js / matcher.js are available. Collects scores of
  * right/wrong top answers for tuning the "confident" threshold. */
 let matcher = null;
 export async function testMatch(n = 60, seed = 11, opts = {}) {

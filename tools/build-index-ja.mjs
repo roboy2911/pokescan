@@ -1,5 +1,5 @@
 // Fingerprints the Japanese cards (data/cards-ja.json) into data/index-ja.bin, exactly as
-// tools/build-index.html does for the English index (fingerprint.js: fpQuantise(fpFromPixels)),
+// tools/build-index.html does for the English index (cardprint.js: fpQuantise(fpFromPixels)),
 // one 264-byte row per card in cards-ja.json order. Cards without a picture get an all-zero
 // row (it never matches anything).
 //

@@ -1,5 +1,5 @@
 /* Background thread for scanning, so the camera preview stays smooth while matching. */
-importScripts('fingerprint.js', 'detect.js', 'matcher.js');
+importScripts('cardprint.js', 'detect.js', 'matcher.js');
 
 let matcherPromise = null;
 let englishIndex = null;
