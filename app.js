@@ -469,7 +469,11 @@ navigator.permissions?.query({ name: 'camera' })
  * Tuned on simulated photos and binder pages against the full index (tools/sim.js):
  * at these values no confident answer was wrong. */
 function isConfident([best, second]) {
-  return best && best.score >= 0.88 && best.score - (second?.score ?? 0) >= 0.015;
+  return best && best.score >= devVal('minScore', 0.88) && best.score - (second?.score ?? 0) >= devVal('minGap', 0.015);
+}
+// Developer mode (dev.js, hidden) can tune scanning on this device; the defaults otherwise.
+function devVal(key, fallback) {
+  return typeof devCfg !== 'undefined' && typeof devCfg[key] === 'number' ? devCfg[key] : fallback;
 }
 
 let loopRunning = false;
@@ -486,7 +490,9 @@ async function scanLoop() {
       }
       const region = captureVideo();
       const { w, h } = region;
+      const t0 = performance.now();
       const { matches, where } = await identify(region);
+      if (typeof devFrame === 'function') devFrame(matches, performance.now() - t0);
       if (auto.state !== 'scanning') break;
       onFrame(matches, where, { w, h });
       await sleep(80);
@@ -564,7 +570,7 @@ function onFrame(matches, where, region) {
     setStatus(els.status, ignored ? 'Got it — point at the next card' : 'Looking for a card…', 'busy');
     return;
   }
-  const needed = fusedCard ? 1 : confident ? 2 : 4;
+  const needed = fusedCard ? 1 : confident ? devVal('lockFrames', 2) : 4;
   if (auto.streak < needed) {
     setStatus(els.status, 'Hold still…', 'busy');
     return;
@@ -618,13 +624,13 @@ function bulkTrack(best) {
   }
   last.absentFrames++;
   last.absentSince ??= performance.now();
-  if (last.absentFrames >= BULK_ABSENT_FRAMES && performance.now() - last.absentSince >= BULK_ABSENT_MS) last.rearmed = true;
+  if (last.absentFrames >= BULK_ABSENT_FRAMES && performance.now() - last.absentSince >= devVal('bulkAbsentMs', BULK_ABSENT_MS)) last.rearmed = true;
 }
 
 /* May this card be added (again)? A different card always may. */
 function bulkCanReadd(card) {
   const last = bulk.last;
-  return !last || card.id !== last.id || (last.rearmed && performance.now() - last.at >= BULK_REPEAT_MS);
+  return !last || card.id !== last.id || (last.rearmed && performance.now() - last.at >= devVal('bulkRepeatMs', BULK_REPEAT_MS));
 }
 
 function bulkAdd(card) {

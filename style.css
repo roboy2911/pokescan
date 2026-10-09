@@ -796,3 +796,27 @@ a.btn { text-decoration: none; }
   body.scan-full .alt-thumb img { width: 42px; }
   body.scan-full .alt-thumb { flex-basis: 42px; }
 }
+
+/* ---------- Developer mode (dev.js, hidden) ---------- */
+.topbar h1 { cursor: default; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.topbar h1.dev-tuned::after { content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 4px; border-radius: 50%; background: var(--muted); vertical-align: super; }
+.dev-sheet { overflow-y: auto; }
+.dev-sheet h2 { margin: 0 0 2px; font-size: 1.15rem; }
+.dev-sheet details { border-top: 1px solid var(--line); padding: 10px 0; }
+.dev-sheet summary { font-weight: 700; cursor: pointer; padding: 2px 0 8px; }
+.dev-sheet .btn { display: block; width: 100%; margin: 8px 0 0; }
+.dev-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: .86rem; border-bottom: 1px solid var(--line); }
+.dev-row span { color: var(--muted); }
+.dev-row b { font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.dev-field { display: grid; gap: 3px; margin: 0 0 12px; font-size: .88rem; }
+.dev-field small { color: var(--muted); font-size: .76rem; }
+.dev-field input, .dev-pin input { font: inherit; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+.dev-check { display: flex; gap: 8px; align-items: center; font-size: .88rem; margin: 4px 0; }
+.dev-msg { color: var(--muted); font-size: .82rem; margin: 6px 0; min-height: 1em; }
+.dev-pin label { display: grid; gap: 6px; font-weight: 700; margin-top: 18px; }
+.dev-pin .btn { width: 100%; margin-top: 10px; }
+.dev-overlay {
+  position: absolute; left: 8px; top: 64px; z-index: 5; pointer-events: none;
+  background: rgba(0, 0, 0, .62); color: #b8ffb8; font: 11px/1.35 ui-monospace, Menlo, Consolas, monospace;
+  padding: 6px 8px; border-radius: 8px; max-width: 70%;
+}
