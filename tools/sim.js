@@ -29,6 +29,19 @@ function inv3(m) {
 
 const bmpCache = new Map();
 export async function imgData(url, W, H) {
+  if (url === 'white') {
+    // A white playmat: off-white, faint cloth texture, a little uneven.
+    const d = new Uint8ClampedArray(W * H * 4);
+    const tint = [Math.random() * 8, Math.random() * 8, Math.random() * 12];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const n = 236 + Math.random() * 10 + 4 * Math.sin(x * 0.9) * Math.sin(y * 0.9);
+        d[i] = n - tint[0]; d[i + 1] = n - tint[1]; d[i + 2] = n - tint[2]; d[i + 3] = 255;
+      }
+    }
+    return { d, W, H };
+  }
   if (url === 'plain') {
     // A plain, slightly noisy "table".
     const d = new Uint8ClampedArray(W * H * 4);
@@ -51,7 +64,7 @@ export async function imgData(url, W, H) {
  * glare. `size` = card size range relative to the guide; `anywhere` = card can be anywhere
  * in view (for far-away cards) instead of roughly centred. */
 export async function simPhoto(cardUrl, bgUrl, rnd,
-  { jitter = 0.05, shift = 0.05, rot = 0.06, size = [0.9, 1.04], anywhere = false } = {}) {
+  { jitter = 0.05, shift = 0.05, rot = 0.06, size = [0.9, 1.04], anywhere = false, bgScale = 0.6, noCard = false } = {}) {
   const W = 480, H = 640;
   const ghei = H * 0.86, gwid = ghei * 63 / 88;
   const guide = { x0: (W - gwid) / 2, y0: (H - ghei) / 2, x1: (W + gwid) / 2, y1: (H + ghei) / 2 };
@@ -82,11 +95,11 @@ export async function simPhoto(cardUrl, bgUrl, rnd,
       const z = Hm[6] * px + Hm[7] * py + Hm[8];
       const u = (Hm[0] * px + Hm[1] * py + Hm[2]) / z, v = (Hm[3] * px + Hm[4] * py + Hm[5]) / z;
       const k = (py * W + px) * 4;
-      if (u >= 0 && u < 1 && v >= 0 && v < 1) {
+      if (!noCard && u >= 0 && u < 1 && v >= 0 && v < 1) {
         const si = (Math.floor(v * card.H) * card.W + Math.floor(u * card.W)) * 4;
         o[k] = card.d[si]; o[k + 1] = card.d[si + 1]; o[k + 2] = card.d[si + 2];
       } else {
-        o[k] = bg.d[k] * 0.6; o[k + 1] = bg.d[k + 1] * 0.6; o[k + 2] = bg.d[k + 2] * 0.6;
+        o[k] = bg.d[k] * bgScale; o[k + 1] = bg.d[k + 1] * bgScale; o[k + 2] = bg.d[k + 2] * bgScale;
       }
       o[k + 3] = 255;
     }
@@ -531,7 +544,7 @@ export async function testHard(n = 40, seed = 5, sets = [[], ['glare'], ['streak
         res.skipped++;
         continue;
       }
-      const P = await simHard(card, BACKGROUNDS[k % 2 ? 0 : 0], rnd, conds, opts.photo || {});
+      const P = await simHard(card, opts.bg || BACKGROUNDS[0], rnd, conds, opts.photo || {});
       const t0 = performance.now();
       const region = [{ data: P.d, w: P.W, h: P.H, guide: P.guide }];
       let matches;
@@ -556,6 +569,26 @@ export async function testHard(n = 40, seed = 5, sets = [[], ['glare'], ['streak
     out[conds.join('+') || 'clean'] = res;
   }
   return out;
+}
+
+/* Empty view (no card) over background `bg`, e.g. a white playmat: how often the scanner
+ * would say "Found it" for a card that isn't there (should be 0), and the best scores. */
+export async function testEmpty(n = 40, seed = 31, bg = 'white', opts = {}) {
+  matcher ??= createMatcher(await (await fetch('data/index.bin')).arrayBuffer());
+  const confident = opts.confident ?? ((m) => m[0].score >= 0.88 && m[0].score - (m[1]?.score ?? 0) >= 0.015);
+  const rnd = mulberry(seed);
+  const res = { confident: 0, scores: [], names: [] };
+  const dummy = await synthCard(0, rnd);
+  for (let k = 0; k < n; k++) {
+    const P = await simHard(dummy, bg, rnd, opts.conds || [], { ...(opts.photo || {}), noCard: true, bgScale: 1 });
+    const { matches } = matcher.match([{ data: P.d, w: P.W, h: P.H, guide: P.guide }], 12, opts.match || {});
+    if (!matches.length) { res.scores.push(0); continue; }
+    if (confident(matches)) { res.confident++; res.names.push(db.cards[matches[0].i]?.name); }
+    res.scores.push(+matches[0].score.toFixed(3));
+  }
+  res.scores.sort((a, b) => b - a);
+  res.scores = res.scores.slice(0, 8);
+  return res;
 }
 
 /* Auto-scan over several frames: each card is "filmed" for `frames` frames, each with its
