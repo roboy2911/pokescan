@@ -298,13 +298,16 @@ export async function synthCard(i, rnd = Math.random) {
 }
 
 /* Put a card image in a sleeve (slightly bigger, hazy plastic) or a toploader (much bigger,
- * card sitting low). Returns a new image whose outline is the sleeve/toploader's. */
+ * card sitting low). Returns a new image whose outline is the sleeve/toploader's.
+ * 'toploader2' is a more realistic toploader: the card also slides sideways, sits anywhere
+ * from the bottom to the middle, and the thick plastic has a bright rim and scratches. */
 function encase(card, kind, rnd) {
   const r = (a, b) => a + rnd() * (b - a);
   const W = card.W, H = card.H;
-  const [sx, sy, oy] = kind === 'toploader' ? [r(0.8, 0.85), r(0.84, 0.88), r(0.3, 0.9)] : [r(0.93, 0.96), r(0.94, 0.97), r(0.3, 0.7)];
+  const [sx, sy, oy] = kind === 'toploader' ? [r(0.8, 0.85), r(0.84, 0.88), r(0.3, 0.9)]
+    : kind === 'toploader2' ? [r(0.8, 0.86), r(0.83, 0.89), r(0.4, 1)] : [r(0.93, 0.96), r(0.94, 0.97), r(0.3, 0.7)];
   const cw = W * sx, ch = H * sy;
-  const ox = (W - cw) / 2, oyPx = (H - ch) * oy;
+  const ox = (W - cw) * (kind === 'toploader2' ? r(0.15, 0.85) : 0.5), oyPx = (H - ch) * oy;
   const haze = r(0.04, 0.12), tint = [r(0.9, 1), r(0.92, 1), r(0.9, 1)];
   const plastic = r(150, 210);
   const d = new Uint8ClampedArray(W * H * 4);
@@ -323,7 +326,59 @@ function encase(card, kind, rnd) {
       d[o + 3] = 255;
     }
   }
+  if (kind === 'toploader2') {
+    // Bright rim just inside the toploader's edge, a few scratches across the plastic.
+    const c = new OffscreenCanvas(W, H);
+    const x = c.getContext('2d');
+    x.putImageData(new ImageData(d, W, H), 0, 0);
+    const rim = W * r(0.015, 0.03);
+    x.strokeStyle = `rgba(235,240,255,${r(0.35, 0.7)})`;
+    x.lineWidth = rim;
+    x.strokeRect(rim, rim, W - 2 * rim, H - 2 * rim);
+    x.strokeStyle = `rgba(255,255,255,${r(0.2, 0.45)})`;
+    for (let i = 0, n = 2 + Math.floor(rnd() * 5); i < n; i++) {
+      x.lineWidth = r(0.6, 1.6);
+      x.beginPath();
+      x.moveTo(r(0, W), r(0, H));
+      x.lineTo(r(0, W), r(0, H));
+      x.stroke();
+    }
+    return { d: x.getImageData(0, 0, W, H).data, W, H };
+  }
   return { d, W, H };
+}
+
+/* Numbers written in marker on the sleeve over the card ("$25", "#142", "12"): thick dark
+ * or coloured strokes, slightly rotated, usually near a corner or the bottom. */
+function writeOn(card, rnd) {
+  const r = (a, b) => a + rnd() * (b - a);
+  const { W, H } = card;
+  const c = new OffscreenCanvas(W, H);
+  const x = c.getContext('2d');
+  x.putImageData(new ImageData(new Uint8ClampedArray(card.d), W, H), 0, 0);
+  const texts = ['$25', '#142', '12', '$5', '7/10', '$150', '88', '#3', '$40ea', '2x'];
+  const inks = ['rgb(15,15,20)', 'rgb(20,40,150)', 'rgb(170,20,25)', 'rgb(10,90,30)', 'rgb(200,200,205)'];
+  const n = 1 + (rnd() < 0.35 ? 1 : 0);
+  for (let i = 0; i < n; i++) {
+    const size = H * r(0.07, 0.16);
+    x.save();
+    // Mostly a top corner or the bottom; sometimes anywhere.
+    const spot = rnd();
+    const [px, py] = spot < 0.3 ? [r(0.1, 0.4), r(0.1, 0.25)] : spot < 0.6 ? [r(0.55, 0.85), r(0.1, 0.25)]
+      : spot < 0.85 ? [r(0.2, 0.75), r(0.75, 0.92)] : [r(0.15, 0.8), r(0.3, 0.7)];
+    x.translate(px * W, py * H);
+    x.rotate(r(-0.35, 0.35));
+    x.font = `bold ${Math.round(size)}px sans-serif`;
+    x.lineJoin = 'round';
+    x.lineCap = 'round';
+    x.strokeStyle = x.fillStyle = inks[Math.floor(rnd() * inks.length)];
+    x.lineWidth = size * r(0.06, 0.14);
+    const t = texts[Math.floor(rnd() * texts.length)];
+    x.fillText(t, 0, 0);
+    x.strokeText(t, 0, 0);
+    x.restore();
+  }
+  return { d: x.getImageData(0, 0, W, H).data, W, H };
 }
 
 /* Simulated photo with hard conditions. `conditions` (any mix):
@@ -331,6 +386,8 @@ function encase(card, kind, rnd) {
  *   streak    — a long reflection band across the card
  *   sleeve    — card in a penny sleeve (outline slightly bigger, hazy, tinted)
  *   toploader — card in a toploader (outline much bigger, card sits low)
+ *   toploader2 — a more realistic toploader (card off-centre, rim, scratches)
+ *   writing   — numbers written in marker on the sleeve over the card
  *   finger    — a finger over one edge / corner
  *   dim       — dark, low-contrast lighting */
 export async function simHard(card, bgUrl, rnd, conditions = [], opts = {}) {
@@ -338,6 +395,8 @@ export async function simHard(card, bgUrl, rnd, conditions = [], opts = {}) {
   let img = card;
   if (conditions.includes('sleeve')) img = encase(img, 'sleeve', rnd);
   if (conditions.includes('toploader')) img = encase(img, 'toploader', rnd);
+  if (conditions.includes('toploader2')) img = encase(img, 'toploader2', rnd);
+  if (conditions.includes('writing')) img = writeOn(img, rnd);
   const P = await simPhoto(img, bgUrl, rnd, opts);
   const c = new OffscreenCanvas(P.W, P.H);
   const x = c.getContext('2d');
