@@ -1,18 +1,15 @@
 name: AU sold prices
 
-# Nightly pre-check of Australian sold prices (eBay.com.au, Australian sellers) for every
-# single worth A$50+, a share each night so each is re-checked about every 2 weeks.
-# Uses the SOLDCOMPS_API_KEY secret; writes data/au-sold.json for the app.
-# Nightly re-check PAUSED by the owner until 23 Oct 2026 (live lookups when a card is opened
-# still work, via the worker). To resume, put the schedule back:
-#   schedule:
-#     - cron: '15 19 * * *'   # 05:15 AEST, after the price update
-# (tools/au-sold-precheck.mjs also refuses to search before PAUSED_UNTIL.)
+# Pre-check of Australian sold prices (eBay.com.au) for singles worth A$50+, writing
+# data/au-sold.json for the app. Uses the SOLDCOMPS_API_KEY secret.
+# MANUAL ONLY — the owner does not want automatic (nightly) price checks; don't add a schedule.
+# It searches only when run by hand with a budget. Live lookups when a card is opened are
+# done by the worker (500 searches a day at most, wrangler.jsonc).
 on:
   workflow_dispatch:
     inputs:
       budget:
-        description: 'Searches to use this run (blank = the nightly share, ~270)'
+        description: 'Searches to use this run (required; blank = none)'
         default: ''
       rate:
         description: 'Searches started per minute (blank = 6 at a time)'

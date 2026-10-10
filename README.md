@@ -155,7 +155,10 @@ These are US market prices, not Australian sold prices — see **Ideas** below.
 `tools/au-sold-worker.js` is a tiny Cloudflare Worker that holds the SoldComps key. When
 someone opens a card, the app asks it for that card's eBay.com.au sales by Australian sellers
 in the last 90 days. It drops graded, other-language, lot and fake listings, and returns the median.
-Answers are kept for 14 days (re-opening a card is free), and it stops at 400 searches a day.
+Answers are kept for 14 days (re-opening a card is free), and it stops at 500 searches a day.
+With fewer than 3 Australian sales it also looks at overseas sellers on eBay.com.au. Prices are
+**never checked on a schedule** (owner's rule): only when a card is opened, or when the
+"AU sold prices" workflow is run by hand with a budget.
 
 Set up (free Cloudflare account, works from a phone — no code pasting):
 1. dash.cloudflare.com → **Storage & databases → Workers KV** → create a namespace; its ID goes in
