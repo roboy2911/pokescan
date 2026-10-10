@@ -6,6 +6,44 @@
  */
 
 const PRICE_API = 'https://api.pokemontcg.io/v2/cards';
+
+/* Data files (data/*.json, *.bin) are downloaded with a few retries: when the app opens, a
+ * phone's network is often still waking up and the first try fails ("Load failed"). Offline,
+ * the service worker answers from its saved copy (sw.js). A 404 isn't retried. */
+const RETRY_WAITS = [500, 1200, 2500, 4000, 6000];
+function waitOnline(ms) {
+  return new Promise((resolve) => {
+    const done = () => { removeEventListener('online', done); clearTimeout(t); resolve(); };
+    const t = setTimeout(done, ms);
+    addEventListener('online', done);
+  });
+}
+async function fetchRetry(url, { tries = RETRY_WAITS.length + 1, as = 'json' } = {}) {
+  let last, offlineWaited = false;
+  for (let i = 0; i < tries; i++) {
+    if (i) {
+      // Offline: the service worker already answered with any saved copy, so wait once for the
+      // connection (up to 8 s), try one last time, then give up rather than hang.
+      if (navigator.onLine === false) {
+        if (offlineWaited) break;
+        offlineWaited = true;
+        await waitOnline(8000);
+      } else {
+        await new Promise((r) => setTimeout(r, RETRY_WAITS[Math.min(i - 1, RETRY_WAITS.length - 1)]));
+      }
+    }
+    try {
+      const res = await fetch(url);
+      if (res.status === 404) throw Object.assign(new Error(`${url}: not found`), { final: true });
+      if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+      return as === 'json' ? await res.json() : await res.arrayBuffer(); // a cut-off download fails here too
+    } catch (err) {
+      last = err;
+      if (err.final) break;
+    }
+  }
+  throw last;
+}
 const PRICE_CACHE_KEY = 'pokescan.prices.v1';
 const RATE_CACHE_KEY = 'pokescan.audRate.v1';
 const PRICE_MAX_AGE = 12 * 3600 * 1000;
@@ -45,7 +83,7 @@ const auSoldStore = () => (auSoldMem ??= readCache(AU_SOLD_CACHE_KEY) || {});
  * Rows are [aud, sales, low, high, date]; loaded once at start-up. */
 const AU_PRE_MAX_AGE = 21 * 86400 * 1000; // re-checked every ~14 days
 let auPre = null;
-const auPreReady = fetch('data/au-sold.json').then((r) => (r.ok ? r.json() : null))
+const auPreReady = fetchRetry('data/au-sold.json', { tries: 3 })
   .then((d) => { auPre = d?.items ?? null; }).catch(() => {});
 function auPreEntry(key) {
   const row = auPre?.[key];
@@ -165,9 +203,7 @@ function getAudRate() {
 /* The daily snapshot (loaded once). */
 let snapshotPromise = null;
 function getSnapshot() {
-  snapshotPromise ??= fetch('data/prices.json')
-    .then((r) => (r.ok ? r.json() : null))
-    .catch(() => null);
+  snapshotPromise ??= fetchRetry('data/prices.json').catch(() => { snapshotPromise = null; return null; });
   return snapshotPromise;
 }
 
@@ -198,7 +234,7 @@ async function livePrice(id) {
 /* Japanese cards: data/prices-ja.json, downloaded the first time a Japanese card is priced. */
 let jaSnapshotPromise = null;
 function getJaSnapshot() {
-  jaSnapshotPromise ??= fetch('data/prices-ja.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  jaSnapshotPromise ??= fetchRetry('data/prices-ja.json').catch(() => { jaSnapshotPromise = null; return null; });
   return jaSnapshotPromise;
 }
 
@@ -322,9 +358,8 @@ const sealedImage = (productId, size = 200) => `https://tcgplayer-cdn.tcgplayer.
  * item also given key ('s' + id), kind 'sealed' and image. */
 let sealedPromise = null;
 function getSealed() {
-  sealedPromise ??= fetch('data/sealed.json')
-    .then((r) => (r.ok ? r.json() : { items: [] }))
-    .catch(() => ({ items: [] }))
+  sealedPromise ??= fetchRetry('data/sealed.json')
+    .catch(() => { sealedPromise = null; return { items: [] }; })
     .then((j) => {
       const items = j.items.map((s) => ({ ...s, key: `s${s.id}`, kind: 'sealed', image: sealedImage(s.id) }));
       return { built: j.built, items, byKey: new Map(items.map((s) => [s.key, s])) };
@@ -348,7 +383,7 @@ function rrpCompare(type, usd, rate) {
 /* data/sets.json (logos/symbols per set id), loaded on first use. */
 let setsInfoPromise = null;
 function getSetsInfo() {
-  setsInfoPromise ??= fetch('data/sets.json').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+  setsInfoPromise ??= fetchRetry('data/sets.json').catch(() => { setsInfoPromise = null; return {}; });
   return setsInfoPromise;
 }
 
@@ -357,12 +392,12 @@ let marketPromise = null;
 /* data/history.json: 31 days of daily prices, loaded when the Collection tab opens. */
 let historyPromise = null;
 function getHistory() {
-  historyPromise ??= fetch('data/history.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  historyPromise ??= fetchRetry('data/history.json').catch(() => { historyPromise = null; return null; });
   return historyPromise;
 }
 
 function getMarket() {
-  marketPromise ??= fetch('data/market.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  marketPromise ??= fetchRetry('data/market.json').catch(() => { marketPromise = null; return null; });
   return marketPromise;
 }
 
@@ -379,6 +414,6 @@ async function priceAgeNote() {
 /* data/releases.json (release calendar), loaded when the Sets tab opens. */
 let releasesPromise = null;
 function getReleases() {
-  releasesPromise ??= fetch('data/releases.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  releasesPromise ??= fetchRetry('data/releases.json').catch(() => { releasesPromise = null; return null; });
   return releasesPromise;
 }

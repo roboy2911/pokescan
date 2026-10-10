@@ -177,11 +177,8 @@ function cardFromRow(row, sets) {
   };
 }
 
-const dbReady = fetch('data/cards.json')
-  .then((r) => {
-    if (!r.ok) throw new Error(`cards.json: HTTP ${r.status}`);
-    return r.json();
-  })
+// With retries (fetchRetry, prices.js): when the app opens the network is often still waking up.
+const dbReady = fetchRetry('data/cards.json')
   .then((meta) => {
     if (meta.dim !== FP.DIM) throw new Error('Card index was built with different settings — rebuild it.');
     db.cards = meta.cards.map((row) => cardFromRow(row, meta.sets));
@@ -221,7 +218,7 @@ const ready = Promise.all([dbReady, ask({ type: 'warmup' })]);
 const jpBadge = (c) => (c?.lang === 'ja' ? '<span class="jp-badge" title="Japanese card">JP</span>' : '');
 let japaneseReady = null;
 function loadJapanese() {
-  japaneseReady ??= dbReady.then(() => fetch('data/cards-ja.json')).then((r) => (r.ok ? r.json() : null)).then((meta) => {
+  japaneseReady ??= dbReady.then(() => fetchRetry('data/cards-ja.json')).then((meta) => {
     if (!meta) return false;
     db.enCount = db.cards.length;
     for (const row of meta.cards) {
@@ -235,7 +232,7 @@ function loadJapanese() {
     setsRendered = false;
     if (!setsEls.page.hidden || document.querySelector('[data-view=sets].active')) renderSetsList();
     return true;
-  }).catch(() => false);
+  }).catch(() => { japaneseReady = null; return false; }); // try again next time
   return japaneseReady;
 }
 ready.then(() => {
@@ -252,7 +249,13 @@ ready
       setStatus(els.status, 'Live camera needs HTTPS — uploading a photo still works.', 'err');
     }
   })
-  .catch((err) => setStatus(els.status, `Couldn't load the card database: ${esc(err.message)}`, 'err'));
+  .catch((err) => {
+    // Still failing after the retries (no connection, nothing saved yet): offer a retry
+    // rather than making you close the app.
+    console.error(err);
+    setStatus(els.status, `Couldn't load the card list — check your connection. <button type="button" class="btn small" id="retryLoad">Try again</button>`, 'err');
+    document.getElementById('retryLoad')?.addEventListener('click', () => location.reload());
+  });
 
 /* Japanese prints look like the English print with the same artwork. In a ranked list, a
  * Japanese card (index ≥ jaStart) with the same name as an English card scoring within
