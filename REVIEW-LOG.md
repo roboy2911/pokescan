@@ -355,3 +355,13 @@ Claude "remove <name>".
   - Tested on simulated photos (official images with known flaws, photographed at an angle): outline within ~0.5 px; centering within ~0.05 mm of the truth on 5 cards × 4 miscuts (ratio error < 1 point, borders down to 0.7 mm); edge whitening 1 mm specks and 6–8 mm stretches found, clean edges 0%; whitened and chipped corners found, clean corners clear; a 1 mm mark found on 3/3 cards with 0 false spots; scratches found on 3/3, 0 false on clean cards. Whole report ~4 s.
   - Limits (said in the app): silver-bordered fronts can't show edge whitening (judged on the back); a pale table makes chips and whitening look alike; holo foil hides scratches; Japanese cards have no official image to compare (marks unchecked, scratches against the front photo). Not yet tried on real photos of damaged cards — worth a few test grades of cards with known PSA grades to tune.
   - *Remove:* `git revert d6094aa`.
+
+## Owner feedback (Sat) — grader called a heavily damaged card LP and an NM card LP
+
+- **Fix: grader accuracy, scale, photo checks, shine shots** — `37c53a0`.
+  - Cause 1: wear could only cap the grade at PSA 5 (= LP), so heavy damage could never be HP. Now each area (centering, corners, edges, surface) is scored 1–10 and flaws add up → PSA 1–10, NM / LP / MP / HP (DMG only for structural damage).
+  - Cause 2: real-photo effects read as wear (edge blur on light tables, glossy reflections, corner shape, uneven light, shadows). Reproduced with realistic simulated photos (wood / light / dark tables, blur, JPEG, vignette, colour cast, shadow, glossy streak, low-res): before, NM → LP and HP → LP; now NM → NM (PSA 8–9), LP → LP (5–6), HP → HP — 38/39 photos the app accepts; light-table photos it can't measure exactly now ask for a retake.
+  - Photo checks before using any photo (retake with the reason): outline self-check, whole card in view, size, focus, light, glare, phone angle, right side, right card; upside-down / sideways cards are turned round automatically. Live guidance on the camera.
+  - Shine shots: explained with a picture ("scratches only show inside a reflection"), live reflection meter, and a check that the photo actually has a reflection.
+  - "Help make it more accurate" on the report: sends the photos + the owner's verdict to the worker (`/grade-sample`, 60 days, code to pass on) so the grader can be tuned on real cards.
+  - *Remove:* `git revert 37c53a0`.
