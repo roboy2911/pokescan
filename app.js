@@ -1086,7 +1086,7 @@ async function runSearch() {
   // Don't hold results up for the exchange rate (slow offline): sealed prices need it, so
   // use it if it's ready within a moment, otherwise show them without and fill in later.
   const ratePromise = getAudRate();
-  const [sealed, rate] = await Promise.all([searchSealed(query),
+  const [sealed, rate] = await Promise.all([searchSealed(query, { ja: wantJa }),
     Promise.race([ratePromise, sleep(250).then(() => null)])]);
   if (token !== searchToken) return; // a newer search has started
   if (!rate && sealed.length) ratePromise.then(() => { if (token === searchToken) runSearch(); });
@@ -1201,6 +1201,7 @@ function ebaySoldQuery(item, variant = null) {
   let t = '';
   if (item.kind === 'sealed') {
     q = item.name.replace(/\bPokemon\b/gi, '').replace(/[[\]()]/g, ' ');
+    if (item.lang === 'ja') { q += ' Japanese'; t = 'ja'; }
   } else {
     // Search the number as it's printed (and so how sellers list it): "4/102" on older
     // cards, "025/165" from Sword & Shield (2020) on; promos and gallery cards ("SWSH020",
@@ -1993,7 +1994,8 @@ function sealedEntry(s) {
   const set = db.sets?.[s.set] ?? [];
   return {
     id: s.key, name: s.name, number: '', kind: 'sealed', type: s.type,
-    setId: s.set, setName: set[0] ?? '', releaseDate: set[3] ?? '', image: s.image,
+    setId: s.set, setName: set[0] ?? s.setName ?? '', releaseDate: set[3] ?? s.date ?? '', image: s.image,
+    ...(s.lang === 'ja' && { lang: 'ja' }),
   };
 }
 
@@ -2005,7 +2007,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
   els.detailBody.innerHTML = `
     <img class="detail-img sealed" src="${esc(sealedImage(productId, 400))}" alt="${esc(item.name)}"
          onerror="this.onerror=null;this.src='${esc(item.image)}'">
-    <p class="detail-title">${esc(item.name)}</p>
+    <p class="detail-title">${esc(item.name)}${jpBadge(item)}</p>
     <p class="detail-sub">${esc(item.setName)} · ${esc(item.type)}</p>
     <button type="button" class="detail-price tap" id="sealedPrice" aria-expanded="false">
       <span class="price-label">Market price (AUD)</span>
@@ -2085,10 +2087,10 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
   };
   const showRrp = () => {
     const rrpEl = $('sealedRrp');
-    const cmp = rrpCompare(s.type, usd, rate.rate);
+    const cmp = item.lang === 'ja' ? null : rrpCompare(s.type, usd, rate.rate);
     rrpEl.innerHTML = cmp
       ? `RRP ${formatAudPlain(cmp.rrp)}${cmp.estimate ? ' <small>(estimate)</small>' : ''} · <b class="${cmp.up ? 'up' : 'down'}">${esc(cmp.text)}</b>`
-      : 'No Australian RRP for this kind of product';
+      : item.lang === 'ja' ? 'Australian RRPs are for English product' : 'No Australian RRP for this kind of product';
   };
   $('sealedPrice').addEventListener('click', () => {
     const rrpEl = $('sealedRrp');
@@ -2367,10 +2369,10 @@ async function renderSetPage() {
 /* Market: movers and highs / lows                                     */
 /* ------------------------------------------------------------------ */
 
-const marketEls = { window: $('marketWindow'), kind: $('marketKind'), note: $('marketNote'), body: $('marketBody') };
-const market = { window: '1', kind: 'cards' };
+const marketEls = { window: $('marketWindow'), kind: $('marketKind'), lang: $('marketLang'), note: $('marketNote'), body: $('marketBody') };
+const market = { window: '1', kind: 'cards', lang: 'en' };
 
-for (const [el, key] of [[marketEls.window, 'window'], [marketEls.kind, 'kind']]) {
+for (const [el, key] of [[marketEls.window, 'window'], [marketEls.kind, 'kind'], [marketEls.lang, 'lang']]) {
   el.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
     market[key] = b.dataset.v;
     el.querySelectorAll('button').forEach((x) => {
@@ -2388,7 +2390,8 @@ let marketToken = 0;
 async function renderMarket() {
   const token = ++marketToken;
   marketEls.body.innerHTML = '<p class="empty"><span class="spinner"></span>Loading market data…</p>';
-  const [data, rate, sealed] = await Promise.all([getMarket(), getAudRate(), getSealed(), dbReady]);
+  const ja = market.lang === 'ja';
+  const [data, rate, sealed] = await Promise.all([getMarket(market.lang), getAudRate(), getSealed(), dbReady.then(() => ja && loadJapanese())]);
   if (token !== marketToken) return;
   if (!data) {
     marketEls.body.innerHTML = '<p class="empty">Market data isn’t available right now. Try again later.</p>';
@@ -2402,12 +2405,13 @@ async function renderMarket() {
   const resolve = (key) => {
     if (/^s\d+$/.test(key)) { // card ids can start with "s" too (sv8pt5-161)
       const s = sealed.byKey.get(key);
-      return s && { item: sealedEntry(s), sub: `${db.sets?.[s.set]?.[0] ?? ''} · ${s.type}`, open: () => openSealedDetail(sealedEntry(s)) };
+      return s && { item: sealedEntry(s), sub: `${db.sets?.[s.set]?.[0] ?? s.setName ?? ''} · ${s.type}`, open: () => openSealedDetail(sealedEntry(s)) };
     }
-    const [id, short] = key.split(':');
+    const cut = key.lastIndexOf(':'); // Japanese ids have a colon too ("ja:SV8a-1:h")
+    const id = key.slice(0, cut), short = key.slice(cut + 1);
     const c = db.byId.get(id);
     const variant = finishFromShort(short);
-    return c && { item: c, sub: `${c.setName} · #${c.number} · ${variantLabel(variant)}`, open: () => openDetail({ ...c, variant }) };
+    return c && { item: c, sub: `${c.setName} · ${numberText(c)} · ${variantLabel(variant)}`, open: () => openDetail({ ...c, variant }) };
   };
   const section = (title, rows, pctOf) => {
     const items = rows.map((r) => ({ r, x: resolve(r[0]) })).filter((x) => x.x);
@@ -2438,18 +2442,21 @@ async function renderMarket() {
   });
 }
 
-/* Search also finds sealed product (every word must appear in its name or set). */
-async function searchSealed(query) {
+/* Search also finds sealed product (every word must appear in its name or set). Japanese
+ * product when the search is for Japanese (`ja`), otherwise English. */
+async function searchSealed(query, { ja = false } = {}) {
   const words = normName(query)
     .replace(/\betb\b/g, 'elite trainer box').replace(/\bupc\b/g, 'ultra-premium collection')
-    .replace(/\bpc\b/g, 'pokemon center').split(/\s+/).filter(Boolean);
+    .replace(/\bpc\b/g, 'pokemon center').split(/\s+/).filter((w) => w && !(ja && JP_WORDS.has(w)));
   if (!words.length) return [];
   const sealed = await getSealed();
+  const date = (s) => db.sets?.[s.set]?.[3] ?? s.date ?? '';
   return sealed.items.filter((s) => {
-    const hay = normName(`${s.name} ${db.sets?.[s.set]?.[0] ?? ''} ${s.type}`);
+    if ((s.lang === 'ja') !== ja) return false;
+    const hay = normName(`${s.name} ${db.sets?.[s.set]?.[0] ?? s.setName ?? ''} ${s.type}`);
     return words.every((w) => hay.includes(w));
   }).sort((a, b) => (a.type === 'Case') - (b.type === 'Case')
-    || (db.sets?.[b.set]?.[3] ?? '').localeCompare(db.sets?.[a.set]?.[3] ?? '') || (b.usd ?? 0) - (a.usd ?? 0));
+    || date(b).localeCompare(date(a)) || (b.usd ?? 0) - (a.usd ?? 0));
 }
 
 /* ------------------------------------------------------------------ */

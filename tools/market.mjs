@@ -10,7 +10,10 @@
 // Keys: card id + ":" + finish ("sv8pt5-161:h", the same finish codes as prices.json), or
 // "s" + a sealed product's TCGplayer id ("s593355"). Keying by finish means a card whose
 // "main" finish changes (a source adds a holo price) can't show up as a fake mover.
+// Japanese cards and sealed: the same three files with "-ja" (history-ja.json, …), from
+// tools/prices-ja.mjs. Keys: Japanese card id + ":" + finish ("ja:SV8a-1:h"), or "s" + id.
 // Backfill from git history of data/prices.json: node tools/market.mjs --backfill
+// (Japanese, from data/prices-ja.json: node tools/market.mjs --backfill-ja)
 import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 
@@ -21,6 +24,8 @@ const LIST_SIZE = 25;
 const WINDOWS = [1, 7, 30];
 
 const dataFile = (name) => new URL(`../data/${name}`, import.meta.url);
+let suffixNow = '';
+const fileName = (base) => base.replace(/\.json$/, `${suffixNow}.json`);
 const readJson = async (name, fallback) => {
   try { return JSON.parse(await readFile(dataFile(name), 'utf8')); } catch { return fallback; }
 };
@@ -36,7 +41,8 @@ const daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400
 
 /* Record today's prices and rebuild market.json. `cards` = prices.json's cards; `sealed` =
  * sealed.json's items, or null when today's sealed prices aren't known. */
-export async function updateMarket(cards, sealed, { date = new Date().toISOString().slice(0, 10) } = {}) {
+export async function updateMarket(cards, sealed, { date = new Date().toISOString().slice(0, 10), suffix = '' } = {}) {
+  suffixNow = suffix;
   const now = new Map();
   for (const [id, row] of Object.entries(cards)) {
     const f = mainFinish(row);
@@ -45,7 +51,7 @@ export async function updateMarket(cards, sealed, { date = new Date().toISOStrin
   for (const s of sealed ?? []) if (s.usd >= MIN_USD) now.set(`s${s.id}`, Math.round(s.usd * 100));
 
   // History: one column per day (a re-run on the same day replaces that day's column).
-  const history = await readJson('history.json', { dates: [], items: {} });
+  const history = await readJson(fileName('history.json'), { dates: [], items: {} });
   let col = history.dates.indexOf(date);
   if (col < 0) {
     if (history.dates.length && date < history.dates.at(-1)) return; // older than what we have
@@ -73,7 +79,7 @@ export async function updateMarket(cards, sealed, { date = new Date().toISOStrin
   }
 
   // All-time extremes.
-  const extremes = await readJson('extremes.json', { since: date, items: {} });
+  const extremes = await readJson(fileName('extremes.json'), { since: date, items: {} });
   for (const [key, cents] of now) {
     const e = extremes.items[key];
     if (!e) {
@@ -127,9 +133,9 @@ export async function updateMarket(cards, sealed, { date = new Date().toISOStrin
     return out;
   };
 
-  await writeFile(dataFile('history.json'), JSON.stringify(history));
-  await writeFile(dataFile('extremes.json'), JSON.stringify(extremes));
-  await writeFile(dataFile('market.json'), JSON.stringify({
+  await writeFile(dataFile(fileName('history.json')), JSON.stringify(history));
+  await writeFile(dataFile(fileName('extremes.json')), JSON.stringify(extremes));
+  await writeFile(dataFile(fileName('market.json')), JSON.stringify({
     asOf: date,
     since: extremes.since,
     currency: 'USD cents',
@@ -137,23 +143,25 @@ export async function updateMarket(cards, sealed, { date = new Date().toISOStrin
     highs: extremesNow('high'),
     lows: extremesNow('low'),
   }));
-  console.log(`Market: ${now.size} items tracked, history ${history.dates[0]} → ${date}`);
+  console.log(`Market${suffix}: ${now.size} items tracked, history ${history.dates[0]} → ${date}`);
 }
 
 /* One-off: build history from every past daily snapshot in git (latest commit per day). */
-async function backfill() {
-  const log = execFileSync('git', ['log', '--reverse', '--format=%H %cI', '--', 'data/prices.json'], { encoding: 'utf8' })
+async function backfill(ja = false) {
+  const file = ja ? 'data/prices-ja.json' : 'data/prices.json';
+  const log = execFileSync('git', ['log', '--reverse', '--format=%H %cI', '--', file], { encoding: 'utf8' })
     .trim().split('\n').map((l) => l.split(' '));
   const byDay = new Map();
   for (const [sha, iso] of log) byDay.set(new Date(iso).toISOString().slice(0, 10), sha);
   for (const [date, sha] of byDay) {
-    const snap = JSON.parse(execFileSync('git', ['show', `${sha}:data/prices.json`], { encoding: 'utf8', maxBuffer: 1 << 28 }));
+    const snap = JSON.parse(execFileSync('git', ['show', `${sha}:${file}`], { encoding: 'utf8', maxBuffer: 1 << 28 }));
     let sealed = null;
     try {
-      sealed = JSON.parse(execFileSync('git', ['show', `${sha}:data/sealed.json`], { encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'ignore'] })).items;
+      sealed = JSON.parse(execFileSync('git', ['show', `${sha}:data/sealed${ja ? '-ja' : ''}.json`], { encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'ignore'] })).items;
     } catch { /* no sealed data that day */ }
-    await updateMarket(snap.cards, sealed, { date });
+    await updateMarket(snap.cards, sealed, { date, suffix: ja ? '-ja' : '' });
   }
 }
 
 if (process.argv.includes('--backfill')) await backfill();
+if (process.argv.includes('--backfill-ja')) await backfill(true);

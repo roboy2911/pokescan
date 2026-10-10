@@ -13,7 +13,8 @@ your phone's home screen like an app (PWA), and works offline after the first vi
   Optional beep when a card is found.
 - **Search** — one box, results as you type, all offline. Mix names, sets and numbers in
   any order: `charizard 4/102`, `umbreon prismatic`, `mew 151`, `tg05`, `199/165`.
-  Sealed product too (`151 etb`; ETB, UPC and PC shorthands work).
+  Black Star promos by their printed code: `charmander svp 044`, `svp044`, `swsh020`, `sm60`.
+  Sealed product too (`151 etb`; ETB, UPC and PC shorthands work; `jp booster box` for Japanese).
 - **Release calendar** (top of Sets) — upcoming sets and ones out in the last 45 days, with
   each product's release date and market price vs Australian RRP (presale prices before
   release). Built daily into `data/releases.json` from TCGplayer's presale listings.
@@ -25,10 +26,17 @@ your phone's home screen like an app (PWA), and works offline after the first vi
 - **Sets** — every English set by series; open one to see all its cards in number order
   with prices, which you own (All / Owned / Missing), your progress and its sealed product.
 - **Collection** — cards and sealed product with quantities and finishes; search, sort,
-  filter by set, value by set, and back up / restore as a file (••• menu). It's stored on
-  the phone only, so back it up now and then.
+  filter by set, value by set, and back up / restore as a file (••• menu). Saved to your
+  account and the phone.
+- **Want list** (Collection → Want list) — ☆ on any card or sealed product, with an optional
+  target price in AUD. Shows today's price, flags items at or below your target (✓) or at their
+  lowest this month, and tells you once when one drops to your target (`wants.js`).
+- **Automatic backups** (Collection → ••• → Automatic backups) — a copy on the phone every day
+  (last 7) and before "Remove everything" or a restore; your account also keeps each day's
+  starting point for 30 days. Tap one to put it back (`backups.js`).
 - **Market** — biggest risers and fallers over 1, 7 and 30 days, and items at their
-  highest / lowest since tracking began (6 Oct 2026), for cards and sealed product.
+  highest / lowest since tracking began (6 Oct 2026; Japanese from 8 Oct), for English or
+  Japanese cards and sealed product.
 - **Sealed product** — tap the market price to compare it with the Australian RRP
   (table in `prices.js`: pack $8.50, booster bundle $50, ETB $100, booster box $300;
   other types are marked estimates — edit them there).
@@ -40,7 +48,7 @@ repo, redeployed by Cloudflare on every push to main (Pages project: no build co
 ## Accounts and sync
 
 You log in (or sign up — anyone can, with a username and password) to use the app, and stay
-logged in on that device. Your collection is saved to your account and synced between devices:
+logged in on that device. Your collection and want list are saved to your account and synced between devices:
 on start, when the app comes back to the front, and a few seconds after each change; edits
 made on two devices are merged (`account.js`). Log out in Collection → •••; that removes the
 collection from that device (it stays in the account).
@@ -177,7 +185,9 @@ Set up (free Cloudflare account, works from a phone — no code pasting):
 - `tools/build-index-ja.mjs` fingerprints their pictures into `data/index-ja.bin` exactly like the
   English index (download the pictures first, 200 px is plenty; it needs Playwright and a local
   server — see the file).
-- `tools/prices-ja.mjs` (run by the daily price job, ~5 s) writes `data/prices-ja.json`.
+- `tools/prices-ja.mjs` (run by the daily price job, ~5 s) writes `data/prices-ja.json`, Japanese
+  sealed product (`data/sealed-ja.json`, ~280 items — what TCGplayer sells) and the Japanese
+  Market lists (`history-ja.json`, `extremes-ja.json`, `market-ja.json`).
 - The app adds the Japanese cards to its list a few seconds after start-up; their prices and the
   Japanese scanning index download only when needed.
 
@@ -221,6 +231,8 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 |---|---|
 | `index.html`, `style.css` | Page layout and styling (Scan / Search / Sets / Collection / Market) |
 | `app.js` | Camera, auto-scan, results, search, sets, collection, market |
+| `wants.js`, `backups.js` | Want list; automatic backups |
+| `account.js` | Login and sync with the account (server side: `tools/account-worker.mjs`) |
 | `worker.js`, `matcher.js` | Background matching: finding the card and identifying it |
 | `detect.js` | Card outline detection and perspective correction |
 | `cardprint.js` | Fingerprint maths, shared by the app and the index builder |

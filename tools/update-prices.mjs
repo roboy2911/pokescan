@@ -10,6 +10,7 @@
 //      pattern reverse holos. Matched to our card ids by set name and card number.
 import { readFile, writeFile } from 'node:fs/promises';
 import { updateMarket } from './market.mjs';
+import { sealedType } from './sealed-types.mjs';
 
 const API = 'https://api.pokemontcg.io/v2/cards';
 const PAGE_SIZE = 250;
@@ -169,34 +170,6 @@ function splitProductName(name) {
 
 const prettyLabel = (s) => s.replace(/\bPoke\b/g, 'Poké').replace(/\bPokemon\b/g, 'Pokémon');
 
-/* Kind of sealed product, from its TCGplayer name. Order matters (most specific first).
- * The app's Australian RRP table (prices.js) is keyed by these names. */
-const SEALED_TYPES = [
-  [/\bcase\b/i, 'Case'],
-  [/display/i, 'Display'],
-  [/half booster box/i, 'Half Booster Box'],
-  [/booster box/i, 'Booster Box'],
-  [/pokemon center elite trainer box/i, 'Pokémon Center Elite Trainer Box'],
-  [/elite trainer box/i, 'Elite Trainer Box'],
-  [/booster bundle/i, 'Booster Bundle'],
-  [/art bundle/i, 'Booster Pack Art Bundle'],
-  [/sleeved booster/i, 'Sleeved Booster Pack'],
-  [/booster pack|booster$/i, 'Booster Pack'],
-  [/3-pack blister|three[- ]pack|3 pack/i, '3-Pack Blister'],
-  [/2-pack blister/i, '2-Pack Blister'],
-  [/blister/i, 'Blister'],
-  [/ultra[- ]premium collection/i, 'Ultra-Premium Collection'],
-  [/super[- ]premium collection/i, 'Super-Premium Collection'],
-  [/premium collection/i, 'Premium Collection'],
-  [/mini tin/i, 'Mini Tin'],
-  [/\btin\b/i, 'Tin'],
-  [/build & battle stadium/i, 'Build & Battle Stadium'],
-  [/build & battle/i, 'Build & Battle Box'],
-  [/battle deck|theme deck|league battle deck/i, 'Deck'],
-  [/surprise box/i, 'Surprise Box'],
-  [/collection|\bbox\b/i, 'Collection Box'],
-];
-const sealedType = (name) => SEALED_TYPES.find(([re]) => re.test(name))?.[1] ?? 'Other';
 
 /* Release calendar: sets coming out soon or released in the last RELEASE_WINDOW_DAYS, with
  * their sealed products (each product's own release date from TCGplayer's presale info). */

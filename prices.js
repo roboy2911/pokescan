@@ -354,16 +354,18 @@ const SEALED_RRP_ESTIMATE = new Set(Object.keys(SEALED_RRP_AUD)
 
 const sealedImage = (productId, size = 200) => `https://tcgplayer-cdn.tcgplayer.com/product/${productId}_${size}w.jpg`;
 
-/* data/sealed.json, loaded on first use: { items: [{ id, name, set, type, usd }] } with each
- * item also given key ('s' + id), kind 'sealed' and image. */
+/* data/sealed.json + data/sealed-ja.json (Japanese, lang 'ja'), loaded on first use:
+ * { items: [{ id, name, set, type, usd }] } with each item also given key ('s' + id), kind
+ * 'sealed' and image. */
 let sealedPromise = null;
 function getSealed() {
-  sealedPromise ??= fetchRetry('data/sealed.json')
-    .catch(() => { sealedPromise = null; return { items: [] }; })
-    .then((j) => {
-      const items = j.items.map((s) => ({ ...s, key: `s${s.id}`, kind: 'sealed', image: sealedImage(s.id) }));
-      return { built: j.built, items, byKey: new Map(items.map((s) => [s.key, s])) };
-    });
+  sealedPromise ??= Promise.all([
+    fetchRetry('data/sealed.json').catch(() => { sealedPromise = null; return { items: [] }; }),
+    fetchRetry('data/sealed-ja.json', { tries: 3 }).catch(() => ({ items: [] })),
+  ]).then(([j, ja]) => {
+    const items = [...j.items, ...ja.items].map((s) => ({ ...s, key: `s${s.id}`, kind: 'sealed', image: sealedImage(s.id) }));
+    return { built: j.built, items, byKey: new Map(items.map((s) => [s.key, s])) };
+  });
   return sealedPromise;
 }
 
@@ -387,8 +389,9 @@ function getSetsInfo() {
   return setsInfoPromise;
 }
 
-/* data/market.json (movers and highs/lows), loaded when the Market tab opens. */
-let marketPromise = null;
+/* data/market.json (movers and highs/lows; market-ja.json for Japanese), loaded when the
+ * Market tab opens. */
+const marketPromise = {};
 /* data/history.json: 31 days of daily prices, loaded when the Collection tab opens. */
 let historyPromise = null;
 function getHistory() {
@@ -396,9 +399,9 @@ function getHistory() {
   return historyPromise;
 }
 
-function getMarket() {
-  marketPromise ??= fetchRetry('data/market.json').catch(() => { marketPromise = null; return null; });
-  return marketPromise;
+function getMarket(lang = 'en') {
+  marketPromise[lang] ??= fetchRetry(`data/market${lang === 'ja' ? '-ja' : ''}.json`).catch(() => { marketPromise[lang] = null; return null; });
+  return marketPromise[lang];
 }
 
 /* "Prices from 7 Oct" for notes; flags the snapshot as old when it's more than 2 days old
