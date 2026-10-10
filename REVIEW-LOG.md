@@ -337,3 +337,14 @@ Claude "remove <name>".
 ## Owner request (Sat) — "Couldn't load the card database: Load failed"
 
 - **Fix: app sometimes failed to load on open** — `009c2d3`. Cause: the app downloads its card data the instant it opens, often before the phone's connection has woken up, and gave up on the first failure. Now each data file is retried (0.5 → 6 s, ~14 s total, waits for the connection to come back), the service worker keeps a copy of the data files that app updates don't wipe (and uses it if the network is slow/failing), and if it still can't load there's a **Try again** button instead of reopening the app. Offline, retries stop quickly so search doesn't hang. Tested: 1, 2 and 4 failed downloads in a row → loads with prices; offline reload → loads and searches. Regression (smoke, e2e, UI, account tests) unchanged. *Remove:* `git revert 009c2d3`.
+
+## Owner request (Sat) — the to-do list, price-check rules
+
+- **AU sold: 500 searches a day; never checked on a schedule** — `db075b4`. Owner: "DO NOT CHECK PRICES NIGHTLY"; one-off SoldComps credits (18,000 left). The pre-check workflow is manual-only and searches nothing without a budget; the 23 Oct reminder was deleted. Worst case 500/day uses the credits in ~36 days (in practice far less — only cards someone opens, each answer kept 14 days). *Undo the limit:* `DAILY_LIMIT` in `wrangler.jsonc`.
+- **Feature: search promos by printed code** — `9fefc07`. "charmander svp 044", "svp044", "swsh020", "sm 60" find the promo (promo set first); promos show "SVP 044" instead of "#44/102". *Remove:* `git revert 9fefc07`.
+- **Feature: want list, automatic backups, "move back" hint** — `ffb86c8`.
+  - Want list: ☆ in any card / sealed sheet, optional AUD target; Collection → Want list with today's price, ✓ at target, "lowest this month"; a one-time message (and a dot on Collection) when one hits its target. Synced with the account.
+  - Automatic backups: daily copy on the phone (7 kept) + before "Remove everything"/restore; the account keeps each day's starting point 30 days (worker `/backups`). Collection → ••• → Automatic backups → tap to restore. Tested: worker (backup made before the day's first change, old app without wants keeps them), two-device want sync incl. delete, restore after "Remove everything".
+  - "Too close — move back so the whole card fits in the box": when the biggest outline in the guide is under 0.8 of the box for two frames. Simulated: never in normal scans (0 of 320 frames); shows on ~45% of frames of a card held 1.45–1.8× the box. Matching itself unchanged.
+  - *Remove:* `git revert ffb86c8` (account backups expire on their own).
+- **Feature: Japanese sealed product + Japanese Market tab** — `0b8401a`. ~280 Japanese sealed products (all TCGplayer lists), searchable ("jp booster box"), on set pages, in collection/want list; Market tab English/Japanese switch (history from 8 Oct; Japanese sealed movers appear after a few days). *Remove:* `git revert 0b8401a`.
