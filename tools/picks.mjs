@@ -16,6 +16,9 @@
 // { key, id, name, set, usd, finish?, type?, score, risk: 'safer' | 'riskier', reasons: [...] }.
 // Not financial advice: these are reasons to look closer, not guarantees.
 import { readFile, writeFile } from 'node:fs/promises';
+import { targets, audRate } from './au-sold-keys.mjs';
+
+const AU_EXPORT = 'https://pokescan-au-sold.minecraftfishies.workers.dev/au-export';
 
 const TCGCSV = 'https://tcgcsv.com/tcgplayer/3';
 const HEADERS = { 'User-Agent': 'PokeScan/1.0 (+https://github.com/roboy2911/pokescan)' };
@@ -219,10 +222,100 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     if (sealed.length >= 40) break;
   }
 
-  const out = { built: new Date().toISOString(), since: history.dates[0] ?? date, days, currency: 'USD', cards, sealed };
+  const au = await auPicks({ prices, cardsMeta, date, lst });
+
+  const out = { built: new Date().toISOString(), since: history.dates[0] ?? date, days, currency: 'USD', cards, sealed, au: au.picks, auInfo: au.info };
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
+  console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates)`);
   console.log(`Picks: ${cards.length} cards (${cards.filter((c) => c.risk === 'safer').length} safer), ${sealed.length} sealed (${sealed.filter((c) => c.risk === 'safer').length} safer); ${lst.size} listings`);
   return out;
+}
+
+/* ---------- From Australian sold prices ---------- */
+
+/* Cards ranked on what they actually sell for in Australia (eBay.com.au, last 90 days): the
+ * nightly-checked file (data/au-sold.json) plus every price looked up since in the app (the
+ * worker's /au-export — no SoldComps searches). Signals: cheaper here than the US market (room
+ * to catch up), how often it sells here (easy to resell), how steady the price is, recent
+ * Australian sales trending up, and the same rarity / popularity / set-age signals. */
+async function auPicks({ prices, cardsMeta, date, lst }) {
+  const [pre, rate] = await Promise.all([readJson('au-sold.json', { items: {} }), audRate()]);
+  let exported = {};
+  try {
+    const r = await fetch(AU_EXPORT, { headers: HEADERS });
+    if (r.ok) exported = (await r.json()).items ?? {};
+  } catch { /* offline: the file alone */ }
+  const sets = cardsMeta.sets;
+  const meta = new Map(cardsMeta.cards.map(([id, name, number, setId, rarity]) => [id, { name, number, setId, rarity }]));
+  const picks = [];
+  let priced = 0, withSales = 0;
+  for (const t of targets(cardsMeta, prices.cards, rate, 20)) {
+    const p = pre.items?.[t.key];
+    const x = exported[t.key];
+    // Newest answer wins.
+    const fromPre = p && p[0] != null ? { aud: p[0], n: p[1], low: p[2], high: p[3], date: p[4], recent: [] } : null;
+    const fromEx = x ? { aud: x.a, n: x.n, low: x.l, high: x.h, date: x.d, recent: x.r ?? [], wide: !!x.w } : null;
+    const a = !fromPre ? fromEx : !fromEx ? fromPre : fromEx.date >= fromPre.date ? fromEx : fromPre;
+    if (!a || !(a.aud > 0)) continue;
+    priced++;
+    const m = meta.get(t.id);
+    if (!m) continue;
+    const set = sets[m.setId] ?? [];
+    const age = monthsSince(set[3], date);
+    const reasons = [];
+    let score = 0, risky = 0;
+    // Australia vs the US market.
+    const vsUs = a.aud / t.aud;
+    if (vsUs < 0.8) { score += 18; reasons.push(`sells for ${Math.round((1 - vsUs) * 100)}% less in Australia than the US market (A$${Math.round(a.aud)} vs A$${Math.round(t.aud)}) — room to catch up`); }
+    else if (vsUs < 0.92) { score += 9; reasons.push(`a little cheaper in Australia than the US market (A$${Math.round(a.aud)} vs A$${Math.round(t.aud)})`); }
+    else if (vsUs > 1.3) { score += 5; risky++; reasons.push(`Australians pay ${Math.round((vsUs - 1) * 100)}% more than the US market — strong local demand, but you'd pay a premium`); }
+    // How often it sells here.
+    if (a.n >= 10) { score += 12; reasons.push(`sells often in Australia (${a.n} sales in 90 days) — easy to resell`); }
+    else if (a.n >= 5) { score += 6; reasons.push(`${a.n} Australian sales in 90 days`); }
+    else if (a.n <= 2) { risky++; reasons.push(`only ${a.n} Australian sale${a.n === 1 ? '' : 's'} in 90 days — hard to price`); }
+    if (a.wide) { risky++; reasons.push('few Australian sellers — price includes overseas sellers'); }
+    // Steadiness.
+    const spread = a.high && a.low ? (a.high - a.low) / a.aud : null;
+    if (spread != null && a.n >= 4) {
+      if (spread < 0.45) { score += 6; reasons.push(`steady price (A$${Math.round(a.low)}–${Math.round(a.high)})`); }
+      else if (spread > 1.5) { risky++; reasons.push(`price swings a lot (A$${Math.round(a.low)}–${Math.round(a.high)})`); }
+    }
+    if (a.low && a.low < a.aud * 0.72 && a.n >= 4) reasons.push(`copies have sold for as little as A$${Math.round(a.low)} — worth waiting for one`);
+    // Recent Australian sales trend (newest first in the list).
+    if (a.recent.length >= 4) {
+      withSales++;
+      const half = Math.floor(a.recent.length / 2);
+      const med = (arr) => { const v = arr.map((r) => r[0]).sort((p1, p2) => p1 - p2); return v[Math.floor(v.length / 2)]; };
+      const newer = med(a.recent.slice(0, half)), older = med(a.recent.slice(half));
+      const chg = (newer - older) / older * 100;
+      if (chg > 8) { score += Math.min(14, 4 + chg * 0.4); reasons.push(`recent Australian sales up ${pct(chg)} on the ones before`); }
+      else if (chg < -10) { score -= 6; reasons.push(`recent Australian sales down ${pct(chg)}`); }
+    }
+    // Card fundamentals (lighter weight).
+    const chase = CHASE.find(([re]) => re.test(m.rarity || ''));
+    const vintage = (set[3] || '9') < '2004';
+    if (chase) { score += chase[1] * 0.6; reasons.push(chase[2]); } else if (vintage) { score += 7; reasons.push('vintage'); }
+    if (TOP_MONS.test(m.name)) { score += 9; reasons.push(`${m.name.match(TOP_MONS)[1].replace(/^./, (c) => c.toUpperCase())} — among the most collected Pokémon`); }
+    else if (FAN_MONS.test(m.name)) score += 4;
+    if (age != null && age < 4) { risky++; reasons.push('new set — still being printed'); }
+    const ageDays = (Date.parse(date) - Date.parse(a.date)) / 86400000;
+    if (score < 24) continue;
+    const safer = !risky && a.n >= 5;
+    picks.push({ key: t.key, id: t.id, name: m.name, number: m.number, set: set[0] || m.setId, rarity: m.rarity, finish: t.q.match(/(reverse holo|1st edition)$/i)?.[1] ?? null,
+      aud: Math.round(a.aud), usAud: Math.round(t.aud), sales: a.n, auDate: a.date, stale: ageDays > 30,
+      score: Math.round(score), risk: safer ? 'safer' : 'riskier', reasons });
+  }
+  picks.sort((p1, p2) => p2.score - p1.score || p2.aud - p1.aud);
+  const perSet = new Map();
+  const out = [];
+  for (const p of picks) {
+    const n = perSet.get(p.set) ?? 0;
+    if (n >= 3) continue;
+    perSet.set(p.set, n + 1);
+    out.push(p);
+    if (out.length >= 50) break;
+  }
+  return { picks: out, info: { priced, withSales, rate, exported: Object.keys(exported).length, asOf: pre.asOf ?? null } };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await buildPicks();

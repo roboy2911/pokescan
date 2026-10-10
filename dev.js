@@ -243,16 +243,19 @@ async function devRenderPicks(box) {
   const seg = (name, opts) => `<div class="seg dev-seg" data-seg="${name}">${opts.map(([v, l], i) => `<button type="button" data-v="${v}" class="${i ? '' : 'active'}">${l}</button>`).join('')}</div>`;
   box.innerHTML = `
     <p class="dev-msg">Cards and sealed product that look likely to rise, or are already rising, and why. Built ${devEsc(new Date(picks.built).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }))} from TCGplayer prices and listings${picks.days < 14 ? ` — price history only goes back to ${devEsc(shortDate(picks.since))}, so trends count for little yet (better each week)` : ''}.</p>
-    <div class="dev-picks-tools">${seg('kind', [['cards', `Cards (${picks.cards.length})`], ['sealed', `Sealed (${picks.sealed.length})`]])}
+    <div class="dev-picks-tools">${seg('kind', [['cards', `Cards (${picks.cards.length})`], ['sealed', `Sealed (${picks.sealed.length})`], ...(picks.au ? [['au', `AU sold (${picks.au.length})`]] : [])])}
       ${seg('risk', [['all', 'All'], ['safer', 'Safer'], ['riskier', 'Riskier']])}</div>
+    <p class="dev-msg" data-au-note hidden>Ranked on what each card actually sells for on eBay Australia (near-mint sales, last 90 days)${picks.auInfo ? ` — ${picks.auInfo.priced.toLocaleString()} cards with an Australian price, checked up to ${devEsc(shortDate(picks.auInfo.asOf || picks.built.slice(0, 10)))}, plus every card looked up in the app since` : ''}. No new searches are made for this (no credits). "Cheaper in Australia" can also mean sellers here list worn copies as near mint — check the photos.</p>
     <div class="dev-picks" data-list></div>
     <p class="dev-msg">Not financial advice — reasons to look closer, not guarantees. Prices are TCGplayer (US) market prices in AUD; check Australian sold prices before buying.</p>`;
   const draw = () => {
     const list = box.querySelector('[data-list]');
+    box.querySelector('[data-au-note]').hidden = view.kind !== 'au';
     const items = picks[view.kind].filter((p) => view.risk === 'all' || p.risk === view.risk);
     list.innerHTML = items.length ? '' : '<p class="dev-msg">None in this list today.</p>';
     for (const p of items) {
-      const item = view.kind === 'cards' ? db.byId?.get(p.id) : sealed.byKey.get(p.key);
+      const isCard = view.kind !== 'sealed';
+      const item = isCard ? db.byId?.get(p.id) : sealed.byKey.get(p.key);
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'dev-pick';
@@ -260,12 +263,14 @@ async function devRenderPicks(box) {
         <img src="${devEsc(item?.image ?? '')}" alt="" loading="lazy">
         <div class="meta">
           <div class="name">${devEsc(p.name)}</div>
-          <div class="sub">${devEsc([p.set, p.finish || p.type, p.rarity].filter(Boolean).join(' · '))}</div>
+          <div class="sub">${devEsc([p.set, p.number && `#${p.number}`, p.finish || p.type, p.rarity].filter(Boolean).join(' · '))}</div>
           <ul>${p.reasons.slice(0, 4).map((r) => `<li>${devEsc(r)}</li>`).join('')}</ul>
         </div>
-        <div class="side"><b>${formatAud(p.usd, rate.rate)}</b><span class="risk ${p.risk}">${p.risk === 'safer' ? 'Safer' : 'Riskier'}</span><small>score ${p.score}</small></div>`;
+        <div class="side">${view.kind === 'au'
+          ? `<b>${formatAudPlain(p.aud)}</b><small>AU sold · ${p.sales} sales</small><small>US ${formatAudPlain(p.usAud)}</small>${p.stale ? '<small>(old price)</small>' : ''}`
+          : `<b>${formatAud(p.usd, rate.rate)}</b>`}<span class="risk ${p.risk}">${p.risk === 'safer' ? 'Safer' : 'Riskier'}</span><small>score ${p.score}</small></div>`;
       row.addEventListener('click', () => {
-        if (view.kind === 'cards' && item) openDetail(item);
+        if (isCard && item) openDetail(item);
         else if (item) openSealedDetail(sealedEntry(item));
       });
       list.appendChild(row);

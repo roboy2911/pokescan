@@ -11,7 +11,8 @@
 //   KV       AU_KV              a KV namespace (cache + daily counter)
 //   Optional variables: PAUSED_UNTIL ("YYYY-MM-DD": no searches before then), DAILY_LIMIT (default 400; set to 50 in wrangler.jsonc), CACHE_DAYS (default 3; set to 14 in wrangler.jsonc)
 //
-// Also grader tuning samples: /grade-sample (tools/grade-samples.mjs).
+// Also grader tuning samples: /grade-sample (tools/grade-samples.mjs); /au-export (every AU
+// answer looked up, compact, for tools/picks.mjs — no searches).
 // Also accounts and collection sync: /auth/signup, /auth/login, /auth/logout, /sync, /backups — see
 // tools/account-worker.mjs.
 //
@@ -49,6 +50,19 @@ export default {
     if (origin && !isAllowed(origin)) return json({ ok: false, reason: 'origin' }, allow, 403);
     const url = new URL(request.url);
     // Accounts and collection sync (tools/account-worker.mjs).
+    // Every AU sold answer looked up (compact), for tools/picks.mjs. No SoldComps searches.
+    if (url.pathname === '/au-export') {
+      if (!env.AU_KV) return json({ ok: false, reason: 'no-storage' }, allow, 500);
+      const items = {};
+      let cursor;
+      for (let page = 0; page < 10; page++) {
+        const r = await env.AU_KV.list({ prefix: 'ax:', cursor });
+        for (const k of r.keys) if (k.metadata) items[k.name.slice(3)] = k.metadata;
+        if (r.list_complete) break;
+        cursor = r.cursor;
+      }
+      return json({ ok: true, items }, allow);
+    }
     if (url.pathname === '/grade-sample') {
       return handleGradeSample(request, env, url, (body, status = 200) => json(body, allow, status));
     }
@@ -109,6 +123,13 @@ export default {
     result = { ...result, asOf: day };
     // Cards with too few sales are remembered too, so they don't cost a search every view.
     if (env.AU_KV) await env.AU_KV.put(key, JSON.stringify(result), { expirationTtl: cacheDays * 86400 });
+    // A compact copy for the daily "buy ideas" (GET /au-export): kept in the key's metadata so
+    // exporting is one list, no reads. Keyed like the app's AU cache.
+    if (env.AU_KV && result.ok) {
+      const meta = { a: Math.round(result.aud), n: result.n, l: Math.round(result.low ?? result.aud), h: Math.round(result.high ?? result.aud), d: day,
+        ...(result.wide && { w: 1 }), r: (result.recent ?? []).slice(0, 8).map((x) => [Math.round(x.aud), x.date]) };
+      await env.AU_KV.put(`ax:${q.toLowerCase()}|${n.toLowerCase()}${t ? `|${t}` : ''}`, '1', { metadata: meta, expirationTtl: 180 * 86400 });
+    }
     return json(result, allow);
   },
 };

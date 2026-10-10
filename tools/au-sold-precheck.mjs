@@ -13,6 +13,7 @@
 //   [null, 0, null, null, date] (too few sales) } } — keys match the app's AU sold cache keys.
 import { readFile, writeFile } from 'node:fs/promises';
 import { summarise, ebayKeyword, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-filter.mjs';
+import { targets, audRate } from './au-sold-keys.mjs';
 
 const MIN_AUD = Number(process.env.MIN_AUD) || 50;
 const REFRESH_DAYS = 14;
@@ -26,85 +27,6 @@ const readJson = async (name, fallback) => {
 };
 const today = new Date().toISOString().slice(0, 10);
 const ageDays = (d) => (Date.parse(today) - Date.parse(d)) / 86400000;
-
-// Same as the app's ebaySoldQuery (app.js) — keep the two in step.
-const EBAY_FINISH_WORDS = { reverseHolofoil: 'reverse holo', '1stEditionHolofoil': '1st edition', '1stEditionNormal': '1st edition' };
-// card.printed: for a Classic Collection reprint, the original it copies (its number is printed).
-function ebaySoldQuery(card, variant) {
-  const printed = card.printed ?? card;
-  const raw = String(printed.number);
-  const coded = /^[A-Z]/i.test(raw) || /promo/i.test(printed.setName || '');
-  const digits = raw.replace(/^0+(?=\d)/, '');
-  const num = !coded && (printed.releaseDate || '') >= '2020' && /^\d+$/.test(digits) ? digits.padStart(3, '0') : digits;
-  const total = num !== digits ? String(printed.setTotal).padStart(3, '0') : printed.setTotal;
-  const n = coded || !printed.setTotal ? raw : `${num}/${total}`;
-  // Sellers write "Gold Star", not ★ (and often leave out δ).
-  let q = `${card.name.replace(/★/g, ' Gold Star').replace(/δ/g, '')} ${n}`;
-  const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim() : EBAY_FINISH_WORDS[variant];
-  if (finish) q += ` ${finish}`;
-  return { q: q.replace(/\s+/g, ' ').trim(), n, t: card.t || '' };
-}
-const cacheKey = (q, n, t = '') => `${q.toLowerCase()}|${(n || '').toLowerCase()}${t ? `|${t}` : ''}`;
-
-// Classic Collection reprints ↔ the originals they copy (same as reprintInfo in app.js).
-const REPRINT_SETS = { cel25c: 'r25', me55c: 'r30' };
-function reprintIndex(cardsMeta) {
-  const card = ([id, name, number, setId]) => {
-    const [setName, , setTotal, releaseDate] = cardsMeta.sets[setId] ?? [];
-    return { id, name, number, setId, setName, setTotal, releaseDate };
-  };
-  const earliest = new Map();
-  for (const row of cardsMeta.cards) {
-    const c = card(row);
-    if (REPRINT_SETS[c.setId]) continue;
-    const k = `${c.name}|${c.number}`;
-    if (!earliest.has(k) || (c.releaseDate || '') < (earliest.get(k).releaseDate || '')) earliest.set(k, c);
-  }
-  const of = new Map(), originals = new Set();
-  for (const row of cardsMeta.cards) {
-    const c = card(row);
-    const o = REPRINT_SETS[c.setId] && earliest.get(`${c.name}|${c.number}`);
-    if (o && (o.releaseDate || '') < (c.releaseDate || '')) { of.set(c.id, o); originals.add(o.id); }
-  }
-  return { of, originals };
-}
-
-async function audRate() {
-  try {
-    const r = await fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=AUD');
-    const rate = (await r.json()).rates?.AUD;
-    if (rate > 0.5 && rate < 5) return rate;
-  } catch { /* fall back */ }
-  return 1.5;
-}
-
-// Every card + finish (one search per distinct query) worth at least MIN_AUD.
-function targets(cardsMeta, prices, rate) {
-  const list = new Map();
-  const rp = reprintIndex(cardsMeta);
-  for (const [id, name, number, setId] of cardsMeta.cards) {
-    const row = prices[id];
-    if (!row) continue;
-    const [setName, , setTotal, releaseDate] = cardsMeta.sets[setId] ?? [];
-    const card = { name, number, setName, setTotal, releaseDate,
-      printed: rp.of.get(id), t: rp.of.has(id) ? REPRINT_SETS[setId] : rp.originals.has(id) ? 'o' : '' };
-    const add = (variant, usd) => {
-      if (usd == null || usd * rate < MIN_AUD) return;
-      const { q, n, t } = ebaySoldQuery(card, variant);
-      const key = cacheKey(q, n, t);
-      const aud = usd * rate;
-      // set: a reprinted original's listing must name its set (au-sold-filter.mjs).
-      if (!list.has(key) || list.get(key).aud < aud) list.set(key, { key, q, n, t, aud, id, set: t === 'o' ? setName : '' });
-    };
-    // Holo / normal / unlimited share one search (no finish word); the rest have their own.
-    const plain = ['h', 'n', 'u', 'uh'].map((k) => row[k]).filter((v) => v != null);
-    if (plain.length) add(null, Math.max(...plain));
-    add('1stEditionHolofoil', row['1h'] ?? row['1n']);
-    add('reverseHolofoil', row.r);
-    for (const [label, usd] of Object.entries(row.v || {})) add(`x:${label}`, usd);
-  }
-  return [...list.values()];
-}
 
 async function lookup(t) {
   const url = new URL('https://api.sold-comps.com/v1/scrape');
@@ -124,7 +46,7 @@ const [cardsMeta, pricesFile, store] = await Promise.all([
 ]);
 if (!cardsMeta || !pricesFile) throw new Error('cards.json / prices.json missing');
 const rate = await audRate();
-const all = targets(cardsMeta, pricesFile.cards, rate);
+const all = targets(cardsMeta, pricesFile.cards, rate, MIN_AUD);
 for (const [k, v] of Object.entries(store.items)) if (ageDays(v[4]) > KEEP_DAYS) delete store.items[k];
 
 // Never checked first (most valuable first), then the oldest answers.
