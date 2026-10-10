@@ -848,3 +848,24 @@ body.gated { overflow: hidden; }
 .login-card .btn { width: 100%; padding: 13px; }
 .login-msg { min-height: 1.2em; margin: 0; color: var(--muted); font-size: .86rem; }
 .login-note { margin: 0; color: var(--muted); font-size: .78rem; }
+
+/* Want list (wants.js) */
+.collection-mode { margin: 4px 0 12px; }
+.want-list { display: none; }
+#view-collection.wants .want-list { display: grid; }
+#view-collection.wants :is(#valueCard, #collectionTools, #tradeBar, #historyList, .small-note) { display: none !important; }
+.want-row .want-note { font-size: .8rem; color: var(--muted); margin-top: 3px; }
+.want-row .want-note .ok { color: var(--ok); }
+.want-row.hit { outline: 2px solid var(--ok); outline-offset: -2px; }
+.want-box { display: flex; flex-direction: column; }
+.want-on { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.want-star { color: var(--accent); font-weight: 700; }
+.want-target { display: flex; align-items: center; gap: 8px; font-size: .9rem; color: var(--muted); }
+.aud-input { display: inline-flex; align-items: center; gap: 2px; color: var(--text); }
+.aud-input input { width: 6.5em; font-size: 16px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--text); }
+.link-btn { background: none; border: 0; color: var(--muted); text-decoration: underline; font: inherit; padding: 4px; margin-left: auto; cursor: pointer; }
+.nav-btn.has-alert { position: relative; }
+.nav-btn.has-alert::after { content: ''; position: absolute; top: 8px; right: calc(50% - 16px); width: 8px; height: 8px;
+  border-radius: 50%; background: var(--ok); }

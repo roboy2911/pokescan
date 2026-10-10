@@ -74,7 +74,10 @@ function showView(name) {
   });
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
   document.body.classList.toggle('scan-full', name === 'scan'); // full-screen camera on phones (style.css)
-  if (name === 'collection') refreshCollection();
+  if (name === 'collection') {
+    refreshCollection();
+    if (typeof wantMode !== 'undefined' && wantMode) renderWants(); // wants.js
+  }
   if (name === 'sets') showSets();
   if (name === 'market') renderMarket();
   if (name === 'search' && !els.qName.value) els.qName.focus();
@@ -99,11 +102,11 @@ function setStatus(el, msg, kind = '') {
 }
 
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, ms = 2200) {
   els.toast.textContent = msg;
   els.toast.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { els.toast.hidden = true; }, 2200);
+  toastTimer = setTimeout(() => { els.toast.hidden = true; }, ms);
 }
 
 /* The finish last picked for each card (so a reverse holo you scan often stays picked). */
@@ -317,6 +320,8 @@ async function identify(region, { live = false } = {}) {
     where: res.where,
     glare: res.glare || 0,
     combined: res.combined || 0,
+    size: res.size || 0,
+    grid: !!res.grid,
     ms: res.ms,
   };
 }
@@ -497,10 +502,10 @@ async function scanLoop() {
       const region = captureVideo();
       const { w, h } = region;
       const t0 = performance.now();
-      const { matches, where, glare, combined } = await identify(region, { live: true });
+      const { matches, where, glare, combined, size, grid } = await identify(region, { live: true });
       if (typeof devFrame === 'function') devFrame(matches, performance.now() - t0);
       if (auto.state !== 'scanning') break;
-      onFrame(matches, where, { w, h }, glare, combined);
+      onFrame(matches, where, { w, h }, glare, combined, { size, grid });
       await sleep(80);
     }
   } catch (err) {
@@ -545,11 +550,18 @@ const GLARE_HINT = 0.25;
  * evidence, so a slightly lower score is enough — still two such frames in a row to lock in.
  * Tuned on tools/sim.js live scans incl. card swaps: no wrong lock-ins. */
 const COMBINED_CONFIDENT = { score: 0.86, gap: 0.03 };
+/* Biggest outline in the guide smaller than this (in guide heights), two frames running →
+ * "move back". Simulated: never in normal scans; ~45% of frames of a card held 1.45–1.8× the box. */
+const CLOSE_SIZE = 0.8;
 const isConfidentCombined = ([best, second]) => best && best.score >= COMBINED_CONFIDENT.score
   && best.score - (second?.score ?? 0) >= COMBINED_CONFIDENT.gap;
-function onFrame(matches, where, region, glare = 0, combined = 0) {
+function onFrame(matches, where, region, glare = 0, combined = 0, { size = 1, grid = false } = {}) {
   auto.glary = glare >= GLARE_HINT ? (auto.glary || 0) + 1 : 0;
-  const tiltHint = auto.glary >= 2 ? 'Glare on the card — tilt it slightly' : null;
+  // Too close: no card-sized outline in view, only smaller ones (the art box) — on a binder
+  // page small outlines sit side by side, so that doesn't count.
+  auto.close = size > 0 && size < CLOSE_SIZE && !grid ? (auto.close || 0) + 1 : 0;
+  const hint = auto.close >= 2 ? 'Too close — move back so the whole card fits in the box'
+    : auto.glary >= 2 ? 'Glare on the card — tilt it slightly' : null;
   auto.recent.push(matches);
   if (auto.recent.length > FUSE_FRAMES) auto.recent.shift();
   const sure = isConfident(matches) || (combined >= 2 && isConfidentCombined(matches));
@@ -585,12 +597,12 @@ function onFrame(matches, where, region, glare = 0, combined = 0) {
   showOutline(key && !ignored ? where : null, region);
 
   if (!key || ignored) {
-    setStatus(els.status, ignored ? 'Got it — point at the next card' : tiltHint || 'Looking for a card…', 'busy');
+    setStatus(els.status, ignored ? 'Got it — point at the next card' : hint || 'Looking for a card…', 'busy');
     return;
   }
   const needed = fusedCard ? 1 : confident ? devVal('lockFrames', 2) : 4;
   if (auto.streak < needed) {
-    setStatus(els.status, !confident && tiltHint ? tiltHint : 'Hold still…', 'busy');
+    setStatus(els.status, !confident && hint ? hint : 'Hold still…', 'busy');
     return;
   }
 
@@ -1277,7 +1289,7 @@ function openDetail(card, { entryKey = null } = {}) {
     <img class="detail-img" src="${esc(card.imageLarge || card.image)}" alt="${esc(card.name)}"
          onerror="this.onerror=null;this.src='${esc(card.image)}'">
     <p class="detail-title">${esc(card.name)}${jpBadge(card)}</p>${card.jaName ? `<p class="detail-sub">${esc(card.jaName)}</p>` : ''}
-    <p class="detail-sub">${esc(card.setName)} · #${esc(card.number)}</p>
+    <p class="detail-sub">${esc(card.setName)} · ${esc(numberText(card))}</p>
     <div class="detail-price">
       <span class="price-label">Market price (AUD)</span>
       <span class="price-value none" id="detailPrice">Loading…</span>
@@ -1305,6 +1317,7 @@ function openDetail(card, { entryKey = null } = {}) {
            <label class="toggle-row"><span>For trade / sale</span><input type="checkbox" id="tradeToggle"></label>
            <button class="btn ghost" id="detailRemove">Remove from collection</button>`
         : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
+      ${wantBoxHtml()}
       ${ebayButton(ebaySoldUrl(card, variant))}
     </div>`;
 
@@ -1336,6 +1349,7 @@ function openDetail(card, { entryKey = null } = {}) {
   $('qtyUp')?.addEventListener('click', () => changeQty(1));
   if (inCollection) showQty();
   wireTradeToggle(() => entryKey);
+  wireWant(card, () => variant);
 
   // Condition (collection cards): value = market price × the condition's factor.
   let unitUsd = null;
@@ -1652,7 +1666,7 @@ function renderCollection() {
     item.innerHTML = `
       <div class="thumb"><img src="${esc(e.image)}" alt="" loading="lazy">${e.qty > 1 ? `<span class="qty">×${e.qty}</span>` : ''}</div>
       <span class="name">${esc(e.name)}${jpBadge(e)}</span>
-      <span class="sub">${esc(e.setName)}${e.kind === 'sealed' ? '' : ` · #${esc(e.number)}`}</span>
+      <span class="sub">${esc(e.setName)}${e.kind === 'sealed' ? '' : ` · ${esc(numberText(e))}`}</span>
       ${e.kind === 'sealed' ? `<span class="sub finish">${esc(e.type)}</span>` : ''}
       ${finish ? `<span class="sub finish">${esc(finish)}</span>` : ''}
       <span class="price">${price}</span>`;
@@ -1685,7 +1699,8 @@ els.collectionSort.addEventListener('change', () => {
 
 els.clearHistory.addEventListener('click', () => {
   $('collectionMenu').open = false;
-  if (confirm('Remove everything from your collection on this device? (Back it up first if you might want it again.)')) {
+  if (confirm('Remove everything from your collection? (A copy is kept in ••• → Automatic backups.)')) {
+    if (typeof backupNow === 'function') backupNow('before-clear'); // backups.js
     saveCollection([]);
     renderCollection();
   }
@@ -2012,6 +2027,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
            <label class="toggle-row"><span>For trade / sale</span><input type="checkbox" id="tradeToggle"></label>
            <button class="btn ghost" id="detailRemove">Remove from collection</button>`
         : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
+      ${wantBoxHtml()}
       ${ebayButton(ebaySoldUrl(item))}
       <a class="btn ghost" href="https://www.tcgplayer.com/product/${esc(productId)}" target="_blank" rel="noopener">View on TCGplayer ↗</a>
     </div>`;
@@ -2041,6 +2057,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
   $('qtyUp')?.addEventListener('click', () => changeQty(1));
   if (inCollection) showQty();
   wireTradeToggle(() => entryKey);
+  wireWant(item);
   els.detail.showModal();
 
   const [sealed, rate] = await Promise.all([getSealed(), getAudRate()]);

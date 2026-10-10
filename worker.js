@@ -61,8 +61,8 @@ self.onmessage = async ({ data: msg }) => {
     }
     const t0 = performance.now();
     const regions = msg.regions.map((r) => ({ ...r, data: new Uint8ClampedArray(r.data) }));
-    const { matches, where, glare, combined } = matcher.match(regions, 12, { live: !!msg.live });
-    self.postMessage({ id: msg.id, matches, where, glare, combined, ms: Math.round(performance.now() - t0) });
+    const { matches, where, glare, combined, size, grid } = matcher.match(regions, 12, { live: !!msg.live });
+    self.postMessage({ id: msg.id, matches, where, glare, combined, size, grid, ms: Math.round(performance.now() - t0) });
   } catch (err) {
     self.postMessage({ id: msg.id, error: err.message });
   }

@@ -5,8 +5,8 @@
  * rounds, salted with the username) and only that is sent. The session token is remembered
  * on this device until you log out.
  *
- * Sync: on start, when the app comes back to the front, and a few seconds after any change,
- * the account's copy is fetched and merged with this device's: entries changed or added here
+ * Sync (collection and want list): on start, when the app comes back to the front, and a few
+ * seconds after any change, the account's copy is fetched and merged with this device's: entries changed or added here
  * win, entries changed or added elsewhere come in, and entries deleted on either side (since
  * the last sync) stay deleted. Then the merged list is saved to both. Offline, the app works
  * from this device's copy and syncs later.
@@ -16,7 +16,7 @@
 
 const ACCOUNT_URL = new URL('./', AU_SOLD_URL).href;
 const SESSION_KEY = 'pokescan.session.v1';   // { username, token }
-const SYNC_KEY = 'pokescan.sync.v1';         // { user, rev, snapshot: { entryKey: JSON } }
+const SYNC_KEY = 'pokescan.sync.v1';         // { user, rev, snapshot: { entryKey: JSON }, wantSnapshot }
 const SYNC_DELAY = 4000;                     // ms after a change
 
 const acct = { session: null, syncing: null, timer: null, applying: false, again: false };
@@ -136,7 +136,7 @@ function acctShowAccount() {
   const row = document.getElementById('accountRow');
   if (row) row.textContent = acct.session ? `Log out (${acct.session.username})` : 'Log in';
   const note = document.querySelector('#view-collection .small-note');
-  if (note && acct.session) note.textContent = `Saved to your account (${acct.session.username}) and this device. Tap a card to change its finish or quantity.`;
+  if (note && acct.session) note.textContent = `Saved to your account (${acct.session.username}) and this device, and backed up by itself each day (••• → Automatic backups). Tap a card to change its finish or quantity.`;
 }
 
 async function acctLogout() {
@@ -149,6 +149,9 @@ async function acctLogout() {
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(SYNC_KEY);
     localStorage.removeItem(COLLECTION_KEY);
+    localStorage.removeItem(WANT_KEY);          // wants.js
+    localStorage.removeItem(WANT_SEEN_KEY);
+    localStorage.removeItem(AUTO_BACKUP_KEY);   // backups.js (the account keeps its own)
   } catch { /* storage blocked */ }
   location.reload();
 }
@@ -180,6 +183,9 @@ function acctMerge(local, remote, snapshot) {
 async function acctSyncOnce() {
   const meta = acctMeta();
   const mine = meta && meta.user === acct.session.username ? meta : { rev: 0, snapshot: {} };
+  const hasWants = typeof loadWants === 'function'; // wants.js
+  const same = (a, b) => a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
+  const snap = (list) => Object.fromEntries(list.map((e) => [e.key, JSON.stringify(e)]));
   for (let attempt = 0; attempt < 3; attempt++) {
     const got = await acctApi('GET', 'sync');
     if (got.status === 401) { acctExpired(); return; }
@@ -187,23 +193,30 @@ async function acctSyncOnce() {
     const remote = got.data.collection || [];
     const local = loadCollection();
     const merged = acctMerge(local, remote, mine.snapshot);
-    const same = (a, b) => a.length === b.length && JSON.stringify(a) === JSON.stringify(b);
+    const remoteWants = got.data.wants || [];
+    const localWants = hasWants ? loadWants() : [];
+    const mergedWants = hasWants ? acctMerge(localWants, remoteWants, mine.wantSnapshot || {}) : remoteWants;
+    acct.applying = true;
     if (!same(merged, local)) {
-      acct.applying = true;
       saveCollection(merged);
-      acct.applying = false;
       if (typeof renderCollection === 'function') { try { renderCollection(); } catch { /* not ready yet */ } }
     }
+    if (hasWants && !same(mergedWants, localWants)) {
+      saveWants(mergedWants);
+      if (wantMode) renderWants();
+    }
+    acct.applying = false;
     let rev = got.data.rev;
-    if (!same(merged, remote)) {
-      const put = await acctApi('PUT', 'sync', { base: rev, collection: merged });
+    if (!same(merged, remote) || !same(mergedWants, remoteWants)) {
+      const put = await acctApi('PUT', 'sync', { base: rev, collection: merged, ...(hasWants && { wants: mergedWants }) });
       if (put.status === 409) continue; // saved from another device meanwhile: merge again
       if (put.status === 401) { acctExpired(); return; }
       if (!put.data.ok) throw new Error(put.data.reason || put.status);
       rev = put.data.rev;
     }
-    const snapshot = Object.fromEntries(merged.map((e) => [e.key, JSON.stringify(e)]));
-    try { localStorage.setItem(SYNC_KEY, JSON.stringify({ user: acct.session.username, rev, snapshot, at: Date.now() })); } catch { /* storage full */ }
+    try {
+      localStorage.setItem(SYNC_KEY, JSON.stringify({ user: acct.session.username, rev, snapshot: snap(merged), wantSnapshot: snap(mergedWants), at: Date.now() }));
+    } catch { /* storage full */ }
     return;
   }
 }

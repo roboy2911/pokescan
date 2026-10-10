@@ -11,7 +11,7 @@
 //   KV       AU_KV              a KV namespace (cache + daily counter)
 //   Optional variables: PAUSED_UNTIL ("YYYY-MM-DD": no searches before then), DAILY_LIMIT (default 400; set to 50 in wrangler.jsonc), CACHE_DAYS (default 3; set to 14 in wrangler.jsonc)
 //
-// Also accounts and collection sync: /auth/signup, /auth/login, /auth/logout, /sync — see
+// Also accounts and collection sync: /auth/signup, /auth/login, /auth/logout, /sync, /backups — see
 // tools/account-worker.mjs.
 //
 // GET /?q=<search words>&n=<card number as printed, e.g. 161/131>[&t=<mode>][&s=<set name>][&w=1]
@@ -47,7 +47,7 @@ export default {
     if (origin && !isAllowed(origin)) return json({ ok: false, reason: 'origin' }, allow, 403);
     const url = new URL(request.url);
     // Accounts and collection sync (tools/account-worker.mjs).
-    if (url.pathname.startsWith('/auth/') || url.pathname === '/sync') {
+    if (url.pathname.startsWith('/auth/') || url.pathname === '/sync' || url.pathname === '/backups') {
       return handleAccount(request, env, url, (body, status = 200) => json(body, allow, status));
     }
     if (request.method !== 'GET') return json({ ok: false, reason: 'method' }, allow, 405);

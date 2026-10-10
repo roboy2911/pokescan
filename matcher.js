@@ -641,9 +641,22 @@ function createMatcher(indexBuffer) {
       for (let cell = 0; cell < a.length; cell++) if ((q.w && !q.w[cell]) || a[cell] > GLARE_VEIL) n++;
       glare = n / a.length;
     }
+    // The biggest outline in the guide, in guide heights (0: none). A card held too close has
+    // no card-sized outline in view, only smaller ones (its art box) — the app asks to move back.
+    // `grid`: other outlines about that size beside it — a binder page, where small is normal.
+    let size = 0, big = null;
+    const infos = cands.filter((c) => c.kind === 'outline' && !c.combined).map((c) => ({ g: c.region.guide, ...quadInfo(c.q) }));
+    for (const o of infos) {
+      const hh = o.h / (o.g.y1 - o.g.y0);
+      if (o.x > o.g.x0 && o.x < o.g.x1 && o.y > o.g.y0 && o.y < o.g.y1 && hh > size) { size = hh; big = o; }
+    }
+    const grid = !!big && infos.some((o) => o !== big && Math.abs(o.h / big.h - 1) < 0.25
+      && Math.hypot(o.x - big.x, o.y - big.y) > 0.6 * big.h);
     return {
       matches: best.ranked,
       glare,
+      size,
+      grid,
       combined: best.c.combined || 0,
       memory: { frames: memory.length, anchor: lastAnchor, ncc: lastNcc, ...(debugIdx !== null && { comp: lastComp, views: lastViews }) },
       where: best.c.kind === 'outline' ? best.c.q : best.c.rect,

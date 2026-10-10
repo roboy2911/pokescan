@@ -8,20 +8,25 @@
 // Storage (the AU_KV namespace, key prefixes):
 //   user:<name>  { salt, hash, created }
 //   sess:<sha256(token)>  { user }              (expires after SESSION_DAYS)
-//   coll:<name>  { rev, updatedAt, collection }  (the user's collection, as the app stores it)
+//   coll:<name>  { rev, updatedAt, collection, wants }  (collection and want list, as the app stores them)
+//   bak:<name>:<YYYY-MM-DD>  { savedAt, collection, wants }  automatic daily backup: the account's
+//                copy as it was before the first change of that day (kept BACKUP_DAYS)
 //   fail:<name>  failed logins in the last 15 min;  signup:<ip>  signups from an IP today
 //
 // POST /auth/signup  { username, key }      → { ok, username, token } | 409 taken
 // POST /auth/login   { username, key }      → { ok, username, token } | 401 | 429 (too many tries)
 // POST /auth/logout  (Authorization: Bearer <token>)
-// GET  /sync         (Bearer)               → { ok, rev, updatedAt, collection | null }
-// PUT  /sync         (Bearer) { base, collection } → { ok, rev, updatedAt }
-//                    | 409 { rev, collection } when someone else saved since `base` (the app merges)
+// GET  /sync         (Bearer)               → { ok, rev, updatedAt, collection | null, wants | null }
+// PUT  /sync         (Bearer) { base, collection, wants? } → { ok, rev, updatedAt }
+//                    | 409 { rev, collection, wants } when someone else saved since `base` (the app merges)
+// GET  /backups      (Bearer)               → { ok, backups: [{ date, count, wants }] }  newest first
+// GET  /backups?d=YYYY-MM-DD (Bearer)       → { ok, date, collection, wants }
 
 const SESSION_DAYS = 120;
 const MAX_FAILS = 10;           // per username per 15 minutes
 const MAX_SIGNUPS_PER_IP = 5;   // per day
 const MAX_COLLECTION = 2e6;     // bytes of JSON
+const BACKUP_DAYS = 30;
 export const USERNAME = /^[a-z0-9_]{3,20}$/;
 
 const enc = new TextEncoder();
@@ -95,7 +100,7 @@ export async function handleAccount(request, env, url, reply) {
     const collKey = `coll:${user}`;
     const saved = await env.AU_KV.get(collKey, 'json');
     if (request.method === 'GET') {
-      return reply({ ok: true, user, rev: saved?.rev ?? 0, updatedAt: saved?.updatedAt ?? null, collection: saved?.collection ?? null });
+      return reply({ ok: true, user, rev: saved?.rev ?? 0, updatedAt: saved?.updatedAt ?? null, collection: saved?.collection ?? null, wants: saved?.wants ?? null });
     }
     if (request.method !== 'PUT') return reply({ ok: false, reason: 'method' }, 405);
     const text = await request.text();
@@ -104,10 +109,36 @@ export async function handleAccount(request, env, url, reply) {
     try { body = JSON.parse(text); } catch { return reply({ ok: false, reason: 'json' }, 400); }
     if (!Array.isArray(body?.collection)) return reply({ ok: false, reason: 'collection' }, 400);
     const rev = saved?.rev ?? 0;
-    if (Number(body.base) !== rev) return reply({ ok: false, reason: 'conflict', rev, collection: saved?.collection ?? [] }, 409);
-    const next = { rev: rev + 1, updatedAt: new Date().toISOString(), collection: body.collection };
+    if (Number(body.base) !== rev) return reply({ ok: false, reason: 'conflict', rev, collection: saved?.collection ?? [], wants: saved?.wants ?? [] }, 409);
+    // Automatic backup: the first change of each day keeps a copy of how it was.
+    const day = new Date().toISOString().slice(0, 10);
+    const bakKey = `bak:${user}:${day}`;
+    if (saved?.collection?.length || saved?.wants?.length) {
+      if (!await env.AU_KV.get(bakKey)) {
+        await env.AU_KV.put(bakKey, JSON.stringify({ savedAt: saved.updatedAt, collection: saved.collection ?? [], wants: saved.wants ?? [] }),
+          { expirationTtl: BACKUP_DAYS * 86400, metadata: { count: (saved.collection ?? []).reduce((n, e) => n + (Number(e?.qty) || 1), 0), wants: (saved.wants ?? []).length } });
+      }
+    }
+    const wants = Array.isArray(body.wants) ? body.wants : saved?.wants ?? [];
+    const next = { rev: rev + 1, updatedAt: new Date().toISOString(), collection: body.collection, wants };
     await env.AU_KV.put(collKey, JSON.stringify(next));
     return reply({ ok: true, rev: next.rev, updatedAt: next.updatedAt });
+  }
+
+  if (path === '/backups') {
+    const user = await sessionUser(request, env);
+    if (!user) return reply({ ok: false, reason: 'login' }, 401);
+    if (request.method !== 'GET') return reply({ ok: false, reason: 'method' }, 405);
+    const d = url.searchParams.get('d');
+    if (d) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return reply({ ok: false, reason: 'date' }, 400);
+      const b = await env.AU_KV.get(`bak:${user}:${d}`, 'json');
+      return b ? reply({ ok: true, date: d, ...b }) : reply({ ok: false, reason: 'not-found' }, 404);
+    }
+    const { keys } = await env.AU_KV.list({ prefix: `bak:${user}:` });
+    const backups = keys.map((k) => ({ date: k.name.slice(-10), count: k.metadata?.count ?? null, wants: k.metadata?.wants ?? 0 }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    return reply({ ok: true, backups });
   }
 
   return reply({ ok: false, reason: 'not-found' }, 404);
