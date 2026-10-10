@@ -33,13 +33,13 @@ async function ebayToken(env) {
 }
 
 export async function handleListings(request, env, url, reply) {
-  if (!env.EBAY_CLIENT_ID || !env.EBAY_CLIENT_SECRET) return reply({ ok: false, reason: 'no-ebay-key' });
+  if (!env.EBAY_CLIENT_ID || !env.EBAY_CLIENT_SECRET) return reply({ ok: false, reason: 'no-ebay-key', listings: 1 });
   if (!env.AU_KV) return reply({ ok: false, reason: 'no-storage' }, 500);
   const q = (url.searchParams.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 120);
   const n = (url.searchParams.get('n') || '').trim().slice(0, 20);
   const t = ['o', 'r25', 'r30', 'ja'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
   const set = (url.searchParams.get('s') || '').trim().slice(0, 60);
-  if (q.length < 3) return reply({ ok: false, reason: 'query' }, 400);
+  if (q.length < 3) return reply({ ok: false, reason: 'query', listings: 1 }, 400);
   const key = `ls:v1:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
   const cached = await env.AU_KV.get(key, 'json');
   if (cached) return reply({ ...cached, cached: true });

@@ -9,7 +9,7 @@ export const SOLDCOMPS_PARAMS = {
 const MIN_SALES = 3;
 
 // Listings that aren't a single raw copy of the card.
-const JUNK = /\b(psa|cgc|bgs|beckett|ace\s?\d|tag\s?\d|ags\s?\d|sgc|graded|slab|gem\s?mint\s?10|lot|bundle|bulk|mystery|repack|custom|proxy|replica|fake|diy|inspired|fan\s?art|handmade|unofficial|orica|metal|gold\s?(card|plated|foil)|coin|sticker|poster|art\s?print|digital|code\s?card|choose|pick\s?(your|a|one)|you\s?pick|empty|case\s?only|toploader\s?only)\b/i;
+const JUNK = /\b(psa|cgc|bgs|beckett|ace\s?\d|tag\s?\d|ags\s?\d|sgc|ark\s?\d|mnt\s?\d|pca\s?\d|gma\s?\d|hga\s?\d|ksa\s?\d|graded|slab|gem\s?mint(\s?\d+(\.\d)?)?|lot|bundle|bulk|mystery|repack|custom|proxy|replica|fake|diy|inspired|fan\s?art|handmade|unofficial|orica|metal|gold\s?(card|plated|foil)|coin|sticker|poster|art\s?print|digital|code\s?card|choose|pick\s?(your|a|one)|you\s?pick|empty|case\s?only|toploader\s?only)\b/i;
 // More than one item: "x 2", "2x", "x3", "set of", "pair".
 const MULTI = /(\bx\s?[2-9]\d?\b|\b[2-9]\d?\s?x\b|\bset of\b|\bpair\b|\b[2-9]\d? (packs|boxes|bundles|etbs|tins)\b)/i;
 // Not Near Mint: prices are for NM copies (the app values other conditions from it), so
