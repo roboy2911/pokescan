@@ -947,3 +947,6 @@ body.gated { overflow: hidden; }
 .dev-pick .risk { font-size: .72rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
 .dev-pick .risk.safer { background: rgba(60, 207, 122, .15); color: var(--ok); }
 .dev-pick .risk.riskier { background: rgba(255, 184, 107, .15); color: #ffb86b; }
+.dev-budget { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: .86rem; margin: 6px 0 8px; }
+.dev-budget input { width: 6.5em; font-size: 16px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+.dev-budget span { display: flex; flex-wrap: wrap; gap: 4px; }

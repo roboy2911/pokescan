@@ -239,20 +239,28 @@ async function devRenderPicks(box) {
   box.innerHTML = '<p class="dev-msg"><span class="spinner"></span>Loading…</p>';
   const [picks, rate, sealed] = await Promise.all([fetchRetry('data/picks.json', { tries: 3 }).catch(() => null), getAudRate(), getSealed(), dbReady.catch(() => {})]);
   if (!picks) { box.innerHTML = '<p class="dev-msg">No buy ideas yet — they\'re built with the daily price update.</p>'; return; }
+  const BUDGET_KEY = 'pokescan.dev.budget';
+  let budget = null;
+  try { budget = Number(localStorage.getItem(BUDGET_KEY)) || null; } catch { /* no storage */ }
   const view = { kind: 'cards', risk: 'all' };
+  const audOf = (p) => (view.kind === 'au' ? p.aud : p.usd * rate.rate);
   const seg = (name, opts) => `<div class="seg dev-seg" data-seg="${name}">${opts.map(([v, l], i) => `<button type="button" data-v="${v}" class="${i ? '' : 'active'}">${l}</button>`).join('')}</div>`;
   box.innerHTML = `
     <p class="dev-msg">Cards and sealed product that look likely to rise, or are already rising, and why. Built ${devEsc(new Date(picks.built).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }))} from TCGplayer prices and listings${picks.days < 14 ? ` — price history only goes back to ${devEsc(shortDate(picks.since))}, so trends count for little yet (better each week)` : ''}.</p>
-    <div class="dev-picks-tools">${seg('kind', [['cards', `Cards (${picks.cards.length})`], ['sealed', `Sealed (${picks.sealed.length})`], ...(picks.au ? [['au', `AU sold (${picks.au.length})`]] : [])])}
+    <div class="dev-picks-tools">${seg('kind', [['cards', 'Cards'], ['sealed', 'Sealed'], ...(picks.au ? [['au', 'AU sold']] : [])])}
       ${seg('risk', [['all', 'All'], ['safer', 'Safer'], ['riskier', 'Riskier']])}</div>
+    <label class="dev-budget">Max price A$ <input type="number" inputmode="decimal" min="0" step="1" placeholder="any" value="${budget ?? ''}" data-budget>
+      <span>${[20, 50, 100, 250].map((v) => `<button type="button" class="chip" data-b="${v}">${v}</button>`).join('')}<button type="button" class="chip" data-b="">any</button></span></label>
     <p class="dev-msg" data-au-note hidden>Ranked on what each card actually sells for on eBay Australia (near-mint sales, last 90 days)${picks.auInfo ? ` — ${picks.auInfo.priced.toLocaleString()} cards with an Australian price, checked up to ${devEsc(shortDate(picks.auInfo.asOf || picks.built.slice(0, 10)))}, plus every card looked up in the app since` : ''}. No new searches are made for this (no credits). "Cheaper in Australia" can also mean sellers here list worn copies as near mint — check the photos.</p>
     <div class="dev-picks" data-list></div>
     <p class="dev-msg">Not financial advice — reasons to look closer, not guarantees. Prices are TCGplayer (US) market prices in AUD; check Australian sold prices before buying.</p>`;
   const draw = () => {
     const list = box.querySelector('[data-list]');
     box.querySelector('[data-au-note]').hidden = view.kind !== 'au';
-    const items = picks[view.kind].filter((p) => view.risk === 'all' || p.risk === view.risk);
-    list.innerHTML = items.length ? '' : '<p class="dev-msg">None in this list today.</p>';
+    const all = picks[view.kind].filter((p) => (view.risk === 'all' || p.risk === view.risk) && (!budget || audOf(p) <= budget));
+    const items = all.slice(0, 40);
+    list.innerHTML = items.length ? '' : `<p class="dev-msg">None in this list today${budget ? ` under A$${budget} — try a higher limit` : ''}.</p>`;
+    box.querySelectorAll('[data-b]').forEach((b) => b.classList.toggle('active', String(budget ?? '') === b.dataset.b));
     for (const p of items) {
       const isCard = view.kind !== 'sealed';
       const item = isCard ? db.byId?.get(p.id) : sealed.byKey.get(p.key);
@@ -276,6 +284,14 @@ async function devRenderPicks(box) {
       list.appendChild(row);
     }
   };
+  const setBudget = (v) => {
+    budget = Number(v) > 0 ? Number(v) : null;
+    try { if (budget) localStorage.setItem(BUDGET_KEY, String(budget)); else localStorage.removeItem(BUDGET_KEY); } catch { /* no storage */ }
+    box.querySelector('[data-budget]').value = budget ?? '';
+    draw();
+  };
+  box.querySelector('[data-budget]').addEventListener('change', (e) => setBudget(e.target.value));
+  box.querySelectorAll('[data-b]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); setBudget(b.dataset.b); }));
   box.querySelectorAll('[data-seg]').forEach((g) => g.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;

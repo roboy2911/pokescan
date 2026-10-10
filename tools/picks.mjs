@@ -166,7 +166,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     if (n >= 3) continue;
     perSet.set(p.set, n + 1);
     cards.push(p);
-    if (cards.length >= 60) break;
+    if (cards.length >= 250) break;
   }
 
   /* ---------- Sealed ---------- */
@@ -179,6 +179,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     const age = monthsSince(set[3], date);
     const reasons = [];
     let score = 0, risky = 0;
+    if (/booster pack|blister|tin/i.test(s.type) && age != null && age >= 9) { score += 6; reasons.push('cheap way into an out-of-print set — packs only get scarcer'); }
     if (/booster box|elite trainer|booster bundle|ultra-premium/i.test(s.type)) { score += 10; reasons.push(`${/box$/i.test(s.type) ? `${s.type}es` : `${s.type}s`} are what collectors keep sealed`); }
     if (HOT_SETS.test(set[0] || '')) { score += 12; reasons.push(`${set[0]} is a set collectors chase`); }
     if (age != null) {
@@ -207,7 +208,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
       else if (t.chg < -6) { score -= 8; reasons.push(`down ${pct(t.chg)} since ${dayName(history.dates[0])}`); }
       if (t.chg > 20) { risky++; reasons.push('rising fast — could cool off'); }
     }
-    if (score < 24) continue;
+    if (score < (s.usd < 40 ? 18 : 24)) continue;
     const safer = !risky && age != null && age >= 9;
     sealedPicks.push({ key, id: s.id, name: s.name, set: set[0] || s.set, type: s.type, usd: s.usd, score: Math.round(score), risk: safer ? 'safer' : 'riskier', reasons });
   }
@@ -219,7 +220,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     if (n >= 2) continue;
     perSetS.set(p.set, n + 1);
     sealed.push(p);
-    if (sealed.length >= 40) break;
+    if (sealed.length >= 150) break;
   }
 
   const au = await auPicks({ prices, cardsMeta, date, lst });
@@ -313,7 +314,7 @@ async function auPicks({ prices, cardsMeta, date, lst }) {
     if (n >= 3) continue;
     perSet.set(p.set, n + 1);
     out.push(p);
-    if (out.length >= 50) break;
+    if (out.length >= 200) break;
   }
   return { picks: out, info: { priced, withSales, rate, exported: Object.keys(exported).length, asOf: pre.asOf ?? null } };
 }
