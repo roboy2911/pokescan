@@ -1319,6 +1319,7 @@ function openDetail(card, { entryKey = null } = {}) {
            <button class="btn ghost" id="detailRemove">Remove from collection</button>`
         : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
       ${wantBoxHtml()}
+      <button type="button" class="btn ghost" id="gradeOpen">🔍 Grade this card</button>
       ${ebayButton(ebaySoldUrl(card, variant))}
     </div>`;
 
@@ -1351,6 +1352,7 @@ function openDetail(card, { entryKey = null } = {}) {
   if (inCollection) showQty();
   wireTradeToggle(() => entryKey);
   wireWant(card, () => variant);
+  $('gradeOpen').addEventListener('click', () => openGrader(card)); // grade.js
 
   // Condition (collection cards): value = market price × the condition's factor.
   let unitUsd = null;

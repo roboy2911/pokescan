@@ -34,6 +34,11 @@ your phone's home screen like an app (PWA), and works offline after the first vi
 - **Automatic backups** (Collection → ••• → Automatic backups) — a copy on the phone every day
   (last 7) and before "Remove everything" or a restore; your account also keeps each day's
   starting point for 30 days. Tap one to put it back (`backups.js`).
+- **Card grader** (card sheet → 🔍 Grade this card) — free, on the phone. Guided photos (front,
+  back, two tilted "reflection" shots), then a report: centering front and back (e.g. 55/45),
+  edge and corner whitening, soft / chipped corners, marks and dents (compared with the official
+  image), scratches (in the reflection), an estimated PSA range and NM/LP/MP condition. Marked
+  up pictures show where. An estimate, not a grading company's grade (`grade-core.js`, `grade.js`).
 - **Market** — biggest risers and fallers over 1, 7 and 30 days, and items at their
   highest / lowest since tracking began (6 Oct 2026; Japanese from 8 Oct), for English or
   Japanese cards and sealed product.
@@ -232,6 +237,7 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 | `index.html`, `style.css` | Page layout and styling (Scan / Search / Sets / Collection / Market) |
 | `app.js` | Camera, auto-scan, results, search, sets, collection, market |
 | `wants.js`, `backups.js` | Want list; automatic backups |
+| `grade-core.js`, `grade.js` | Card grader: measuring; photo steps and report (test images: `tools/grade-sim.js`) |
 | `account.js` | Login and sync with the account (server side: `tools/account-worker.mjs`) |
 | `worker.js`, `matcher.js` | Background matching: finding the card and identifying it |
 | `detect.js` | Card outline detection and perspective correction |
