@@ -849,7 +849,7 @@ function showHero(card, score) {
   els.heroImg.src = card.image;
   els.heroImg.alt = card.name;
   els.heroName.innerHTML = esc(card.name) + jpBadge(card);
-  els.heroSub.textContent = `${card.setName} · #${card.number}${card.setTotal ? '/' + card.setTotal : ''}`;
+  els.heroSub.textContent = `${card.setName} · ${numberText(card)}`;
   els.heroTags.innerHTML = [
     score != null ? `<span class="tag match">${Math.round(Math.max(0, score) * 100)}% match</span>` : '',
     card.rarity ? `<span class="tag">${esc(card.rarity)}</span>` : '',
@@ -961,6 +961,28 @@ const normName = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 // "025" → "25", "TG05" → "TG5", "SWSH020" → "SWSH20": compare numbers without padding.
 const normNumber = (s) => String(s).toUpperCase().replace(/(^|[A-Z])0+(?=\d)/g, '$1');
 
+/* Black Star promos, searchable the way they're printed and listed: "SVP 044", "SVP044",
+ * "SWSH 020", "SM60"… Bare codes are added as words, and the number with or without its code. */
+const PROMO_CODES = { svp: 'svp', swshp: 'swsh', smp: 'sm', xyp: 'xy', bwp: 'bw', dpp: 'dp', hsp: 'hgss', np: 'np', basep: 'wotc' };
+function promoNumbers(c) {
+  const code = PROMO_CODES[c.setId];
+  const n = normNumber(c.number);
+  if (!code) return [n];
+  const digits = n.replace(/^[A-Z]+/, '');
+  return [...new Set([n, digits, code.toUpperCase() + digits])];
+}
+
+/* The number as printed: "4/102", promos "SVP 044" / "SWSH020" (no set size: promo sets have
+ * none printed). `hash` puts "#" before a plain number. */
+function numberText(card, { hash = true } = {}) {
+  if (!card.number) return '';
+  if (PROMO_CODES[card.setId] && card.lang !== 'ja') {
+    if (/^\d+$/.test(card.number) && card.setId === 'svp') return `SVP ${card.number.padStart(3, '0')}`;
+    return /^\d/.test(card.number) ? `${hash ? '#' : ''}${card.number}` : card.number;
+  }
+  return `${hash ? '#' : ''}${card.number}${card.setTotal ? '/' + card.setTotal : ''}`;
+}
+
 let searchIndex = null;
 /* English and Japanese cards are indexed apart, so English searches stay as quick as before:
  * Japanese cards come up when the query says "jp" / "japanese" or is written in Japanese. */
@@ -970,9 +992,10 @@ function getSearchIndex(lang = 'en') {
     for (const c of db.cards) {
       (c.lang === 'ja' ? searchIndex.ja : searchIndex.en).push({
         c,
-        words: ` ${normName(`${c.name} ${c.setName}${c.jaName ? ` ${c.jaName}` : ''}`)} `,
+        words: ` ${normName(`${c.name} ${c.setName}${c.jaName ? ` ${c.jaName}` : ''}${PROMO_CODES[c.setId] && c.lang !== 'ja' ? ` ${PROMO_CODES[c.setId]} promo` : ''}`)} `,
         name: normName(c.name),
         number: normNumber(c.number),
+        numbers: promoNumbers(c),
         total: String(c.setTotal ?? ''),
       });
     }
@@ -992,7 +1015,7 @@ function parseQuery(q) {
 function cardMatches(e, tokens) {
   return tokens.every((t) => {
     if (t.number) {
-      if (e.number === t.number && (!t.total || e.total === t.total)) return true;
+      if (e.numbers.includes(t.number) && (!t.total || e.total === t.total)) return true;
       return !t.total && e.words.includes(` ${t.text} `); // a number that's part of a name, e.g. "151"
     }
     return e.words.includes(t.text);
@@ -1001,8 +1024,11 @@ function cardMatches(e, tokens) {
 
 /* Best first: the exact name, then names containing the typed words as whole words ("mew"
  * finds Mew ex before Mewtwo), then names starting with them; newest set first within each. */
+const PROMO_WORDS = new Set(Object.values(PROMO_CODES));
 function rankCards(list, tokens) {
-  const text = tokens.filter((t) => !t.number).map((t) => t.text);
+  // A promo code ("svp", "sm 60") puts that promo set first and isn't part of the name.
+  const codes = tokens.filter((t) => PROMO_WORDS.has(t.text)).map((t) => t.text);
+  const text = tokens.filter((t) => !t.number && !PROMO_WORDS.has(t.text)).map((t) => t.text);
   const phrase = text.join(' ');
   const tier = (e) => {
     if (!text.length) return 0;
@@ -1014,7 +1040,8 @@ function rankCards(list, tokens) {
     return 4;
   };
   for (const e of list) e.tier = tier(e);
-  return list.sort((x, y) => x.tier - y.tier
+  const promo = (e) => (codes.length && codes.includes(PROMO_CODES[e.c.setId]) ? 0 : 1);
+  return list.sort((x, y) => promo(x) - promo(y) || x.tier - y.tier
     || (y.c.releaseDate || '').localeCompare(x.c.releaseDate || '') || byNumber(x.c, y.c));
 }
 
@@ -1111,7 +1138,7 @@ function cardRow(card, { score = null, onClick = () => openDetail(card), extra =
     <img src="${esc(card.image)}" alt="" loading="lazy">
     <div class="meta">
       <div class="name">${esc(card.name)}${jpBadge(card)}</div>
-      <div class="sub">${esc(card.setName)}${card.number ? ` · #${esc(card.number)}${card.setTotal ? '/' + esc(card.setTotal) : ''}` : ''}</div>
+      <div class="sub">${esc(card.setName)}${card.number ? ` · ${esc(numberText(card))}` : ''}</div>
       <div class="sub">${esc([card.rarity, card.releaseDate?.slice(0, 4),
         score !== null ? `${Math.round(Math.max(0, score) * 100)}% match` : ''].filter(Boolean).join(' · '))}</div>
     </div>${extra ? `<span class="row-price">${esc(extra)}</span>` : ''}`;
@@ -1240,7 +1267,7 @@ function openDetail(card, { entryKey = null } = {}) {
   const rows = [
     ['Set', card.setName],
     ['Series', card.setSeries],
-    ['Number', `${card.number}${card.setTotal ? ' / ' + card.setTotal : ''}`],
+    ['Number', numberText(card, { hash: false })],
     ['Rarity', card.rarity],
     ['Released', card.releaseDate],
     ['Card ID', card.id],
@@ -1839,7 +1866,7 @@ function tradeListText() {
     const qty = e.qty > 1 ? ` ×${e.qty}` : '';
     const each = e.qty > 1 && unit != null ? ' each' : '';
     if (e.kind === 'sealed') return `${e.name} · ${e.type}${qty} · ${price(unit)}${each}`;
-    const num = `#${e.number}${e.setTotal ? '/' + e.setTotal : ''}`;
+    const num = numberText(e);
     const finish = (e.variant ? ` · ${variantLabel(e.variant)}` : '') + (e.condition && e.condition !== 'NM' ? ` · ${e.condition}` : '');
     return `${e.name} · ${e.setName} ${num}${finish}${qty} · ${price(unit)}${each}`;
   });
