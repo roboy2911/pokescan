@@ -333,3 +333,7 @@ Claude "remove <name>".
 ## Owner request (Sat) — login and account sync
 
 - **Feature: log in to use the app; collection saved to your account** — `df94bae`. Login / sign-up screen (anyone can sign up, username + password), stays logged in per device, collection synced via the Cloudflare worker (merge across devices), Log out in Collection → •••. Password never sent (PBKDF2 on the phone); only hashes stored. Verified live: the worker answers the new account endpoints. *Remove:* `git revert df94bae` (accounts stay in KV, harmless).
+
+## Owner request (Sat) — "Couldn't load the card database: Load failed"
+
+- **Fix: app sometimes failed to load on open** — `009c2d3`. Cause: the app downloads its card data the instant it opens, often before the phone's connection has woken up, and gave up on the first failure. Now each data file is retried (0.5 → 6 s, ~14 s total, waits for the connection to come back), the service worker keeps a copy of the data files that app updates don't wipe (and uses it if the network is slow/failing), and if it still can't load there's a **Try again** button instead of reopening the app. Offline, retries stop quickly so search doesn't hang. Tested: 1, 2 and 4 failed downloads in a row → loads with prices; offline reload → loads and searches. Regression (smoke, e2e, UI, account tests) unchanged. *Remove:* `git revert 009c2d3`.
