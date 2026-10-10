@@ -1252,11 +1252,16 @@ function auSoldText(au, tcgText) {
 }
 /* "For sale now in Australia": the cheapest near-mint Buy It Now copies on eBay AU. `usual`:
  * the AU sold price (AUD) to compare with. */
+/* The set name sellers write ("Scarlet & Violet 151" → "151", "Base" → "Base Set"). */
+function listingSetName(item) {
+  const n = (item.setName || '').replace(/^Scarlet & Violet[—–-]?\s*(?=\S)/, '').replace(/^Base$/, 'Base Set').replace(/ Black Star Promos$/, '');
+  return n.length >= 3 ? n : item.setName || '';
+}
 async function showForSale(el, item, variant, usual = null) {
   if (!el) return;
   const { q, n, t, s } = ebaySoldQuery(item, variant);
   el.innerHTML = '<p class="price-note">Checking what\'s for sale on eBay Australia…</p>';
-  const r = await getListings(q, n, t, s);
+  const r = await getListings(q, n, t, s, item.lang === 'ja' ? '' : listingSetName(item));
   if (!el.isConnected) return;
   if (!r.ok) { el.innerHTML = ''; return; }
   if (!r.count) { el.innerHTML = '<p class="price-note">None for sale on eBay Australia right now (near mint, Buy It Now).</p>'; return; }

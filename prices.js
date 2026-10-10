@@ -115,11 +115,12 @@ const auSoldPending = new Map(); // one search per card even if two screens ask 
  * /listings, eBay's Browse API). { ok, count, cheapest: [{ title, aud, url, img }], median } or
  * { ok: false, reason }. Kept in memory for this visit (the worker keeps answers 6 hours). */
 const listingsMem = new Map();
-function getListings(q, n = '', t = '', s = '') {
-  const key = `${q}|${n}|${t}|${s}`.toLowerCase();
+function getListings(q, n = '', t = '', s = '', e = '') {
+  const key = `${q}|${n}|${t}|${s}|${e}`.toLowerCase();
   if (!listingsMem.has(key)) {
     const u = new URL('listings', AU_SOLD_URL);
-    u.search = new URLSearchParams({ q, n, ...(t && { t }), ...(s && { s }) });
+    // e: the card's English set name — an unmarked listing must name it to count as English.
+    u.search = new URLSearchParams({ q, n, ...(t && { t }), ...(s && { s }), ...(e && { e }) });
     listingsMem.set(key, fetch(u).then((r) => r.json()).catch(() => ({ ok: false, reason: 'offline' }))
       .then((j) => { if (!j.ok) listingsMem.delete(key); return j; }));
   }

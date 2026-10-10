@@ -6,14 +6,17 @@
 // first (price + postage).
 //
 // Secrets (Cloudflare dashboard): EBAY_CLIENT_ID (App ID), EBAY_CLIENT_SECRET (Cert ID).
-// GET /listings?q=<search words>&n=<number>[&t=<mode>][&s=<set>]
+// GET /listings?q=<search words>&n=<number>[&t=<mode>][&s=<set>][&e=<English set name>]
 //   → { ok, count, cheapest: [{ title, aud, price, ship, url, img }], median, asOf }
 //   | { ok: false, reason: 'no-ebay-key' | 'daily-limit' | … }
 // Answers are kept 6 hours; at most EBAY_DAILY_LIMIT (default 3000) searches a day (eBay
-// allows 5,000).
+// allows 5,000). Each card lookup is 2 eBay searches (language-marked + unmarked).
 import { matching, OTHER_LANG } from './au-sold-filter.mjs';
 
 const KEEP_HOURS = 6;
+// Signs a listing is a Japanese card: Japanese writing, Japanese set codes (sv2a, s8b, sm12a,
+// SV-P, S-P), Japanese-only rarity codes (SAR, CHR, CSR, AR), "Japan(ese)".
+const JP_SIGNS = /[\u3040-\u30ff\u3400-\u9fff]|\b(sv\d{1,2}[a-z]|s\d{1,2}[a-z]|sm\d{1,2}[a-z+]|sv-?p|s-p|sm-p|sar|chr|csr|ar)\b|\bjapan(ese)?\b|\bjpn?\b/i;
 
 async function ebayToken(env) {
   const saved = await env.AU_KV.get('ebay:token');
@@ -44,7 +47,7 @@ export async function handleListings(request, env, url, reply) {
   const t = ['o', 'r25', 'r30', 'ja'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
   const set = (url.searchParams.get('s') || '').trim().slice(0, 60);
   if (q.length < 3) return reply({ ok: false, reason: 'query', listings: 1 }, 400);
-  const key = `ls:v3${url.searchParams.get('x') === 'all' ? 'x' : ''}:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
+  const key = `ls:v4:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
   const cached = await env.AU_KV.get(key, 'json');
   if (cached) return reply({ ...cached, cached: true });
 
@@ -54,30 +57,42 @@ export async function handleListings(request, env, url, reply) {
   if (used >= (Number(env.EBAY_DAILY_LIMIT) || 3000)) return reply({ ok: false, reason: 'daily-limit' });
   await env.AU_KV.put(countKey, String(used + 1), { expirationTtl: 2 * 86400 });
 
+  // The card's language: eBay's own "Language" item detail. Sellers often leave it out, so two
+  // searches: copies marked with the language, plus unmarked ones that the title shows are
+  // that language (for English: names the English set or says English, and no Japanese signs).
+  const japanese = OTHER_LANG.test(q) || t === 'ja';
+  const setName = (url.searchParams.get('e') || '').trim().slice(0, 60);
   let items;
   try {
     const token = await ebayToken(env);
-    const api = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
-    // English cards only: eBay's own "Language" item detail (CCG Individual Cards), unless this
-    // is a Japanese card. (x=all: no language filter, for comparing.)
-    const lang = url.searchParams.get('x') === 'all' ? null : OTHER_LANG.test(q) ? 'Japanese' : 'English';
-    api.search = new URLSearchParams({
-      q: `pokemon ${q}`,
-      limit: '100',
-      sort: 'price',
-      filter: 'buyingOptions:{FIXED_PRICE},itemLocationCountry:AU,deliveryCountry:AU',
-      ...(lang && n && { category_ids: '183454', aspect_filter: `categoryId:183454,Language:{${lang}}` }),
-    });
-    const res = await fetch(api, {
-      headers: {
-        authorization: `Bearer ${token}`,
-        'x-ebay-c-marketplace-id': 'EBAY_AU',
-        'x-ebay-c-enduserctx': 'contextualLocation=country=AU',
-      },
-    });
-    if (res.status === 401) await env.AU_KV.delete('ebay:token');
-    if (!res.ok) throw new Error(`ebay-${res.status}`);
-    items = (await res.json()).itemSummaries ?? [];
+    const search = async (lang) => {
+      const api = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
+      api.search = new URLSearchParams({
+        q: `pokemon ${q}`,
+        limit: '100',
+        sort: 'price',
+        filter: 'buyingOptions:{FIXED_PRICE},itemLocationCountry:AU,deliveryCountry:AU',
+        ...(lang && { category_ids: '183454', aspect_filter: `categoryId:183454,Language:{${lang}}` }),
+      });
+      const res = await fetch(api, {
+        headers: { authorization: `Bearer ${token}`, 'x-ebay-c-marketplace-id': 'EBAY_AU', 'x-ebay-c-enduserctx': 'contextualLocation=country=AU' },
+      });
+      if (res.status === 401) await env.AU_KV.delete('ebay:token');
+      if (!res.ok) throw new Error(`ebay-${res.status}`);
+      return (await res.json()).itemSummaries ?? [];
+    };
+    if (!n) {
+      items = await search(null); // sealed product: no language detail on those listings
+    } else {
+      const [marked, all] = await Promise.all([search(japanese ? 'Japanese' : 'English'), search(null)]);
+      const ids = new Set(marked.map((it) => it.itemId));
+      const norm = (x) => x.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, ' ');
+      const unmarkedOk = (title) => (japanese
+        ? JP_SIGNS.test(title) || OTHER_LANG.test(title)
+        : !JP_SIGNS.test(title) && (/\b(english|eng)\b/i.test(title) || (setName.length >= 3 && norm(title).includes(norm(setName)))));
+      items = [...marked.filter((it) => japanese || !JP_SIGNS.test(it.title || '')),
+        ...all.filter((it) => !ids.has(it.itemId) && unmarkedOk(it.title || ''))];
+    }
   } catch (err) {
     return reply({ ok: false, reason: err.message }, 502);
   }

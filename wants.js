@@ -121,7 +121,7 @@ async function wantPrices(list = loadWants()) {
   // the target (a copy you could buy today).
   await Promise.all(list.map(async (e) => {
     const { q, n, t, s } = ebaySoldQuery(e, e.variant);
-    const r = await getListings(q, n, t, s).catch(() => null);
+    const r = await getListings(q, n, t, s, e.lang === 'ja' || e.kind === 'sealed' ? '' : listingSetName(e)).catch(() => null);
     if (!r?.ok || !r.count || !out[e.key]) return;
     const c = r.cheapest[0];
     out[e.key].listed = { aud: c.aud, url: c.url, count: r.count };

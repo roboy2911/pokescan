@@ -303,7 +303,7 @@ async function auPicks({ prices, cardsMeta, date, lst }) {
     if (age != null && age < 4) { risky++; reasons.push('new set — still being printed'); }
     const ageDays = (Date.parse(date) - Date.parse(a.date)) / 86400000;
     if (score < 14) continue; // the rest can't make the list even with good supply news
-    picks.push({ key: t.key, q: t.q, n: t.n, t: t.t, s: t.set, id: t.id, name: m.name, number: m.number, set: set[0] || m.setId, rarity: m.rarity, finish: t.q.match(/(reverse holo|1st edition)$/i)?.[1] ?? null,
+    picks.push({ key: t.key, q: t.q, n: t.n, t: t.t, s: t.set, e: (set[0] || '').replace(/^Scarlet & Violet[—–-]?\s*(?=\S)/, '').replace(/^Base$/, 'Base Set').replace(/ Black Star Promos$/, ''), id: t.id, name: m.name, number: m.number, set: set[0] || m.setId, rarity: m.rarity, finish: t.q.match(/(reverse holo|1st edition)$/i)?.[1] ?? null,
       aud: Math.round(a.aud), usAud: Math.round(t.aud), sales: a.n, auDate: a.date, stale: ageDays > 30,
       score, risky, reasons });
   }
@@ -317,7 +317,7 @@ async function auPicks({ prices, cardsMeta, date, lst }) {
     while (queue.length) {
       const p = queue.shift();
       const u = new URL('listings', WORKER);
-      u.search = new URLSearchParams({ q: p.q, n: p.n, ...(p.t && { t: p.t }), ...(p.s && { s: p.s }) });
+      u.search = new URLSearchParams({ q: p.q, n: p.n, ...(p.t && { t: p.t }), ...(p.s && { s: p.s }), ...(p.e && { e: p.e }) });
       let r = null;
       try { r = await (await fetch(u, { headers: HEADERS })).json(); } catch { /* skip */ }
       if (!r?.ok) continue;
@@ -337,7 +337,7 @@ async function auPicks({ prices, cardsMeta, date, lst }) {
   for (const p of picks) {
     p.risk = !p.risky && p.sales >= 5 ? 'safer' : 'riskier';
     p.score = Math.round(p.score);
-    delete p.risky; delete p.q; delete p.n; delete p.t; delete p.s;
+    delete p.risky; delete p.q; delete p.n; delete p.t; delete p.s; delete p.e;
   }
   picks.splice(0, picks.length, ...picks.filter((p) => p.score >= 24));
   picks.sort((p1, p2) => p2.score - p1.score || p2.aud - p1.aud);
