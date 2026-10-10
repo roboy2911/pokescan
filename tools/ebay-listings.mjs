@@ -44,7 +44,7 @@ export async function handleListings(request, env, url, reply) {
   const t = ['o', 'r25', 'r30', 'ja'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
   const set = (url.searchParams.get('s') || '').trim().slice(0, 60);
   if (q.length < 3) return reply({ ok: false, reason: 'query', listings: 1 }, 400);
-  const key = `ls:v2${url.searchParams.get('x') === 'all' ? 'x' : ''}:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
+  const key = `ls:v3${url.searchParams.get('x') === 'all' ? 'x' : ''}:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
   const cached = await env.AU_KV.get(key, 'json');
   if (cached) return reply({ ...cached, cached: true });
 
@@ -97,6 +97,7 @@ export async function handleListings(request, env, url, reply) {
   const out = {
     ok: true,
     count: keep.length,
+    raw: items.length,
     median: keep.length ? Math.round(keep[Math.floor(keep.length / 2)].soldPrice * 100) / 100 : null,
     cheapest: keep.slice(0, 5).map((r) => ({ title: r.title, aud: Math.round(r.soldPrice * 100) / 100, price: r.price, ship: r.ship, url: r.url, img: r.img })),
     asOf: new Date().toISOString(),
