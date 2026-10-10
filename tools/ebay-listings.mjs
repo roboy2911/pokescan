@@ -26,7 +26,11 @@ async function ebayToken(env) {
     },
     body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope',
   });
-  if (!res.ok) throw new Error(`ebay-auth-${res.status}`);
+  if (!res.ok) {
+    // eBay's own reason (e.g. invalid_client), never the keys themselves.
+    const why = await res.json().catch(() => ({}));
+    throw new Error(`ebay-auth-${res.status}${why.error ? `: ${why.error}${why.error_description ? ` — ${why.error_description}` : ''}` : ''}`.slice(0, 200));
+  }
   const j = await res.json();
   await env.AU_KV.put('ebay:token', j.access_token, { expirationTtl: Math.max(60, (j.expires_in || 7200) - 300) });
   return j.access_token;
