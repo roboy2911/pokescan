@@ -98,7 +98,8 @@ export default {
     if (q.length < 3) return json({ ok: false, reason: 'query' }, allow, 400);
 
     const cacheDays = Number(env.CACHE_DAYS) || 3;
-    const key = `v5:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
+    // v6 for Gold Star cards: their v5 answers could include World Championship deck copies.
+    const key = `${/gold star|★/i.test(q) ? 'v6' : 'v5'}:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
     const cached = env.AU_KV && await env.AU_KV.get(key, 'json');
     if (cached) return json({ ...cached, cached: true }, allow);
 

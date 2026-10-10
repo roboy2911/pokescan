@@ -70,7 +70,7 @@ const VARIANTS = [
  * AU_SOLD_KEEP). Empty AU_SOLD_URL = off. */
 const AU_SOLD_URL = 'https://pokescan-au-sold.minecraftfishies.workers.dev/';
 // v1 held promo prices from other cards' sales; v2 had no overseas / "last sold" answers.
-const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v3';
+const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v4'; // v4: answers before the World Championship filter dropped
 try { ['v1', 'v2'].forEach((v) => localStorage.removeItem(`pokescan.auSold.${v}`)); } catch { /* storage blocked */ }
 const AU_SOLD_MAX_AGE = 14 * 86400 * 1000;
 const AU_SOLD_KEEP = 45 * 86400 * 1000;
