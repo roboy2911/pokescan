@@ -44,7 +44,7 @@ export async function handleListings(request, env, url, reply) {
   const t = ['o', 'r25', 'r30', 'ja'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
   const set = (url.searchParams.get('s') || '').trim().slice(0, 60);
   if (q.length < 3) return reply({ ok: false, reason: 'query', listings: 1 }, 400);
-  const key = `ls:v1:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
+  const key = `ls:v2${url.searchParams.get('x') === 'all' ? 'x' : ''}:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
   const cached = await env.AU_KV.get(key, 'json');
   if (cached) return reply({ ...cached, cached: true });
 
@@ -58,11 +58,15 @@ export async function handleListings(request, env, url, reply) {
   try {
     const token = await ebayToken(env);
     const api = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search');
+    // English cards only: eBay's own "Language" item detail (CCG Individual Cards), unless this
+    // is a Japanese card. (x=all: no language filter, for comparing.)
+    const lang = url.searchParams.get('x') === 'all' ? null : OTHER_LANG.test(q) ? 'Japanese' : 'English';
     api.search = new URLSearchParams({
       q: `pokemon ${q}`,
       limit: '100',
       sort: 'price',
       filter: 'buyingOptions:{FIXED_PRICE},itemLocationCountry:AU,deliveryCountry:AU',
+      ...(lang && n && { category_ids: '183454', aspect_filter: `categoryId:183454,Language:{${lang}}` }),
     });
     const res = await fetch(api, {
       headers: {
