@@ -348,3 +348,10 @@ Claude "remove <name>".
   - "Too close — move back so the whole card fits in the box": when the biggest outline in the guide is under 0.8 of the box for two frames. Simulated: never in normal scans (0 of 320 frames); shows on ~45% of frames of a card held 1.45–1.8× the box. Matching itself unchanged.
   - *Remove:* `git revert ffb86c8` (account backups expire on their own).
 - **Feature: Japanese sealed product + Japanese Market tab** — `0b8401a`. ~280 Japanese sealed products (all TCGplayer lists), searchable ("jp booster box"), on set pages, in collection/want list; Market tab English/Japanese switch (history from 8 Oct; Japanese sealed movers appear after a few days). *Remove:* `git revert 0b8401a`.
+
+## Owner request (Sat) — AI card grader
+
+- **Feature: card grader** — `d6094aa`. Owner chose: free on-phone checks first, both an estimated PSA grade and NM/LP/MP, 4 guided photos, report only (not saved). Card sheet → 🔍 Grade this card.
+  - Tested on simulated photos (official images with known flaws, photographed at an angle): outline within ~0.5 px; centering within ~0.05 mm of the truth on 5 cards × 4 miscuts (ratio error < 1 point, borders down to 0.7 mm); edge whitening 1 mm specks and 6–8 mm stretches found, clean edges 0%; whitened and chipped corners found, clean corners clear; a 1 mm mark found on 3/3 cards with 0 false spots; scratches found on 3/3, 0 false on clean cards. Whole report ~4 s.
+  - Limits (said in the app): silver-bordered fronts can't show edge whitening (judged on the back); a pale table makes chips and whitening look alike; holo foil hides scratches; Japanese cards have no official image to compare (marks unchecked, scratches against the front photo). Not yet tried on real photos of damaged cards — worth a few test grades of cards with known PSA grades to tune.
+  - *Remove:* `git revert d6094aa`.
