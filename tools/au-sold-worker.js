@@ -11,6 +11,7 @@
 //   KV       AU_KV              a KV namespace (cache + daily counter)
 //   Optional variables: PAUSED_UNTIL ("YYYY-MM-DD": no searches before then), DAILY_LIMIT (default 400; set to 50 in wrangler.jsonc), CACHE_DAYS (default 3; set to 14 in wrangler.jsonc)
 //
+// Also eBay Australia listings: /listings (tools/ebay-listings.mjs).
 // Also grader tuning samples: /grade-sample (tools/grade-samples.mjs); /au-export (every AU
 // answer looked up, compact, for tools/picks.mjs — no searches).
 // Also accounts and collection sync: /auth/signup, /auth/login, /auth/logout, /sync, /backups — see
@@ -26,6 +27,7 @@
 import { summarise, ebayKeyword, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-filter.mjs';
 import { handleAccount } from './account-worker.mjs';
 import { handleGradeSample } from './grade-samples.mjs';
+import { handleListings } from './ebay-listings.mjs';
 
 const ALLOWED_ORIGINS = ['https://roboy2911.github.io', 'http://localhost:8080', 'http://localhost:8765'];
 // The Cloudflare Pages copy of the app (pokescan.pages.dev, and its preview links).
@@ -62,6 +64,10 @@ export default {
         cursor = r.cursor;
       }
       return json({ ok: true, items }, allow);
+    }
+    // eBay Australia listings (for sale now) — tools/ebay-listings.mjs.
+    if (url.pathname === '/listings') {
+      return handleListings(request, env, url, (body, status = 200) => json(body, allow, status));
     }
     if (url.pathname === '/grade-sample') {
       return handleGradeSample(request, env, url, (body, status = 200) => json(body, allow, status));

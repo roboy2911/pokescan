@@ -88,23 +88,7 @@ export function ebayKeyword(q, mode = '') {
 
 // min: fewest sales that make a price (1 for the "last sold" fallback, see au-sold-worker.js).
 export function summarise(items, n, wantsOtherLang, q = '', mode = '', { min = MIN_SALES, set = '' } = {}) {
-  const hasNumber = numberMatcher(n);
-  const hasName = nameMatcher(q, n);
-  const hasSet = setMatcher(set, mode);
-  const inMode = MODES[mode] ?? (() => true);
-  // Words searched for don't count as junk ("Booster Bundle" is a product, not a lot).
-  const qWords = new RegExp(`\\b(${q.toLowerCase().split(/\s+/).filter((w) => /^[a-z]+$/.test(w)).join('|') || '$^'})\\b`, 'gi');
-  const isJunk = (title) => JUNK.test(title.replace(qWords, ' ')) || MULTI.test(title);
-  // Without a card number (sealed product) every searched word must be in the title.
-  const words = n ? [] : q.toLowerCase().split(/\s+/).filter((w) => w.length >= 3 || /\d/.test(w))
-    .map((w) => w.normalize('NFD').replace(/[^a-z0-9]/g, '').replace(/(.{4})s$/, '$1')).filter(Boolean); // "evolutions" ~ "evolution"
-  const hasWords = (title) => {
-    const t = title.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, ' ');
-    return words.every((w) => t.includes(w));
-  };
-  let sales = items
-    .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
-    .filter((it) => !isJunk(it.title) && !notNearMint(it) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasName(it.title) && hasSet(it.title) && hasWords(it.title) && inMode(it.title))
+  let sales = matching(items, n, wantsOtherLang, q, mode, set)
     .map((it) => ({ title: it.title, aud: Number(it.soldPrice), date: (it.endedAt || '').slice(0, 10), url: it.url }));
   if (sales.length >= 4) {
     // Drop outliers: outside 0.5×–2× the median (mislabelled lots, damaged copies, typos).
@@ -123,4 +107,26 @@ export function summarise(items, n, wantsOtherLang, q = '', mode = '', { min = M
     high: Math.max(...prices),
     recent: sales.slice(0, 5),
   };
+}
+
+/* The items (sold or for sale, as { title, soldPrice, soldCurrency, condition }) that really are
+ * this card, ungraded, near mint, in the right language. */
+export function matching(items, n, wantsOtherLang, q = '', mode = '', set = '') {
+  const hasNumber = numberMatcher(n);
+  const hasName = nameMatcher(q, n);
+  const hasSet = setMatcher(set, mode);
+  const inMode = MODES[mode] ?? (() => true);
+  // Words searched for don't count as junk ("Booster Bundle" is a product, not a lot).
+  const qWords = new RegExp(`\\b(${q.toLowerCase().split(/\s+/).filter((w) => /^[a-z]+$/.test(w)).join('|') || '$^'})\\b`, 'gi');
+  const isJunk = (title) => JUNK.test(title.replace(qWords, ' ')) || MULTI.test(title);
+  // Without a card number (sealed product) every searched word must be in the title.
+  const words = n ? [] : q.toLowerCase().split(/\s+/).filter((w) => w.length >= 3 || /\d/.test(w))
+    .map((w) => w.normalize('NFD').replace(/[^a-z0-9]/g, '').replace(/(.{4})s$/, '$1')).filter(Boolean); // "evolutions" ~ "evolution"
+  const hasWords = (title) => {
+    const t = title.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, ' ');
+    return words.every((w) => t.includes(w));
+  };
+  return items
+    .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
+    .filter((it) => !isJunk(it.title) && !notNearMint(it) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasName(it.title) && hasSet(it.title) && hasWords(it.title) && inMode(it.title));
 }
