@@ -365,3 +365,7 @@ Claude "remove <name>".
   - Shine shots: explained with a picture ("scratches only show inside a reflection"), live reflection meter, and a check that the photo actually has a reflection.
   - "Help make it more accurate" on the report: sends the photos + the owner's verdict to the worker (`/grade-sample`, 60 days, code to pass on) so the grader can be tuned on real cards.
   - *Remove:* `git revert 37c53a0`.
+
+## Owner request (Sat) — buy recommendations in developer mode
+
+- **Feature: Developer mode → Buy ideas** — `27412ba`. Owner chose: cards and sealed, any price, English only, safer and riskier picks labelled. Built daily by `tools/picks.mjs` (in the price job) into `data/picks.json`: 60 cards (max 3 per set) and 40 sealed (max 2 per set), each with reasons. Signals: cheapest TCGplayer listing vs recent sales (supply), trend since 6 Oct, rarity, popular Pokémon, collector-favourite sets, set age / print run, sealed vs AU RRP; thin markets flagged unreliable. Price history is only days old, so trends count little until it builds up. Not financial advice. *Remove:* `git revert 27412ba`.
