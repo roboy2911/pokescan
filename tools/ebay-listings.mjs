@@ -16,7 +16,7 @@ import { matching, OTHER_LANG } from './au-sold-filter.mjs';
 const KEEP_HOURS = 6;
 // Signs a listing is a Japanese card: Japanese writing, Japanese set codes (sv2a, s8b, sm12a,
 // SV-P, S-P), Japanese-only rarity codes (SAR, CHR, CSR, AR), "Japan(ese)".
-const JP_SIGNS = /[\u3040-\u30ff\u3400-\u9fff]|\b(sv\d{1,2}[a-z]|s\d{1,2}[a-z]|sm\d{1,2}[a-z+]|sv-?p|s-p|sm-p|sar|chr|csr|ar)\b|\bjapan(ese)?\b|\bjpn?\b/i;
+const JP_SIGNS = /[\u3040-\u30ff\u3400-\u9fff]|\b(sv\d{1,2}[a-z]|s\d{1,2}[a-z]|sm\d{1,2}[a-z+]|sv-p|s-p|sm-p|sar|chr|csr|ar)\b|\bjapan(ese)?\b|\bjpn?\b/i;
 
 async function ebayToken(env) {
   const saved = await env.AU_KV.get('ebay:token');
