@@ -1473,6 +1473,7 @@ function loadCollection() {
 
 function saveCollection(list) {
   try { localStorage.setItem(COLLECTION_KEY, JSON.stringify(list)); } catch { /* storage unavailable */ }
+  if (typeof accountChanged === 'function') accountChanged(); // sync to the account (account.js)
 }
 
 const pickCard = (card) => Object.fromEntries(CARD_FIELDS.map((f) => [f, card[f]]));

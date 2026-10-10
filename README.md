@@ -37,6 +37,23 @@ Live: https://roboy2911.github.io/pokescan/
 Also on Cloudflare Pages (for computers where GitHub is blocked): https://pokescan.pages.dev — the same
 repo, redeployed by Cloudflare on every push to main (Pages project: no build command, output directory `/`).
 
+## Accounts and sync
+
+You log in (or sign up — anyone can, with a username and password) to use the app, and stay
+logged in on that device. Your collection is saved to your account and synced between devices:
+on start, when the app comes back to the front, and a few seconds after each change; edits
+made on two devices are merged (`account.js`). Log out in Collection → •••; that removes the
+collection from that device (it stays in the account).
+
+The server side is part of the Cloudflare worker (`tools/account-worker.mjs`, same KV
+namespace). The password never leaves the phone — a key is derived from it there (PBKDF2,
+150,000 rounds) and the worker stores only a salted hash of that key, and only hashes of
+session tokens. Limits: 10 wrong passwords per username per 15 minutes, 5 sign-ups per network
+per day. Note the login is a gate in the app: the code is public, so it can't hide the app
+itself — but a collection can only be read or changed with that account's session. A
+forgotten password can't be recovered; delete `user:<name>` in the Cloudflare KV dashboard
+and sign up again (the collection, `coll:<name>`, is kept).
+
 ## How it identifies a card
 
 1. **Card index (built once):** `tools/build-index.html` downloads every card image from

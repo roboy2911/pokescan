@@ -830,3 +830,21 @@ a.btn { text-decoration: none; }
   background: rgba(0, 0, 0, .62); color: #b8ffb8; font: 11px/1.35 ui-monospace, Menlo, Consolas, monospace;
   padding: 6px 8px; border-radius: 8px; max-width: 70%;
 }
+
+/* ---------- Login (account.js) ---------- */
+body.gated { overflow: hidden; }
+.login-gate {
+  position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+  background: var(--bg); padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+}
+.login-card { width: min(360px, 100%); display: grid; gap: 12px; text-align: center; }
+.login-logo { width: 56px; height: 56px; margin: 0 auto; }
+.login-card h1 { margin: 0 0 6px; font-size: 1.6rem; font-weight: 800; }
+.login-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--panel-2); border-radius: 12px; padding: 4px; }
+.login-tabs button { border: 0; border-radius: 9px; padding: 9px; background: transparent; color: var(--muted); font: inherit; font-weight: 700; }
+.login-tabs button.active { background: var(--panel); color: var(--text); }
+.login-card label { display: grid; gap: 6px; text-align: left; font-size: .88rem; color: var(--muted); }
+.login-card input { font: inherit; font-size: 16px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+.login-card .btn { width: 100%; padding: 13px; }
+.login-msg { min-height: 1.2em; margin: 0; color: var(--muted); font-size: .86rem; }
+.login-note { margin: 0; color: var(--muted); font-size: .78rem; }

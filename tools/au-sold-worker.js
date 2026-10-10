@@ -11,6 +11,9 @@
 //   KV       AU_KV              a KV namespace (cache + daily counter)
 //   Optional variables: PAUSED_UNTIL ("YYYY-MM-DD": no searches before then), DAILY_LIMIT (default 400; set to 50 in wrangler.jsonc), CACHE_DAYS (default 3; set to 14 in wrangler.jsonc)
 //
+// Also accounts and collection sync: /auth/signup, /auth/login, /auth/logout, /sync — see
+// tools/account-worker.mjs.
+//
 // GET /?q=<search words>&n=<card number as printed, e.g. 161/131>[&t=<mode>][&s=<set name>][&w=1]
 //   → { ok: true, aud, n, low, high, asOf, recent: [{ title, aud, date, url }], wide?, few? }
 // Australian sellers first; with fewer than 3 of their sales, every seller on eBay.com.au
@@ -19,6 +22,7 @@
 //   → { ok: false, reason: 'few-sales' | 'daily-limit' | … }
 
 import { summarise, ebayKeyword, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-filter.mjs';
+import { handleAccount } from './account-worker.mjs';
 
 const ALLOWED_ORIGINS = ['https://roboy2911.github.io', 'http://localhost:8080', 'http://localhost:8765'];
 // The Cloudflare Pages copy of the app (pokescan.pages.dev, and its preview links).
@@ -29,6 +33,8 @@ const json = (body, origin, status = 200) => new Response(JSON.stringify(body), 
   headers: {
     'content-type': 'application/json',
     'access-control-allow-origin': origin,
+    'access-control-allow-headers': 'content-type, authorization',
+    'access-control-allow-methods': 'GET, POST, PUT, OPTIONS',
     'cache-control': 'no-store',
   },
 });
@@ -38,10 +44,14 @@ export default {
     const origin = request.headers.get('origin') || '';
     const allow = isAllowed(origin) ? origin : ALLOWED_ORIGINS[0];
     if (request.method === 'OPTIONS') return json({}, allow);
-    if (request.method !== 'GET') return json({ ok: false, reason: 'method' }, allow, 405);
     if (origin && !isAllowed(origin)) return json({ ok: false, reason: 'origin' }, allow, 403);
-
     const url = new URL(request.url);
+    // Accounts and collection sync (tools/account-worker.mjs).
+    if (url.pathname.startsWith('/auth/') || url.pathname === '/sync') {
+      return handleAccount(request, env, url, (body, status = 200) => json(body, allow, status));
+    }
+    if (request.method !== 'GET') return json({ ok: false, reason: 'method' }, allow, 405);
+
     const q = (url.searchParams.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 120);
     const n = (url.searchParams.get('n') || '').trim().slice(0, 20);
     const t = ['o', 'r25', 'r30', 'ja'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
