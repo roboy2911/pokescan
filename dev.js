@@ -275,7 +275,7 @@ async function devRenderPicks(box) {
           <ul>${p.reasons.slice(0, 4).map((r) => `<li>${devEsc(r)}</li>`).join('')}</ul>
         </div>
         <div class="side">${view.kind === 'au'
-          ? `<b>${formatAudPlain(p.aud)}</b><small>AU sold · ${p.sales} sales</small><small>US ${formatAudPlain(p.usAud)}</small>${p.stale ? '<small>(old price)</small>' : ''}`
+          ? `<b>${formatAudPlain(p.aud)}</b><small>AU sold · ${p.sales} sales</small><small>US ${formatAudPlain(p.usAud)}</small>${p.forSale ? `<small>${p.forSale.count ? `${p.forSale.count} for sale from ${formatAudPlain(p.forSale.aud)}` : 'none for sale'}</small>` : ''}${p.deal ? '<small class="deal">🛒 deal listed</small>' : ''}${p.stale ? '<small>(old price)</small>' : ''}`
           : `<b>${formatAud(p.usd, rate.rate)}</b>`}<span class="risk ${p.risk}">${p.risk === 'safer' ? 'Safer' : 'Riskier'}</span><small>score ${p.score}</small></div>`;
       row.addEventListener('click', () => {
         if (isCard && item) openDetail(item);

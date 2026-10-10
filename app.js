@@ -1250,6 +1250,24 @@ function auSoldText(au, tcgText) {
         : "Couldn't check Australian sales";
   return `${why} — showing TCGplayer (US) market price`;
 }
+/* "For sale now in Australia": the cheapest near-mint Buy It Now copies on eBay AU. `usual`:
+ * the AU sold price (AUD) to compare with. */
+async function showForSale(el, item, variant, usual = null) {
+  if (!el) return;
+  const { q, n, t, s } = ebaySoldQuery(item, variant);
+  el.innerHTML = '<p class="price-note">Checking what\'s for sale on eBay Australia…</p>';
+  const r = await getListings(q, n, t, s);
+  if (!el.isConnected) return;
+  if (!r.ok) { el.innerHTML = ''; return; }
+  if (!r.count) { el.innerHTML = '<p class="price-note">None for sale on eBay Australia right now (near mint, Buy It Now).</p>'; return; }
+  const best = r.cheapest[0];
+  const deal = !usual ? '' : best.aud < usual * 0.5 ? ' <b class="warn">— suspiciously cheap, check it\'s real</b>'
+    : best.aud < usual * 0.92 ? ` <b class="ok">${Math.round((1 - best.aud / usual) * 100)}% below what it usually sells for</b>` : '';
+  el.innerHTML = `<details class="au-recent for-sale"><summary>For sale now in Australia: ${r.count} cop${r.count === 1 ? 'y' : 'ies'}, from <b>${esc(formatAudPlain(best.aud))}</b>${deal}</summary>
+    <ul>${r.cheapest.slice(0, 5).map((c) => `<li><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(formatAudPlain(c.aud))}${c.ship ? ' incl. postage' : ''}</a> <span>${esc(c.title)}</span></li>`).join('')}</ul>
+    <p class="price-note">eBay Australia, Buy It Now, Australian sellers, near mint only. Check the photos before buying.</p></details>`;
+}
+
 function auSoldRecent(au) {
   if (!au?.ok || !au.recent?.length) return '';
   return `<details class="au-recent"><summary>Recent ${au.wide ? 'eBay Australia' : 'Australian'} sales</summary><ul>${au.recent.map((r) =>
@@ -1297,6 +1315,7 @@ function openDetail(card, { entryKey = null } = {}) {
       <div class="variant-chips" id="detailChips"></div>
       <span class="price-note" id="detailNote"></span>
       <div id="auRecent"></div>
+      <div id="forSale"></div>
     </div>
     ${inCollection ? `<div class="detail-price cond-box">
       <span class="price-label">Your copy's condition</span>
@@ -1406,6 +1425,7 @@ function openDetail(card, { entryKey = null } = {}) {
       $('detailNote').innerHTML = au === undefined ? 'Checking Australian eBay sales (can take ~20 s)…'
         : esc(auSoldText(au, au?.ok ? tcg : '')) + (info.url ? ` · <a href="${esc(info.url)}" target="_blank" rel="noopener">TCGplayer ↗</a>` : '');
       $('auRecent').innerHTML = auSoldRecent(au);
+      if (au !== undefined) showForSale($('forSale'), card, v.key, au?.ok ? au.aud : null);
       showCondition();
       if (inCollection && au?.ok) renderCollection();
     };
@@ -2018,6 +2038,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
       <span class="price-note" id="sealedHint">Tap to compare with Australian RRP</span>
     </button>
     <div id="sealedAuRecent"></div>
+    <div id="sealedForSale"></div>
     <div class="detail-actions">
       ${inCollection
         ? `<div class="qty-row">
@@ -2084,6 +2105,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
     source = au === undefined ? 'Checking Australian eBay sales (can take ~20 s)…' : auSoldText(au, au?.ok ? tcg : '');
     $('sealedHint').textContent = $('sealedRrp').hidden ? `${source} · Tap to compare with Australian RRP` : source;
     $('sealedAuRecent').innerHTML = auSoldRecent(au);
+    if (au !== undefined) showForSale($('sealedForSale'), item, null, au?.ok ? au.aud : null);
     if (!$('sealedRrp').hidden) showRrp();
     if (inCollection && au?.ok) renderCollection();
   };

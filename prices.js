@@ -111,6 +111,21 @@ function auSoldCached(q, n, t = '', { anyAge = false } = {}) {
 /* { ok, aud, n, low, high, recent, asOf } or { ok: false, reason }; null if it couldn't ask. */
 const auSoldPending = new Map(); // one search per card even if two screens ask at once
 // s: the card's set name, for a reprinted original (t 'o'), whose sales must name it.
+/* For sale now on eBay Australia (Buy It Now, Australian sellers, near mint — the worker's
+ * /listings, eBay's Browse API). { ok, count, cheapest: [{ title, aud, url, img }], median } or
+ * { ok: false, reason }. Kept in memory for this visit (the worker keeps answers 6 hours). */
+const listingsMem = new Map();
+function getListings(q, n = '', t = '', s = '') {
+  const key = `${q}|${n}|${t}|${s}`.toLowerCase();
+  if (!listingsMem.has(key)) {
+    const u = new URL('listings', AU_SOLD_URL);
+    u.search = new URLSearchParams({ q, n, ...(t && { t }), ...(s && { s }) });
+    listingsMem.set(key, fetch(u).then((r) => r.json()).catch(() => ({ ok: false, reason: 'offline' }))
+      .then((j) => { if (!j.ok) listingsMem.delete(key); return j; }));
+  }
+  return listingsMem.get(key);
+}
+
 async function getAuSold(q, n, t = '', s = '') {
   await auPreReady;
   const hit = auSoldCached(q, n, t);

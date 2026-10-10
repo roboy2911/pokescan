@@ -117,6 +117,16 @@ async function wantPrices(list = loadWants()) {
     }
     out[e.key] = { aud, hit: e.target != null && aud <= e.target + 0.005, low };
   }
+  // For sale now on eBay Australia: the cheapest near-mint copy, and whether it's at or under
+  // the target (a copy you could buy today).
+  await Promise.all(list.map(async (e) => {
+    const { q, n, t, s } = ebaySoldQuery(e, e.variant);
+    const r = await getListings(q, n, t, s).catch(() => null);
+    if (!r?.ok || !r.count || !out[e.key]) return;
+    const c = r.cheapest[0];
+    out[e.key].listed = { aud: c.aud, url: c.url, count: r.count };
+    if (e.target != null && c.aud <= e.target + 0.005) out[e.key].listedHit = true;
+  }));
   return out;
 }
 
@@ -128,10 +138,22 @@ async function checkWantAlerts() {
   let seen = {};
   try { seen = JSON.parse(localStorage.getItem(WANT_SEEN_KEY)) || {}; } catch { /* none */ }
   const fresh = list.filter((e) => got[e.key]?.hit && !(seen[e.key] && got[e.key].aud >= seen[e.key] - 0.005));
+  // A copy listed on eBay AU at or under the target (told once per price).
+  const freshListed = list.filter((e) => got[e.key]?.listedHit && !(seen[`l:${e.key}`] && got[e.key].listed.aud >= seen[`l:${e.key}`] - 0.005));
   const next = {};
-  for (const e of list) if (got[e.key]?.hit) next[e.key] = Math.min(got[e.key].aud, seen[e.key] ?? Infinity);
+  for (const e of list) {
+    if (got[e.key]?.hit) next[e.key] = Math.min(got[e.key].aud, seen[e.key] ?? Infinity);
+    if (got[e.key]?.listedHit) next[`l:${e.key}`] = Math.min(got[e.key].listed.aud, seen[`l:${e.key}`] ?? Infinity);
+  }
   try { localStorage.setItem(WANT_SEEN_KEY, JSON.stringify(next)); } catch { /* storage full */ }
-  showWantCount(Object.keys(next).length);
+  showWantCount(list.filter((e) => got[e.key]?.hit || got[e.key]?.listedHit).length);
+  if (freshListed.length) {
+    const e = freshListed[0];
+    toast(freshListed.length === 1
+      ? `🛒 ${e.name} is for sale on eBay Australia for ${formatAudPlain(got[e.key].listed.aud)} — at or under your ${formatAudPlain(e.target)} target. See Collection → Want list`
+      : `🛒 ${freshListed.length} items on your want list are for sale on eBay Australia at or under your target — see Collection → Want list`, 8000);
+    return;
+  }
   if (!fresh.length) return;
   toast(fresh.length === 1
     ? `★ ${fresh[0].name} is at your target price (${formatAudPlain(got[fresh[0].key].aud)}) — see Collection → Want list`
@@ -173,7 +195,8 @@ async function renderWants() {
   const draw = (got) => {
     box.innerHTML = '';
     // Hits first, then the newest.
-    const order = [...list].sort((a, b) => (got?.[b.key]?.hit ? 1 : 0) - (got?.[a.key]?.hit ? 1 : 0));
+    const rank = (g) => (g?.listedHit ? 2 : g?.hit ? 1 : 0);
+    const order = [...list].sort((a, b) => rank(got?.[b.key]) - rank(got?.[a.key]));
     for (const e of order) {
       const g = got?.[e.key];
       const price = !got ? '…' : g?.aud == null ? 'No price' : formatAudPlain(g.aud);
@@ -182,7 +205,7 @@ async function renderWants() {
         extra: price,
       });
       row.classList.add('want-row');
-      if (g?.hit) row.classList.add('hit');
+      if (g?.hit || g?.listedHit) row.classList.add('hit');
       const note = document.createElement('div');
       note.className = 'want-note';
       note.innerHTML = [
@@ -192,6 +215,15 @@ async function renderWants() {
         e.variant ? esc(variantLabel(e.variant)) : '',
       ].filter(Boolean).join(' · ');
       row.querySelector('.meta').appendChild(note);
+      if (g?.listed) {
+        // (A link can't sit inside the row's button: tapping this line opens the listing.)
+        const a = document.createElement('span');
+        a.className = `want-listed${g.listedHit ? ' hit' : ''}`;
+        a.setAttribute('role', 'link');
+        a.textContent = `🛒 ${g.listedHit ? 'Buy now: ' : ''}from ${formatAudPlain(g.listed.aud)} on eBay AU (${g.listed.count} for sale) ↗`;
+        a.addEventListener('click', (ev) => { ev.stopPropagation(); window.open(g.listed.url, '_blank', 'noopener'); });
+        row.querySelector('.meta').appendChild(a);
+      }
       box.appendChild(row);
     }
   };
@@ -199,7 +231,7 @@ async function renderWants() {
   const got = await wantPrices(list).catch(() => ({}));
   if (token === wantToken) {
     draw(got);
-    showWantCount(list.filter((e) => got[e.key]?.hit).length);
+    showWantCount(list.filter((e) => got[e.key]?.hit || got[e.key]?.listedHit).length);
   }
 }
 
