@@ -933,3 +933,17 @@ body.gated { overflow: hidden; }
 .grade-psa input { width: 5em; font-size: 16px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
 .grade-code { font-size: 1.15rem; letter-spacing: .05em; color: var(--accent); user-select: all; }
 .shine-pic text { stroke: none; }
+.dev-picks-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.dev-picks { display: grid; gap: 8px; }
+.dev-pick { display: grid; grid-template-columns: 46px 1fr auto; gap: 10px; align-items: start; text-align: left; padding: 8px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--text); font: inherit; cursor: pointer; }
+.dev-pick img { width: 46px; aspect-ratio: 63 / 88; object-fit: cover; border-radius: 4px; background: var(--panel-2); }
+.dev-pick img[src*="tcgplayer-cdn"] { object-fit: contain; background: #fff; }
+.dev-pick .name { font-weight: 700; }
+.dev-pick .sub { color: var(--muted); font-size: .78rem; }
+.dev-pick ul { margin: 4px 0 0; padding-left: 16px; font-size: .78rem; color: var(--muted); }
+.dev-pick .side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; white-space: nowrap; }
+.dev-pick .side small { color: var(--muted); font-size: .72rem; }
+.dev-pick .risk { font-size: .72rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; }
+.dev-pick .risk.safer { background: rgba(60, 207, 122, .15); color: var(--ok); }
+.dev-pick .risk.riskier { background: rgba(255, 184, 107, .15); color: #ffb86b; }

@@ -410,6 +410,14 @@ if (releases.length) await writeFile(dataFile('releases.json'), JSON.stringify({
 
 await updateMarket(cards, sealed.size > 500 ? [...sealed.values()] : null);
 
+// Buy ideas for the developer panel (data/picks.json). A failure here must never cost the prices.
+try {
+  const { buildPicks } = await import('./picks.mjs');
+  await buildPicks();
+} catch (err) {
+  console.warn(`Buy ideas skipped: ${err.message}`);
+}
+
 // Japanese cards (data/prices-ja.json). A failure here must never cost the English prices.
 try {
   const { updateJapanesePrices } = await import('./prices-ja.mjs');

@@ -233,6 +233,54 @@ function devRenderTools(box) {
   });
 }
 
+/* ---------- Buy ideas (data/picks.json, built daily by tools/picks.mjs) ---------- */
+
+async function devRenderPicks(box) {
+  box.innerHTML = '<p class="dev-msg"><span class="spinner"></span>Loading…</p>';
+  const [picks, rate, sealed] = await Promise.all([fetchRetry('data/picks.json', { tries: 3 }).catch(() => null), getAudRate(), getSealed(), dbReady.catch(() => {})]);
+  if (!picks) { box.innerHTML = '<p class="dev-msg">No buy ideas yet — they\'re built with the daily price update.</p>'; return; }
+  const view = { kind: 'cards', risk: 'all' };
+  const seg = (name, opts) => `<div class="seg dev-seg" data-seg="${name}">${opts.map(([v, l], i) => `<button type="button" data-v="${v}" class="${i ? '' : 'active'}">${l}</button>`).join('')}</div>`;
+  box.innerHTML = `
+    <p class="dev-msg">Cards and sealed product that look likely to rise, or are already rising, and why. Built ${devEsc(new Date(picks.built).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }))} from TCGplayer prices and listings${picks.days < 14 ? ` — price history only goes back to ${devEsc(shortDate(picks.since))}, so trends count for little yet (better each week)` : ''}.</p>
+    <div class="dev-picks-tools">${seg('kind', [['cards', `Cards (${picks.cards.length})`], ['sealed', `Sealed (${picks.sealed.length})`]])}
+      ${seg('risk', [['all', 'All'], ['safer', 'Safer'], ['riskier', 'Riskier']])}</div>
+    <div class="dev-picks" data-list></div>
+    <p class="dev-msg">Not financial advice — reasons to look closer, not guarantees. Prices are TCGplayer (US) market prices in AUD; check Australian sold prices before buying.</p>`;
+  const draw = () => {
+    const list = box.querySelector('[data-list]');
+    const items = picks[view.kind].filter((p) => view.risk === 'all' || p.risk === view.risk);
+    list.innerHTML = items.length ? '' : '<p class="dev-msg">None in this list today.</p>';
+    for (const p of items) {
+      const item = view.kind === 'cards' ? db.byId?.get(p.id) : sealed.byKey.get(p.key);
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'dev-pick';
+      row.innerHTML = `
+        <img src="${devEsc(item?.image ?? '')}" alt="" loading="lazy">
+        <div class="meta">
+          <div class="name">${devEsc(p.name)}</div>
+          <div class="sub">${devEsc([p.set, p.finish || p.type, p.rarity].filter(Boolean).join(' · '))}</div>
+          <ul>${p.reasons.slice(0, 4).map((r) => `<li>${devEsc(r)}</li>`).join('')}</ul>
+        </div>
+        <div class="side"><b>${formatAud(p.usd, rate.rate)}</b><span class="risk ${p.risk}">${p.risk === 'safer' ? 'Safer' : 'Riskier'}</span><small>score ${p.score}</small></div>`;
+      row.addEventListener('click', () => {
+        if (view.kind === 'cards' && item) openDetail(item);
+        else if (item) openSealedDetail(sealedEntry(item));
+      });
+      list.appendChild(row);
+    }
+  };
+  box.querySelectorAll('[data-seg]').forEach((g) => g.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    view[g.dataset.seg] = b.dataset.v;
+    g.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+    draw();
+  }));
+  draw();
+}
+
 function devOpen() {
   const dlg = document.createElement('dialog');
   dlg.className = 'sheet dev-sheet';
@@ -242,6 +290,7 @@ function devOpen() {
     <details open><summary>Status</summary><div data-box="status"></div>
       <button type="button" class="btn ghost" data-act="refresh">Refresh</button></details>
     <details><summary>Scan tuning</summary><div data-box="tuning"></div></details>
+    <details><summary>Buy ideas</summary><div data-box="picks"></div></details>
     <details><summary>Data tools</summary><div data-box="tools"></div></details>
     <button type="button" class="btn ghost" data-act="lock">Lock developer mode</button>`;
   document.body.appendChild(dlg);
@@ -250,6 +299,12 @@ function devOpen() {
   devRenderStatus(box('status'));
   devRenderTuning(box('tuning'));
   devRenderTools(box('tools'));
+  // Buy ideas load when opened (a bigger file).
+  dlg.querySelector('[data-box=picks]').closest('details').addEventListener('toggle', function once(e) {
+    if (!e.target.open) return;
+    e.target.removeEventListener('toggle', once);
+    devRenderPicks(box('picks'));
+  });
   dlg.querySelector('[data-act=refresh]').addEventListener('click', () => devRenderStatus(box('status')));
   dlg.querySelector('[data-act=lock]').addEventListener('click', () => {
     try { sessionStorage.removeItem(DEV_UNLOCKED); } catch { /* storage blocked */ }

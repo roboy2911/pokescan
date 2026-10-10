@@ -251,6 +251,7 @@ Open https://roboy2911.github.io/pokescan/ on your phone, allow the camera, then
 | `tools/build-index.html` | Builds the card index |
 | `tools/update-prices.mjs` | Builds the price snapshot and sealed product (run by GitHub Actions) |
 | `tools/market.mjs` | Price history and market movers (`--backfill` rebuilds from git history) |
+| `tools/picks.mjs` | Developer mode → Buy ideas: cards / sealed likely to rise, with reasons (`data/picks.json`, daily) |
 | `tools/sim.js` | Accuracy tests on simulated photos: binder pages, glare/sleeves (`testHard`), multi-frame (`testFusion`) |
 | `manifest.json`, `sw.js`, `icon.svg` | Makes it installable as a phone app |
 | `serve.ps1` | Tiny local web server for testing on Windows |
