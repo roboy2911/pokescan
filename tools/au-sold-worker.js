@@ -65,6 +65,19 @@ export default {
       }
       return json({ ok: true, items }, allow);
     }
+    // eBay's "marketplace account deletion" notifications (required for a Production key).
+    // PokeScan keeps no eBay user data, so there's nothing to delete: answer the check and
+    // accept the notices. GET ?challenge_code= → SHA-256(code + token + this URL).
+    if (url.pathname === '/ebay-deletion') {
+      const code = url.searchParams.get('challenge_code');
+      if (request.method === 'GET' && code) {
+        const endpoint = `${url.origin}/ebay-deletion`;
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code + (env.EBAY_VERIFY_TOKEN || '') + endpoint));
+        const challengeResponse = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+        return new Response(JSON.stringify({ challengeResponse }), { headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(null, { status: request.method === 'POST' ? 200 : 204 });
+    }
     // eBay Australia listings (for sale now) — tools/ebay-listings.mjs.
     if (url.pathname === '/listings') {
       return handleListings(request, env, url, (body, status = 200) => json(body, allow, status));
