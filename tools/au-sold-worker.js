@@ -11,6 +11,7 @@
 //   KV       AU_KV              a KV namespace (cache + daily counter)
 //   Optional variables: PAUSED_UNTIL ("YYYY-MM-DD": no searches before then), DAILY_LIMIT (default 400; set to 50 in wrangler.jsonc), CACHE_DAYS (default 3; set to 14 in wrangler.jsonc)
 //
+// Also grader tuning samples: /grade-sample (tools/grade-samples.mjs).
 // Also accounts and collection sync: /auth/signup, /auth/login, /auth/logout, /sync, /backups — see
 // tools/account-worker.mjs.
 //
@@ -23,6 +24,7 @@
 
 import { summarise, ebayKeyword, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-filter.mjs';
 import { handleAccount } from './account-worker.mjs';
+import { handleGradeSample } from './grade-samples.mjs';
 
 const ALLOWED_ORIGINS = ['https://roboy2911.github.io', 'http://localhost:8080', 'http://localhost:8765'];
 // The Cloudflare Pages copy of the app (pokescan.pages.dev, and its preview links).
@@ -47,6 +49,9 @@ export default {
     if (origin && !isAllowed(origin)) return json({ ok: false, reason: 'origin' }, allow, 403);
     const url = new URL(request.url);
     // Accounts and collection sync (tools/account-worker.mjs).
+    if (url.pathname === '/grade-sample') {
+      return handleGradeSample(request, env, url, (body, status = 200) => json(body, allow, status));
+    }
     if (url.pathname.startsWith('/auth/') || url.pathname === '/sync' || url.pathname === '/backups') {
       return handleAccount(request, env, url, (body, status = 200) => json(body, allow, status));
     }

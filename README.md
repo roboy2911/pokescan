@@ -35,10 +35,14 @@ your phone's home screen like an app (PWA), and works offline after the first vi
   (last 7) and before "Remove everything" or a restore; your account also keeps each day's
   starting point for 30 days. Tap one to put it back (`backups.js`).
 - **Card grader** (card sheet → 🔍 Grade this card) — free, on the phone. Guided photos (front,
-  back, two tilted "reflection" shots), then a report: centering front and back (e.g. 55/45),
-  edge and corner whitening, soft / chipped corners, marks and dents (compared with the official
-  image), scratches (in the reflection), an estimated PSA range and NM/LP/MP condition. Marked
-  up pictures show where. An estimate, not a grading company's grade (`grade-core.js`, `grade.js`).
+  back, two "shine check" shots where a lamp reflects off the card) with live guidance on the
+  camera, and every photo checked (whole card in view, size, focus, light, glare, angle, table
+  contrast, right side, right card; upside-down / sideways cards are turned round). Report:
+  centering front and back (e.g. 55/45), edge and corner whitening, soft / chipped corners, marks
+  and dents (vs the official image), scratches (in the reflection), a score out of 10 per area,
+  an estimated PSA grade and NM / LP / MP / HP condition. "Help make it more accurate" sends the
+  photos with your own verdict for tuning (a code to pass on; `tools/grade-samples.mjs`). An
+  estimate, not a grading company's grade (`grade-core.js`, `grade.js`).
 - **Market** — biggest risers and fallers over 1, 7 and 30 days, and items at their
   highest / lowest since tracking began (6 Oct 2026; Japanese from 8 Oct), for English or
   Japanese cards and sealed product.

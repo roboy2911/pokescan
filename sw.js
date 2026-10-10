@@ -1,5 +1,5 @@
 // Caches the app and the card index so it opens fast (and works offline) as a phone app.
-const CACHE = 'pokescan-v49';
+const CACHE = 'pokescan-v50';
 const SHELL = ['./', 'index.html', 'style.css', 'cardprint.js', 'dev.js', 'detect.js', 'matcher.js', 'worker.js', 'prices.js', 'account.js', 'app.js', 'wants.js', 'backups.js', 'grade-core.js', 'grade.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', (e) => {

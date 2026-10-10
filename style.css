@@ -910,3 +910,26 @@ body.gated { overflow: hidden; }
 .grade-surface { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .grade-surface canvas { width: 100%; border-radius: 8px; display: block; }
 .grade-disclaimer { margin-top: 14px; }
+.grade-live { position: absolute; left: 8px; right: 8px; bottom: 8px; padding: 8px 10px; border-radius: 10px; text-align: center;
+  background: rgba(0, 0, 0, .7); color: #fff; font-size: .9rem; font-weight: 600; }
+.grade-live.good { background: rgba(28, 120, 66, .9); }
+.shine-explain { display: flex; justify-content: center; margin-bottom: 8px; color: var(--text); }
+.shine-pic { width: 100%; max-width: 320px; height: auto; }
+.grade-check { border-radius: 12px; padding: 8px 12px; margin-top: 10px; font-size: .92rem; }
+.grade-check ul { margin: 4px 0 0; padding-left: 18px; }
+.grade-check.bad { background: rgba(255, 107, 107, .12); border: 1px solid rgba(255, 107, 107, .5); }
+.grade-check.warn { background: rgba(255, 184, 107, .1); border: 1px solid rgba(255, 184, 107, .4); color: #ffcf99; }
+.grade-bars { display: grid; gap: 8px; margin: 12px 0 4px; }
+.grade-bar { display: grid; grid-template-columns: 80px 1fr 34px; align-items: center; gap: 8px; font-size: .9rem; }
+.grade-bar small { grid-column: 2 / -1; color: var(--muted); margin-top: -4px; }
+.grade-bar .bar { height: 10px; background: var(--panel-2); border-radius: 6px; overflow: hidden; }
+.grade-bar .bar i { display: block; height: 100%; border-radius: 6px; }
+.grade-bar .bar i.ok { background: var(--ok); }
+.grade-bar .bar i.mid { background: #c8d84a; }
+.grade-bar .bar i.low { background: #ffb86b; }
+.grade-bar .bar i.bad { background: var(--err); }
+.grade-help { margin-top: 16px; padding: 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); display: grid; gap: 8px; }
+.grade-psa { display: flex; align-items: center; gap: 8px; font-size: .9rem; color: var(--muted); }
+.grade-psa input { width: 5em; font-size: 16px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+.grade-code { font-size: 1.15rem; letter-spacing: .05em; color: var(--accent); user-select: all; }
+.shine-pic text { stroke: none; }

@@ -1,5 +1,5 @@
-// Test images for the card grader (grade-core.js): a card with known flaws, "photographed".
-// Used by the grader tests (load in a page with detect.js + grade-core.js).
+// Test images for the card grader (grade-core.js): a card with known flaws, "photographed"
+// (perspective, table, light, blur, noise, vignette, colour cast, shadow, glossy streak, JPEG).
 // Grader test images: a card with known flaws, then "photographed" (perspective, background,
 // light, blur, noise). Runs in the page (OffscreenCanvas).
 export const mulberry = (a) => () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -84,6 +84,12 @@ export function photo(card, o = {}) {
     const u = (Hm[0] * x + Hm[1] * y + Hm[2]) / z, v = (Hm[3] * x + Hm[4] * y + Hm[5]) / z;
     const k = (y * PW + x) * 4;
     let r = bg[0], g = bg[1], b = bg[2];
+    if (o.shadow && !(u >= 0 && u < 1 && v >= 0 && v < 1)) {
+      const du = Math.max(0, -u, u - 1) * 63, dv = Math.max(0, -v, v - 1) * 88; // mm outside
+      const dd = Math.hypot(du - o.shadow * 0.6, dv - o.shadow * 0.6);
+      const sh = Math.max(0, 1 - Math.hypot(du, dv) / (o.shadow * 2)) * 0.35;
+      r *= 1 - sh; g *= 1 - sh; b *= 1 - sh;
+    }
     if (u >= 0 && u < 1 && v >= 0 && v < 1) {
       const sx = u * card.w, sy = v * card.h; const x0 = Math.min(card.w - 2, sx | 0), y0 = Math.min(card.h - 2, sy | 0), fx = sx - x0, fy = sy - y0;
       const i = (y0 * card.w + x0) * 4;
@@ -100,8 +106,16 @@ export function photo(card, o = {}) {
         r = r + (255 - r) * m; g = g + (255 - g) * m; b = b + (255 - b) * m;
       }
     }
-    const light = (o.light ?? 1) * (1 - 0.12 * (y / PH));
-    out[k] = r * light; out[k + 1] = g * light; out[k + 2] = b * light; out[k + 3] = 255;
+    let light = (o.light ?? 1) * (1 - 0.12 * (y / PH));
+    if (o.vignette) light *= 1 - o.vignette * (((x - PW / 2) / PW) ** 2 + ((y - PH / 2) / PH) ** 2) * 2;
+    const cast = o.cast || [1, 1, 1];
+    // Glossy streak (a soft reflection band across the card).
+    if (o.streak && u >= 0 && u < 1 && v >= 0 && v < 1) {
+      const d = Math.abs((u - o.streak.x) * Math.cos(o.streak.a) + (v - o.streak.y) * Math.sin(o.streak.a));
+      const m = Math.max(0, 1 - d / o.streak.w) * o.streak.k;
+      r += (255 - r) * m; g += (255 - g) * m; b += (255 - b) * m;
+    }
+    out[k] = r * light * cast[0]; out[k + 1] = g * light * cast[1]; out[k + 2] = b * light * cast[2]; out[k + 3] = 255;
   }
   const c = new OffscreenCanvas(PW, PH); const x = c.getContext('2d'); x.putImageData(new ImageData(out, PW, PH), 0, 0);
   const c2 = new OffscreenCanvas(PW, PH); const y2 = c2.getContext('2d');
@@ -110,4 +124,11 @@ export function photo(card, o = {}) {
   const nz = o.noise ?? 4;
   for (let i = 0; i < img.data.length; i += 4) { const e = (rnd() - 0.5) * 2 * nz; img.data[i] += e; img.data[i + 1] += e; img.data[i + 2] += e; }
   return { d: img.data, w: PW, h: PH, corners };
+}
+/* Like a phone: the photo saved as JPEG and read back. */
+export async function jpeg(ph, q = 0.85) {
+  const c = new OffscreenCanvas(ph.w, ph.h); c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(ph.d), ph.w, ph.h), 0, 0);
+  const bmp = await createImageBitmap(await c.convertToBlob({ type: 'image/jpeg', quality: q }));
+  const c2 = new OffscreenCanvas(ph.w, ph.h); const x = c2.getContext('2d'); x.drawImage(bmp, 0, 0);
+  return { d: x.getImageData(0, 0, ph.w, ph.h).data, w: ph.w, h: ph.h, corners: ph.corners };
 }
