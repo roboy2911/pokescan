@@ -87,6 +87,36 @@ function trend(series) {
   return { chg: ((last - first) / first) * 100, up, down, days: pts.length };
 }
 
+/* Groups of cards surging together — a rarity (e.g. every Prism Star) or a set — over the last
+ * few days. A group moving together is a stronger signal than one card (which could be a few
+ * odd sales): it's real demand. Returns Map(groupKey → { label, members, up, median, since }). */
+const RECENT = 4; // days compared
+function groupSurges(cardsMeta, prices, history) {
+  const groups = new Map();
+  const add = (k, label, chg) => { if (!groups.has(k)) groups.set(k, { label, chgs: [] }); groups.get(k).chgs.push(chg); };
+  for (const [id, , , setId, rarity] of cardsMeta.cards) {
+    const row = prices.cards[id];
+    const f = row && MAIN_FINISH.find((k) => row[k] != null);
+    if (!f || row[f] < 2) continue; // bulk doesn't count
+    const pts = (history.items[`${id}:${f}`] ?? []).filter((v) => v != null);
+    if (pts.length < 3) continue;
+    const from = pts[Math.max(0, pts.length - 1 - RECENT)], now = pts.at(-1);
+    const chg = ((now - from) / from) * 100;
+    if (rarity) add(`r:${rarity}`, `${rarity.replace(/^Rare /, '').replace(/^Holo /, '')} cards`, chg);
+    add(`s:${setId}`, `${cardsMeta.sets[setId]?.[0] ?? setId} cards`, chg);
+  }
+  const out = new Map();
+  for (const [k, g] of groups) {
+    if (g.chgs.length < 6) continue;
+    const up = g.chgs.filter((c) => c >= 25).sort((a, b) => a - b);
+    if (up.length < 5 || up.length / g.chgs.length < 0.35) continue;
+    const median = up[Math.floor(up.length / 2)];
+    if (median < 50) continue;
+    out.set(k, { key: k, label: g.label, members: g.chgs.length, up: up.length, median: Math.round(median) });
+  }
+  return out;
+}
+
 /* Supply: cheapest listing / recent sales. */
 function supply(l) {
   if (!l?.low || !l?.market) return null;
@@ -104,6 +134,8 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
 
   /* ---------- Cards ---------- */
   const cardPicks = [];
+  const hot = groupSurges(cardsMeta, prices, history);
+  const since = dayName(history.dates[Math.max(0, history.dates.length - 1 - RECENT)] ?? date);
   for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
     const row = prices.cards[id];
     if (!row) continue;
@@ -143,7 +175,21 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     // Trend.
     const key = `${id}:${f}`;
     const t = trend(history.items[key]);
-    if (t && t.days >= 3 && Math.abs(t.chg) > 60) { thin = true; risky++; reasons.push(`price jumped ${pct(t.chg)} in days — few sales, unreliable`); }
+    // Part of a group surge (its rarity or set)?
+    const g = hot.get(`r:${rarity}`) ?? hot.get(`s:${setId}`);
+    if (g && t) {
+      const pts = history.items[key].filter((v) => v != null);
+      const recent = ((pts.at(-1) - pts[Math.max(0, pts.length - 1 - RECENT)]) / pts[Math.max(0, pts.length - 1 - RECENT)]) * 100;
+      if (recent >= 25) {
+        score += 12; risky++;
+        reasons.push(`part of a surge: ${g.up} ${g.label} up a median ${pct(g.median)} since ${since} (this one ${pct(recent)}) — real demand, but it may cool off`);
+      } else if (recent < 10 && usd >= 3) {
+        score += 14;
+        reasons.push(`${g.label} are surging (${g.up} up a median ${pct(g.median)} since ${since}) — this one hasn't moved yet`);
+      }
+    }
+    if (g && t && t.days >= 3) { /* the group surge explains the jump — not a thin market */ }
+    else if (t && t.days >= 3 && Math.abs(t.chg) > 60) { thin = true; risky++; reasons.push(`price jumped ${pct(t.chg)} in days — few sales, unreliable`); }
     else if (t && t.days >= 3) {
       if (t.chg > 0 && t.up >= t.down + 1) { score += Math.min(16, 3 + t.chg * 0.7); reasons.push(`up ${pct(t.chg)} since ${dayName(history.dates[0])} (rising ${t.up} of ${t.days - 1} days)`); }
       else if (t.chg < -8) { score -= 8; reasons.push(`down ${pct(t.chg)} since ${dayName(history.dates[0])}`); }
@@ -226,9 +272,11 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
 
   const au = await auPicks({ prices, cardsMeta, date, lst });
 
-  const out = { built: new Date().toISOString(), since: history.dates[0] ?? date, days, currency: 'USD', cards, sealed, au: au.picks, auInfo: au.info };
+  const out = { built: new Date().toISOString(), since: history.dates[0] ?? date, days, currency: 'USD', cards, sealed, au: au.picks, auInfo: au.info,
+    hot: [...hot.values()].sort((a, b) => b.median - a.median).slice(0, 8).map((h) => ({ ...h, since })) };
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
   console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates, ${au.info.listed} checked on eBay AU)`);
+  console.log(`Hot groups: ${out.hot.map((h) => `${h.label} (${h.up}/${h.members}, median ${pct(h.median)})`).join(', ') || 'none'}`);
   console.log(`Picks: ${cards.length} cards (${cards.filter((c) => c.risk === 'safer').length} safer), ${sealed.length} sealed (${sealed.filter((c) => c.risk === 'safer').length} safer); ${lst.size} listings`);
   return out;
 }

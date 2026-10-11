@@ -247,6 +247,8 @@ async function devRenderPicks(box) {
   const seg = (name, opts) => `<div class="seg dev-seg" data-seg="${name}">${opts.map(([v, l], i) => `<button type="button" data-v="${v}" class="${i ? '' : 'active'}">${l}</button>`).join('')}</div>`;
   box.innerHTML = `
     <p class="dev-msg">Cards and sealed product that look likely to rise, or are already rising, and why. Built ${devEsc(new Date(picks.built).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }))} from TCGplayer prices and listings${picks.days < 14 ? ` — price history only goes back to ${devEsc(shortDate(picks.since))}, so trends count for little yet (better each week)` : ''}.</p>
+    ${picks.hot?.length ? `<div class="dev-hot"><b>🔥 Hot right now</b>${picks.hot.map((h) => `<div>${devEsc(h.label)}: ${h.up} of ${h.members} up a median <b>+${h.median}%</b> since ${devEsc(h.since)}</div>`).join('')}
+      <small>Whole groups moving together = real demand. The ones already up can cool off; any that haven't moved yet are flagged in the lists.</small></div>` : ''}
     <div class="dev-picks-tools">${seg('kind', [['cards', 'Cards'], ['sealed', 'Sealed'], ...(picks.au ? [['au', 'AU sold']] : [])])}
       ${seg('risk', [['all', 'All'], ['safer', 'Safer'], ['riskier', 'Riskier']])}</div>
     <label class="dev-budget">Max price A$ <input type="number" inputmode="decimal" min="0" step="1" placeholder="any" value="${budget ?? ''}" data-budget>
