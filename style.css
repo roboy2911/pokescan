@@ -957,3 +957,11 @@ body.gated { overflow: hidden; }
 .dev-hot { margin: 6px 0 8px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 120, 60, .1); border: 1px solid rgba(255, 140, 80, .4); font-size: .86rem; display: grid; gap: 3px; }
 .dev-hot b { color: #ffab70; }
 .dev-hot small { color: var(--muted); font-size: .76rem; }
+.dev-h { margin: 12px 0 6px; font-size: .9rem; }
+.dev-anom-group { border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; margin-bottom: 6px; font-size: .86rem; }
+.dev-anom-group.up summary b { color: var(--ok); }
+.dev-anom-group.down summary b { color: var(--err); }
+.dev-anom-group small { color: var(--muted); }
+.dev-anom-group [data-g] { display: grid; gap: 6px; margin-top: 8px; }
+.dev-pick .side b.up { color: var(--ok); }
+.dev-pick .side b.down { color: var(--err); }

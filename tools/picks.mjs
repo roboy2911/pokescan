@@ -117,6 +117,99 @@ function groupSurges(cardsMeta, prices, history) {
   return out;
 }
 
+/* ---------- Anomalies (developer panel → Anomalies) ---------- */
+
+/* Unusual price moves in the daily data:
+ *  - groups moving together (a rarity, a set, or one Pokémon across all its cards), up or down;
+ *  - big single moves (cards and sealed): the last day, and over the last few days.
+ * Each single move says whether it looks real (its group moved too / the cheapest listing backs
+ * it up) or like a few odd sales (listings far from the new price). */
+const baseName = (name) => name.replace(/\s*(◇|★|δ)\s*/g, ' ').replace(/\b(ex|EX|GX|V|VMAX|VSTAR|V-UNION|BREAK|LV\.X|Prime|LEGEND|Star|& .*)$/g, '').replace(/^(Dark|Light|Shining|Radiant|Mega|M|Galarian|Alolan|Hisuian|Paldean|Team Rocket's|Rocket's|Erika's|Misty's|Brock's|Blaine's|Sabrina's|Koga's|Lt\. Surge's|Giovanni's)\s+/, '').trim();
+function anomalies({ cardsMeta, prices, sealedData, history, lst }) {
+  const D = history.dates;
+  const n = D.length;
+  if (n < 2) return { groups: [], moves: [], from: null, to: D[0] ?? null };
+  const back = Math.min(RECENT, n - 1);
+  const at = (series, i) => (series && series[i] != null ? series[i] : null);
+  const groups = new Map();
+  const add = (k, label, kind, chg, id) => {
+    if (!groups.has(k)) groups.set(k, { key: k, label, kind, chgs: [], ids: [] });
+    const g = groups.get(k); g.chgs.push(chg); g.ids.push([id, chg]);
+  };
+  const moves = [];
+  const pushMove = (m) => { if (Math.abs(m.chg) >= m.min) moves.push(m); };
+  for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
+    const row = prices.cards[id];
+    const f = row && MAIN_FINISH.find((k) => row[k] != null);
+    if (!f) continue;
+    const series = history.items[`${id}:${f}`];
+    const now = at(series, n - 1), was = at(series, n - 1 - back), prev = at(series, n - 2);
+    if (now == null || was == null) continue;
+    if (Math.max(now, was) < 200) continue; // under US$2: bulk, noisy
+    const chg = ((now - was) / was) * 100;
+    const set = cardsMeta.sets[setId]?.[0] ?? setId;
+    if (rarity) add(`r:${rarity}`, `${rarity.replace(/^Rare /, '')} cards`, 'rarity', chg, id);
+    add(`s:${setId}`, `${set}`, 'set', chg, id);
+    const bn = baseName(name);
+    if (bn.length >= 3) add(`p:${bn.toLowerCase()}`, `${bn} (every card)`, 'pokemon', chg, id);
+    const base = { kind: 'card', id, name, number, set, finish: FINISH_LABEL[f], usd: now / 100, rarity };
+    const big = Math.max(now, was) >= 500; // US$5+
+    if (big) pushMove({ ...base, chg: Math.round(chg), days: back, from: was / 100, min: 60, window: `${back} days` });
+    if (big && prev != null && n >= 2) {
+      const d1 = ((now - prev) / prev) * 100;
+      if (Math.abs(d1) >= 30) moves.push({ ...base, chg: Math.round(d1), days: 1, from: prev / 100, min: 30, window: '1 day' });
+    }
+  }
+  for (const s of sealedData?.items ?? []) {
+    const series = history.items[`s${s.id}`];
+    const now = at(series, n - 1), was = at(series, n - 1 - back), prev = at(series, n - 2);
+    if (now == null || was == null || Math.max(now, was) < 1000) continue;
+    const base = { kind: 'sealed', id: `s${s.id}`, name: s.name, set: cardsMeta.sets[s.set]?.[0] ?? s.set, type: s.type, usd: now / 100 };
+    pushMove({ ...base, chg: Math.round(((now - was) / was) * 100), days: back, from: was / 100, min: 35, window: `${back} days` });
+    if (prev != null) { const d1 = ((now - prev) / prev) * 100; if (Math.abs(d1) >= 20) moves.push({ ...base, chg: Math.round(d1), days: 1, from: prev / 100, min: 20, window: '1 day' }); }
+  }
+  // Groups: most members moving the same way, strongly.
+  const out = [];
+  for (const g of groups.values()) {
+    const min = g.kind === 'pokemon' ? 4 : 6;
+    if (g.chgs.length < min) continue;
+    for (const dir of [1, -1]) {
+      const movers = g.ids.filter(([, c]) => dir * c >= 20);
+      if (movers.length < (g.kind === 'pokemon' ? 3 : 5) || movers.length / g.chgs.length < 0.4) continue;
+      const cs = movers.map(([, c]) => c).sort((a, b) => a - b);
+      const median = cs[Math.floor(cs.length / 2)];
+      if (dir * median < 35) continue;
+      movers.sort((a, b) => dir * (b[1] - a[1]));
+      out.push({ key: g.key, label: g.label, kind: g.kind, dir: dir > 0 ? 'up' : 'down', members: g.chgs.length, moved: movers.length, median: Math.round(median),
+        top: movers.slice(0, 12).map(([id, c]) => [id, Math.round(c)]), all: movers.map(([id]) => id) });
+    }
+  }
+  out.sort((a, b) => Math.abs(b.median) * b.moved - Math.abs(a.median) * a.moved);
+  // Is a single move real? Its group moved too, or today's cheapest listing is near the new price.
+  const inGroup = new Map();
+  for (const g of out) { for (const id of g.all) if (!inGroup.has(id)) inGroup.set(id, g.label); delete g.all; }
+  for (const m of moves) {
+    const notes = [];
+    if (inGroup.has(m.id)) notes.push(`moving with ${inGroup.get(m.id)}`);
+    const pid = m.kind === 'sealed' ? Number(m.id.slice(1)) : prices.cards[m.id]?.p;
+    const l = pid && Object.values(lst.get(pid) ?? {})[0];
+    if (l?.low && l?.market) {
+      const r = l.low / (m.usd);
+      if (r > 1.6) notes.push('cheapest listing far above it — few sales, unreliable');
+      else if (m.chg > 0 && r >= 0.9) notes.push('cheapest listing backs it up');
+      else if (m.chg > 0 && r < 0.6) notes.push('cheap copies still listed — may not hold');
+      else if (m.chg < 0 && r < 0.95) notes.push('listings dropping too');
+    }
+    m.note = notes.join('; ');
+    delete m.min;
+  }
+  moves.sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg));
+  // One entry per item (the bigger window wins).
+  const seen = new Set();
+  const uniq = moves.filter((m) => !seen.has(m.id) && seen.add(m.id));
+  return { groups: out.slice(0, 30), moves: uniq.slice(0, 120), from: D[n - 1 - back], to: D[n - 1], prev: D[n - 2] };
+}
+
 /* Supply: cheapest listing / recent sales. */
 function supply(l) {
   if (!l?.low || !l?.market) return null;
@@ -273,9 +366,11 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
   const au = await auPicks({ prices, cardsMeta, date, lst });
 
   const out = { built: new Date().toISOString(), since: history.dates[0] ?? date, days, currency: 'USD', cards, sealed, au: au.picks, auInfo: au.info,
-    hot: [...hot.values()].sort((a, b) => b.median - a.median).slice(0, 8).map((h) => ({ ...h, since })) };
+    hot: [...hot.values()].sort((a, b) => b.median - a.median).slice(0, 8).map((h) => ({ ...h, since })),
+    anomalies: anomalies({ cardsMeta, prices, sealedData, history, lst }) };
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
   console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates, ${au.info.listed} checked on eBay AU)`);
+  console.log(`Anomalies: ${out.anomalies.groups.length} groups, ${out.anomalies.moves.length} single moves`);
   console.log(`Hot groups: ${out.hot.map((h) => `${h.label} (${h.up}/${h.members}, median ${pct(h.median)})`).join(', ') || 'none'}`);
   console.log(`Picks: ${cards.length} cards (${cards.filter((c) => c.risk === 'safer').length} safer), ${sealed.length} sealed (${sealed.filter((c) => c.risk === 'safer').length} safer); ${lst.size} listings`);
   return out;

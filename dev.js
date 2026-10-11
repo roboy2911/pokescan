@@ -249,7 +249,7 @@ async function devRenderPicks(box) {
     <p class="dev-msg">Cards and sealed product that look likely to rise, or are already rising, and why. Built ${devEsc(new Date(picks.built).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }))} from TCGplayer prices and listings${picks.days < 14 ? ` — price history only goes back to ${devEsc(shortDate(picks.since))}, so trends count for little yet (better each week)` : ''}.</p>
     ${picks.hot?.length ? `<div class="dev-hot"><b>🔥 Hot right now</b>${picks.hot.map((h) => `<div>${devEsc(h.label)}: ${h.up} of ${h.members} up a median <b>+${h.median}%</b> since ${devEsc(h.since)}</div>`).join('')}
       <small>Whole groups moving together = real demand. The ones already up can cool off; any that haven't moved yet are flagged in the lists.</small></div>` : ''}
-    <div class="dev-picks-tools">${seg('kind', [['cards', 'Cards'], ['sealed', 'Sealed'], ...(picks.au ? [['au', 'AU sold']] : [])])}
+    <div class="dev-picks-tools">${seg('kind', [['cards', 'Cards'], ['sealed', 'Sealed'], ...(picks.au ? [['au', 'AU sold']] : []), ...(picks.anomalies ? [['anom', 'Anomalies']] : [])])}
       ${seg('risk', [['all', 'All'], ['safer', 'Safer'], ['riskier', 'Riskier']])}</div>
     <label class="dev-budget">Max price A$ <input type="number" inputmode="decimal" min="0" step="1" placeholder="any" value="${budget ?? ''}" data-budget>
       <span>${[20, 50, 100, 250].map((v) => `<button type="button" class="chip" data-b="${v}">${v}</button>`).join('')}<button type="button" class="chip" data-b="">any</button></span></label>
@@ -259,6 +259,8 @@ async function devRenderPicks(box) {
   const draw = () => {
     const list = box.querySelector('[data-list]');
     box.querySelector('[data-au-note]').hidden = view.kind !== 'au';
+    box.querySelector('[data-seg=risk]').hidden = view.kind === 'anom';
+    if (view.kind === 'anom') { drawAnomalies(list); return; }
     const all = picks[view.kind].filter((p) => (view.risk === 'all' || p.risk === view.risk) && (!budget || audOf(p) <= budget));
     const items = all.slice(0, 40);
     list.innerHTML = items.length ? '' : `<p class="dev-msg">None in this list today${budget ? ` under A$${budget} — try a higher limit` : ''}.</p>`;
@@ -286,6 +288,47 @@ async function devRenderPicks(box) {
       list.appendChild(row);
     }
   };
+  // Anomalies: groups moving together, then big single moves (US prices → AUD).
+  const drawAnomalies = (list) => {
+    const a = picks.anomalies;
+    const day = (d) => (d ? shortDate(d) : '?');
+    const pctTxt = (c) => `${c > 0 ? '+' : ''}${c}%`;
+    const imgOf = (id) => (String(id).startsWith('s') && !db.byId?.get(id) ? sealed.byKey.get(id)?.image : db.byId?.get(id)?.image) ?? '';
+    const open = (id) => {
+      const c = db.byId?.get(id);
+      if (c) openDetail(c);
+      else if (sealed.byKey.get(id)) openSealedDetail(sealedEntry(sealed.byKey.get(id)));
+    };
+    const moves = a.moves.filter((m) => !budget || m.usd * rate.rate <= budget);
+    list.innerHTML = `<p class="dev-msg">Unusual moves in TCGplayer prices, ${devEsc(day(a.from))} → ${devEsc(day(a.to))} (and the last day). A move with its group, or backed by listings, is more likely real.</p>
+      <h4 class="dev-h">Groups moving together</h4>
+      ${a.groups.length ? a.groups.map((g, i) => `<details class="dev-anom-group ${g.dir}"><summary><b>${g.dir === 'up' ? '▲' : '▼'} ${devEsc(g.label)}</b> — ${g.moved} of ${g.members} ${g.dir}, median <b>${pctTxt(g.median)}</b> <small>(${g.kind === 'pokemon' ? 'one Pokémon' : g.kind})</small></summary><div data-g="${i}"></div></details>`).join('')
+        : '<p class="dev-msg">No groups moving together right now.</p>'}
+      <h4 class="dev-h">Big single moves${budget ? ` (under A$${budget})` : ''}</h4><div data-moves></div>`;
+    const row = (id, title, sub, chg, from, to, note) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'dev-pick';
+      b.innerHTML = `<img src="${devEsc(imgOf(id))}" alt="" loading="lazy">
+        <div class="meta"><div class="name">${devEsc(title)}</div><div class="sub">${devEsc(sub)}</div>${note ? `<ul><li>${devEsc(note)}</li></ul>` : ''}</div>
+        <div class="side"><b class="${chg > 0 ? 'up' : 'down'}">${pctTxt(chg)}</b>${from != null ? `<small>${formatAud(from, rate.rate)} → ${formatAud(to, rate.rate)}</small>` : ''}</div>`;
+      b.addEventListener('click', () => open(id));
+      return b;
+    };
+    a.groups.forEach((g, i) => {
+      const box2 = list.querySelector(`[data-g="${i}"]`);
+      for (const [id, c] of g.top) {
+        const card = db.byId?.get(id);
+        box2.appendChild(row(id, card?.name ?? id, card ? `${card.setName} · ${numberText(card)}` : '', c, null, null, ''));
+      }
+    });
+    const mv = list.querySelector('[data-moves]');
+    if (!moves.length) mv.innerHTML = '<p class="dev-msg">None.</p>';
+    for (const m of moves.slice(0, 60)) {
+      mv.appendChild(row(m.id, m.name, [m.set, m.kind === 'sealed' ? m.type : m.finish, `over ${m.window}`].filter(Boolean).join(' · '), m.chg, m.from, m.usd, m.note));
+    }
+  };
+
   const setBudget = (v) => {
     budget = Number(v) > 0 ? Number(v) : null;
     try { if (budget) localStorage.setItem(BUDGET_KEY, String(budget)); else localStorage.removeItem(BUDGET_KEY); } catch { /* no storage */ }
