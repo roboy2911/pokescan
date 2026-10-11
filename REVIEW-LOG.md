@@ -397,3 +397,6 @@ Claude "remove <name>".
 - The run checked 2,690 cards (997 priced, 1,693 with too few Australian-seller sales) and had 28 failures (SoldComps 503 "search blocked"). That used about 2,700 credits. It stopped after 100 minutes because the script's default time limit was never raised for the 330-minute job, leaving about 1,180 cards unchecked. The workflow now sets `TIME_LIMIT_MIN=320`.
 - 314 cards that had a price lost it, because the pre-check only asks Australian sellers while the worker widens to every seller on eBay AU. The pre-check now keeps an earlier price (21 days or newer) instead of wiping it, and records the check date in field [5] so it isn't searched again straight away. The 314 prices were put back from the 8 Oct file.
 - The 30th Celebration Mew R/G/B cards (a lone-letter number) searched just "mew g" and matched every Mew sale (A$5,510). They're now skipped.
+
+## 2026-10-11 — AU sold: cracked ice copies excluded
+- Theme-deck "cracked ice" versions (for example Espeon / Umbreon from HS Undaunted) are a different, cheaper card, but they were counted in the regular holo's AU price. Espeon 2/90 showed A$39 when only 1 of its 5 recent sales was the real holo (A$53.70). Titles with "cracked ice" now count as junk unless the search itself asks for cracked ice.
