@@ -1,20 +1,161 @@
 {
-  "note": "Upcoming events that can move prices, kept by hand (checked against the sources listed). effect: 'up' = new attention on that Pokémon; 'supply' = more of that set / card being printed. Used by tools/picks.mjs (Best ideas → Catalyst watch).",
-  "updated": "2026-10-11",
-  "items": [
-    {
-      "pokemon": "Rayquaza",
-      "effect": "up",
-      "date": "2026-11-06",
-      "event": "Mega Rayquaza is the chase card of Mega Evolution: Delta Reign (prereleases from 24 Oct)",
-      "source": "https://cardtrack.com/pokemon/upcoming-sets"
-    },
-    {
-      "set": "30th Celebration",
-      "effect": "supply",
-      "date": "2026-12-04",
-      "event": "more 30th Celebration products on 30 Oct, 6 Nov and 4 Dec — supply still coming",
-      "source": "https://pokennoisseur.ca/tools/release-calendar"
-    }
-  ]
+ "note": "Research kept by hand, with sources. effect 'up' = attention / reported climbing; 'supply' = more being printed / prices falling with supply. kind: 'card' (a named card reported climbing — counts as confirmed movement), 'set', 'pokemon', 'era' (a class of card), plus dated events (pokemon + date). Used by tools/picks.mjs.",
+ "updated": "2026-10-11",
+ "items": [
+  {
+   "pokemon": "Rayquaza",
+   "effect": "up",
+   "date": "2026-11-06",
+   "event": "Mega Rayquaza is the chase card of Mega Evolution: Delta Reign (prereleases from 24 Oct)",
+   "source": "https://cardtrack.com/pokemon/upcoming-sets",
+   "kind": "event"
+  },
+  {
+   "set": "30th Celebration",
+   "effect": "supply",
+   "date": "2026-12-04",
+   "event": "more 30th Celebration products on 30 Oct, 6 Nov and 4 Dec — supply still coming",
+   "source": "https://pokennoisseur.ca/tools/release-calendar",
+   "kind": "set"
+  },
+  {
+   "kind": "card",
+   "name": "Gengar LV.X",
+   "set": "Arceus",
+   "effect": "up",
+   "note": "TCGplayer: climbing since summer 2025 — $150 a year ago, $500 in August, last NM sold well over $1,000 (live listings ~$1,000)",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-10-07-2026/a2682fec-a057-400f-93f1-cfdd2f2bcb30/",
+   "date": "2026-10-07"
+  },
+  {
+   "kind": "card",
+   "name": "Slowking",
+   "set": "HS—Undaunted",
+   "effect": "up",
+   "note": "TCGplayer: Slowking Prime $30 at the start of summer → $150+ NM, momentum building all year",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-10-07-2026/a2682fec-a057-400f-93f1-cfdd2f2bcb30/",
+   "date": "2026-10-07"
+  },
+  {
+   "kind": "card",
+   "name": "Jirachi ◇",
+   "set": "Celestial Storm",
+   "effect": "up",
+   "note": "TCGplayer: under $10 at the start of 2026 → NM copies from ~$75",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-10-07-2026/a2682fec-a057-400f-93f1-cfdd2f2bcb30/",
+   "date": "2026-10-07"
+  },
+  {
+   "kind": "card",
+   "name": "Rayquaza-GX",
+   "set": "Celestial Storm",
+   "effect": "up",
+   "note": "TCGplayer: top-end Celestial Storm creeping up ($300 → $350+ in six weeks); after Jirachi's leap 'it wouldn't be a shock for any of these to take a more drastic leap'",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-10-07-2026/a2682fec-a057-400f-93f1-cfdd2f2bcb30/",
+   "date": "2026-10-07"
+  },
+  {
+   "kind": "card",
+   "name": "Mewtwo-EX",
+   "set": "BREAKthrough",
+   "number": "164",
+   "effect": "up",
+   "note": "TCGplayer: Mewtwo-EX 164 under $50 two years ago, over $200 for the first time",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-09-09-2026/096e6aa2-fa10-4164-af3c-2e8798e026a6/",
+   "date": "2026-09-09"
+  },
+  {
+   "kind": "card",
+   "name": "Mew-EX",
+   "set": "XY Black Star Promos",
+   "effect": "up",
+   "note": "TCGplayer: Mew-EX XY126 at an all-time high (~$250, double a year ago)",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-09-09-2026/096e6aa2-fa10-4164-af3c-2e8798e026a6/",
+   "date": "2026-09-09"
+  },
+  {
+   "kind": "card",
+   "name": "Pikachu",
+   "set": "Rising Rivals",
+   "effect": "up",
+   "note": "TCGplayer: Flying / Surfing Pikachu climbing as supply runs out (Flying $150 → ~$400, Surfing ~$1,000)",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-09-09-2026/096e6aa2-fa10-4164-af3c-2e8798e026a6/",
+   "date": "2026-09-09"
+  },
+  {
+   "kind": "card",
+   "name": "Raichu & Alolan Raichu-GX",
+   "effect": "up",
+   "note": "TCGplayer: alt art climbing ($360 market, live listings ~$430)",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-09-09-2026/096e6aa2-fa10-4164-af3c-2e8798e026a6/",
+   "date": "2026-09-09"
+  },
+  {
+   "kind": "card",
+   "name": "Lugia",
+   "set": "30th Celebration: Classic Collection",
+   "effect": "up",
+   "note": "TCGplayer: Classic Collection Lugia climbing ($300 → $325) while the rest of the set falls",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-10-02-2026/07ec4f7e-8ab4-4aeb-92f3-f2c1c0f92a7c/",
+   "date": "2026-10-02"
+  },
+  {
+   "kind": "set",
+   "set": "Celestial Storm",
+   "effect": "up",
+   "note": "TCGplayer: top-end Celestial Storm cards creeping up; a bigger leap 'wouldn't be a shock'",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-10-07-2026/a2682fec-a057-400f-93f1-cfdd2f2bcb30/",
+   "date": "2026-10-07"
+  },
+  {
+   "kind": "set",
+   "set": "Rising Rivals",
+   "effect": "up",
+   "note": "TCGplayer: Rising Rivals cards climbing as supply runs out",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-09-09-2026/096e6aa2-fa10-4164-af3c-2e8798e026a6/",
+   "date": "2026-09-09"
+  },
+  {
+   "kind": "pokemon",
+   "pokemon": "Mew",
+   "effect": "up",
+   "note": "TCGplayer: 'a big year for Mew' — Mew printings keep climbing",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-09-09-2026/096e6aa2-fa10-4164-af3c-2e8798e026a6/",
+   "date": "2026-09-09"
+  },
+  {
+   "kind": "era",
+   "from": "2007",
+   "to": "2016",
+   "popular": true,
+   "effect": "up",
+   "note": "TCGplayer: the class of card rising most in 2026 — 'old, but not ancient', a popular Pokémon, from a set that's scarce today",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-09-09-2026/096e6aa2-fa10-4164-af3c-2e8798e026a6/",
+   "date": "2026-09-09"
+  },
+  {
+   "kind": "set",
+   "set": "Ascended Heroes",
+   "effect": "supply",
+   "note": "TCGplayer: Ascended Heroes singles falling as supply returns",
+   "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-09-09-2026/096e6aa2-fa10-4164-af3c-2e8798e026a6/",
+   "date": "2026-09-09"
+  },
+  {
+   "kind": "set",
+   "set": "Destined Rivals",
+   "effect": "supply",
+   "note": "reprints of Destined Rivals sealed (ETBs) in 2026",
+   "source": "https://collectorstation.com/pokemon-tcg-schedule-upcoming-sets",
+   "date": "2026-10-11"
+  },
+  {
+   "kind": "set",
+   "set": "Prismatic Evolutions",
+   "effect": "supply",
+   "note": "reprints of Prismatic Evolutions sealed in 2026",
+   "source": "https://collectorstation.com/pokemon-tcg-schedule-upcoming-sets",
+   "date": "2026-10-11"
+  }
+ ]
 }

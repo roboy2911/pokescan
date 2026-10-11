@@ -210,6 +210,26 @@ function anomalies({ cardsMeta, prices, sealedData, history, lst }) {
   return { groups: out.slice(0, 30), moves: uniq.slice(0, 120), from: D[n - 1 - back], to: D[n - 1], prev: D[n - 2] };
 }
 
+/* ---------- Research (data/catalysts.json, kept by hand with sources) ---------- */
+
+/* 'up' research is used for 60 days after its date, supply news for 90, dated events until
+ * the day. Returns { items, up, match(name, number, setName, releaseDate) → { card, set, mon, era }, cardOf }. */
+async function loadResearch(date) {
+  const cat = await readJson('catalysts.json', { items: [] });
+  const age = (d) => (d ? (Date.parse(date) - Date.parse(d)) / 86400000 : 0);
+  const items = (cat.items ?? []).filter((c) => (c.kind === 'event' ? !c.date || c.date >= date : age(c.date) <= (c.effect === 'supply' ? 90 : 60)));
+  const up = items.filter((c) => c.effect === 'up');
+  const cardOf = (c, name, number, setName) => (name === c.name || name.startsWith(`${c.name} `)) && (!c.set || setName === c.set) && (!c.number || number === c.number);
+  const match = (name, number, setName, released) => ({
+    card: up.find((c) => c.kind === 'card' && cardOf(c, name, number, setName)),
+    set: up.find((c) => c.kind === 'set' && c.set === setName),
+    mon: up.find((c) => c.kind === 'pokemon' && new RegExp(`\\b${c.pokemon}\\b`, 'i').test(name.replace(/-(EX|GX|V|VMAX|VSTAR)\b/g, ''))),
+    era: up.find((c) => c.kind === 'era' && released && released.slice(0, 4) >= c.from && released.slice(0, 4) <= c.to),
+  });
+  return { items, up, match, cardOf };
+}
+const srcName = (c) => (/tcgplayer/.test(c.source || '') ? 'TCGplayer' : 'news');
+
 /* ---------- Best ideas (developer panel → Best ideas) ---------- */
 
 /* Only cards where several separate signals agree — not "maybe"s. Every pick must have:
@@ -218,7 +238,7 @@ function anomalies({ cardsMeta, prices, sealedData, history, lst }) {
  *   blown out, or its group surging while it hasn't caught up), a card people chase (top rarity
  *   or vintage holo of a popular Pokémon), a market that trades (AU sales or a reliable price),
  *   not a new set, not a thin market, and at least 5 of the checks below. Few, on purpose. */
-async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }) {
+async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date, research }) {
   const sets = cardsMeta.sets;
   const n = history.dates.length;
   const out = [];
@@ -234,7 +254,9 @@ async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }) {
     const vintage = (set[3] || '9') < '2004';
     const chase = CHASE.slice(0, 2).find(([re]) => re.test(rarity || '')) || (vintage && /holo/i.test(rarity || ''));
     const top = TOP_MONS.test(name), fan = FAN_MONS.test(name);
-    if (!chase || !(top || fan)) continue; // a card people chase
+    // Research: a card reported climbing (counts as a card people chase, and as movement).
+    const r = research.match(name, number, set[0], set[3]);
+    if (!r.card && (!chase || !(top || fan))) continue; // a card people chase
     const checks = [];
     // Demand (TCGplayer).
     const sup = supply(lst.get(row.p)?.[SUBTYPE[f]]);
@@ -246,6 +268,7 @@ async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }) {
     const t = trend(history.items[`${id}:${f}`]);
     const g = hot.get(`r:${rarity}`) ?? hot.get(`s:${setId}`);
     let moving = false;
+    if (r.card) { moving = true; checks.push(`${srcName(r.card)} (${dayName(r.card.date)}): ${r.card.note.replace(/^TCGplayer:\s*/, '')}`); }
     if (t && t.days >= 3 && t.chg >= 5 && t.chg <= 60 && t.up >= 2 && t.up > t.down) { moving = true; checks.push(`price rising steadily: ${pct(t.chg)} since ${dayName(history.dates[0])}, up ${t.up} of ${t.days - 1} days — not blown out yet`); }
     if (t && Math.abs(t.chg) > 60 && !g) continue; // sudden jump on its own: unreliable
     if (g && series.length >= 3) {
@@ -253,8 +276,11 @@ async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }) {
       const recent = ((series.at(-1) - from) / from) * 100;
       if (recent < 10) { moving = true; checks.push(`${g.label} are surging (median ${pct(g.median)}) and this one hasn't caught up yet`); }
     }
-    checks.push(chase === true ? 'vintage holo' : `${chase[2]}`);
-    checks.push(`${name.match(top ? TOP_MONS : FAN_MONS)[1].replace(/^./, (c) => c.toUpperCase())} — ${top ? 'one of the most collected Pokémon' : 'a fan favourite'}`);
+    if (chase) checks.push(chase === true ? 'vintage holo' : `${chase[2]}`);
+    if (top || fan) checks.push(`${name.match(top ? TOP_MONS : FAN_MONS)[1].replace(/^./, (c) => c.toUpperCase())} — ${top ? 'one of the most collected Pokémon' : 'a fan favourite'}`);
+    if (r.set && !r.card) checks.push(`${srcName(r.set)}: ${r.set.note.replace(/^TCGplayer:\s*/, '')}`);
+    if (r.mon) checks.push(`${srcName(r.mon)}: ${r.mon.note.replace(/^TCGplayer:\s*/, '')}`);
+    if (r.era && (top || fan) && !vintage) checks.push(`${r.era.from}–${r.era.to} card of a popular Pokémon — ${srcName(r.era)} says that's the kind of card rising most this year`);
     if (age != null && age >= 9 && !vintage) checks.push(age > 48 ? 'long out of print — no new supply coming' : 'out of (or near the end of) its print run — no new supply coming');
     if (vintage) checks.push('vintage — no new supply, ever');
     const a = au.byId.get(id);
@@ -331,14 +357,12 @@ async function catchUps({ hot, cardsMeta, prices, history }) {
   return out.slice(0, 30);
 }
 
-/* Catalyst watch: events from data/catalysts.json (kept by hand, with sources). 'up' → chased
- * cards of that Pokémon that haven't moved yet; 'supply' → a warning on that set's picks. */
-async function catalystWatch({ cardsMeta, prices, history, lst, date }) {
-  const cat = await readJson('catalysts.json', { items: [] });
+/* Catalyst watch: dated events from data/catalysts.json — chased cards of that Pokémon that
+ * haven't moved yet. Supply news → a warning on that set's picks. */
+async function catalystWatch({ cardsMeta, prices, history, lst, date, research }) {
   const out = [];
-  for (const c of cat.items ?? []) {
-    if (c.date && c.date < date && c.effect === 'up') continue; // passed
-    if (c.effect !== 'up' || !c.pokemon) continue;
+  for (const c of research.items) {
+    if (c.kind !== 'event' || c.effect !== 'up' || !c.pokemon) continue;
     const re = new RegExp(`\\b${c.pokemon}\\b`, 'i');
     for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
       if (!re.test(name)) continue;
@@ -357,7 +381,52 @@ async function catalystWatch({ cardsMeta, prices, history, lst, date }) {
     }
   }
   out.sort((a, b) => (b.sup ?? 0) - (a.sup ?? 0) || b.usd - a.usd);
-  return { picks: out.slice(0, 20), supply: (cat.items ?? []).filter((c) => c.effect === 'supply' && (!c.date || c.date >= date)) };
+  return { picks: out.slice(0, 20), supply: research.items.filter((c) => c.effect === 'supply').map((c) => ({ ...c, event: c.event ?? c.note })) };
+}
+
+/* In the news: cards that price-tracking articles report climbing (data/catalysts.json, kind
+ * 'card'), then the top cards of sets / Pokémon they say are rising that haven't moved yet. */
+function newsPicks({ cardsMeta, prices, history, lst, research }) {
+  const rows = [];
+  const priced = (id) => {
+    const row = prices.cards[id];
+    const f = row && MAIN_FINISH.find((k) => row[k] != null);
+    return f ? { usd: row[f], f, row } : null;
+  };
+  // Named cards: the printing(s) the article means — the priciest, and any within half of it.
+  for (const c of research.up.filter((x) => x.kind === 'card')) {
+    const hits = cardsMeta.cards.filter(([, name, number, setId]) => research.cardOf(c, name, number, cardsMeta.sets[setId]?.[0])).map((r) => ({ r, p: priced(r[0]) })).filter((x) => x.p && x.p.usd >= 10);
+    const max = Math.max(0, ...hits.map((x) => x.p.usd));
+    for (const { r: [id, name, number, setId, rarity], p } of hits) {
+      if (p.usd < max * 0.5) continue;
+      const t = trend(history.items[`${id}:${p.f}`]);
+      rows.push({ id, name, number, set: cardsMeta.sets[setId]?.[0] ?? setId, rarity, usd: p.usd, chg: t ? Math.round(t.chg) : 0, kind: 'card',
+        why: `${srcName(c)} (${dayName(c.date)}): ${c.note.replace(/^TCGplayer:\s*/, '')}`, source: c.source });
+    }
+  }
+  // Sets / Pokémon on the rise: their chase cards that haven't moved in our data yet.
+  for (const c of research.up.filter((x) => x.kind === 'set' || x.kind === 'pokemon')) {
+    const re = c.kind === 'pokemon' && new RegExp(`\\b${c.pokemon}\\b`, 'i');
+    const cand = [];
+    for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
+      const set = cardsMeta.sets[setId] ?? [];
+      if (c.kind === 'set' ? set[0] !== c.set : !re.test(name.replace(/-(EX|GX|V|VMAX|VSTAR)\b/g, ''))) continue;
+      if (rows.some((x) => x.id === id)) continue;
+      const chase = CHASE.slice(0, 2).find(([rx]) => rx.test(rarity || '')) || ((set[3] || '9') < '2004' && /holo/i.test(rarity || ''));
+      if (!chase) continue;
+      const p = priced(id);
+      if (!p || p.usd < 20) continue;
+      const t = trend(history.items[`${id}:${p.f}`]);
+      if (t && t.chg >= 25) continue; // already moved
+      const sup = supply(lst.get(p.row.p)?.[SUBTYPE[p.f]]);
+      if (sup != null && (sup > 1.5 || sup < 0.8)) continue; // thin, or plenty of cheap copies
+      cand.push({ id, name, number, set: set[0] ?? setId, rarity, usd: p.usd, chg: t ? Math.round(t.chg) : 0, kind: c.kind, sup,
+        why: `${srcName(c)} (${dayName(c.date)}): ${c.note.replace(/^TCGplayer:\s*/, '')} — this one hasn't moved in our data yet${sup != null && sup >= 1 ? '; cheapest copy at/above recent sales' : ''}`, source: c.source });
+    }
+    cand.sort((a, b) => (b.sup ?? 0) - (a.sup ?? 0) || b.usd - a.usd);
+    rows.push(...cand.slice(0, 6).map(({ sup, ...x }) => x));
+  }
+  return rows.slice(0, 40);
 }
 
 /* Supply: cheapest listing / recent sales. */
@@ -372,6 +441,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
   ]);
   if (!prices?.cards || !cardsMeta?.cards) throw new Error('prices.json / cards.json missing');
   const lst = listingMap ?? await listings();
+  const research = await loadResearch(date);
   const sets = cardsMeta.sets; // id → [name, series, total, releaseDate]
   const days = history.dates.length;
 
@@ -518,9 +588,10 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
   const out = { built: new Date().toISOString(), since: history.dates[0] ?? date, days, currency: 'USD', cards, sealed, au: au.picks, auInfo: au.info,
     hot: [...hot.values()].sort((a, b) => b.median - a.median).slice(0, 8).map((h) => ({ ...h, since })),
     anomalies: anomalies({ cardsMeta, prices, sealedData, history, lst }),
-    best: await bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }),
+    best: await bestIdeas({ cardsMeta, prices, history, lst, hot, au, date, research }),
     catchUp: await catchUps({ hot, cardsMeta, prices, history }),
-    catalysts: await catalystWatch({ cardsMeta, prices, history, lst, date }) };
+    catalysts: await catalystWatch({ cardsMeta, prices, history, lst, date, research }),
+    news: newsPicks({ cardsMeta, prices, history, lst, research }) };
   // More supply coming for a set: a warning on its picks.
   for (const c of out.catalysts.supply) {
     for (const list of [out.cards, out.best, out.au]) for (const p of list ?? []) {
@@ -529,7 +600,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
   }
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
   console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates, ${au.info.listed} checked on eBay AU)`);
-  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}`);
+  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}; in the news: ${out.news.length}`);
   console.log(`Best ideas: ${out.best.length} (${out.best.map((b) => b.name).join(', ')})`);
   console.log(`Anomalies: ${out.anomalies.groups.length} groups, ${out.anomalies.moves.length} single moves`);
   console.log(`Hot groups: ${out.hot.map((h) => `${h.label} (${h.up}/${h.members}, median ${pct(h.median)})`).join(', ') || 'none'}`);

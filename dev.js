@@ -314,22 +314,23 @@ async function devRenderPicks(box) {
       if (!shown.length) return;
       list.insertAdjacentHTML('beforeend', `<h4 class="dev-h">${title}</h4><p class="dev-msg">${intro}</p>`);
       if (shown.some((r) => r.lang === 'ja')) await loadJapanese().catch(() => {});
-      for (const r of shown.slice(0, 20)) {
+      for (const r of shown.slice(0, 30)) {
         const card = db.byId?.get(r.id);
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'dev-pick';
         b.innerHTML = `<img src="${devEsc(card?.image ?? '')}" alt="" loading="lazy">
           <div class="meta"><div class="name">${devEsc(r.name)}${r.lang === 'ja' ? ' <span class="jp-badge">JP</span>' : ''}</div>
-            <div class="sub">${devEsc([r.set, r.rarity].filter(Boolean).join(' · '))}</div><ul><li>${devEsc(r.why)}</li></ul>
+            <div class="sub">${devEsc([r.set, r.number && `#${r.number}`, r.rarity].filter(Boolean).join(' · '))}</div><ul><li>${devEsc(r.why)}</li></ul>
             ${r.source ? `<small class="dev-src">Source: ${devEsc(new URL(r.source).hostname)}</small>` : ''}</div>
           <div class="side"><b>${formatAud(r.usd, rate.rate)}</b><small>${r.chg > 0 ? '+' : ''}${r.chg}% so far</small><span class="risk riskier">Riskier</span></div>`;
         b.addEventListener('click', () => { if (card) openDetail(card); });
         list.appendChild(b);
       }
     };
-    extra('🔁 Catch-up plays', 'A group is surging — these belong with it but haven\'t moved yet. Prices often follow, but not always.', picks.catchUp ?? [])
-      .then(() => extra('📅 Catalyst watch', 'Something coming up could pull these up (from news / release schedules; source shown). They haven\'t moved yet — a bet on the event.', picks.catalysts?.picks ?? []));
+    extra('📰 In the news', 'Price-tracking articles (TCGplayer\'s weekly price spikes) say these are climbing, or are the top cards of a set / Pokémon they say is rising. Checked by hand — source shown.', picks.news ?? [])
+      .then(() => extra('🔁 Catch-up plays', 'A group is surging — these belong with it but haven\'t moved yet. Prices often follow, but not always.', picks.catchUp ?? [])
+      .then(() => extra('📅 Catalyst watch', 'Something coming up could pull these up (from news / release schedules; source shown). They haven\'t moved yet — a bet on the event.', picks.catalysts?.picks ?? [])));
   };
 
   // Anomalies: groups moving together, then big single moves (US prices → AUD).
