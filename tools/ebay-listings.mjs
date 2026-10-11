@@ -6,14 +6,17 @@
 // first (price + postage).
 //
 // Secrets (Cloudflare dashboard): EBAY_CLIENT_ID (App ID), EBAY_CLIENT_SECRET (Cert ID).
-// GET /listings?q=<search words>&n=<number>[&t=<mode>][&s=<set>][&e=<English set name>]
+// GET /listings?q=<search words>&n=<number>[&t=<mode>][&s=<set>][&e=<English set name>][&ns=1: don't store]
 //   → { ok, count, cheapest: [{ title, aud, price, ship, url, img }], median, asOf }
 //   | { ok: false, reason: 'no-ebay-key' | 'daily-limit' | … }
-// Answers are kept 6 hours; at most EBAY_DAILY_LIMIT (default 3000) searches a day (eBay
-// allows 5,000). Each card lookup is 2 eBay searches (language-marked + unmarked).
+// Answers are kept 6 hours (in memory, and in KV — one storage write per new answer); at most
+// EBAY_DAILY_LIMIT (default 3000) lookups a day per worker instance (eBay allows 5,000 searches).
+// Each card lookup is 2 eBay searches (language-marked + unmarked).
 import { matching, OTHER_LANG } from './au-sold-filter.mjs';
 
 const KEEP_HOURS = 6;
+const searches = { day: '', n: 0 }; // this worker instance's searches today
+const memo = new Map(); // recent answers in memory: repeat lookups cost no storage reads / writes
 // Signs a listing is a Japanese card: Japanese writing, Japanese set codes (sv2a, s8b, sm12a,
 // SV-P, S-P), Japanese-only rarity codes (SAR, CHR, CSR, AR), "Japan(ese)".
 const JP_SIGNS = /[\u3040-\u30ff\u3400-\u9fff]|\b(sv\d{1,2}[a-z]|s\d{1,2}[a-z]|sm\d{1,2}[a-z+]|sv-p|s-p|sm-p|sar|chr|csr|ar)\b|\bjapan(ese)?\b|\bjpn?\b/i;
@@ -43,27 +46,30 @@ export async function handleListings(request, env, url, reply) {
   if (!env.EBAY_CLIENT_ID || !env.EBAY_CLIENT_SECRET) return reply({ ok: false, reason: 'no-ebay-key', listings: 1 });
   if (!env.AU_KV) return reply({ ok: false, reason: 'no-storage' }, 500);
   const p = (k) => url.searchParams.get(k) || '';
-  const { status = 200, ...out } = await findListings(env, { q: p('q'), n: p('n'), t: p('t'), s: p('s'), e: p('e') });
+  const { status = 200, ...out } = await findListings(env, { q: p('q'), n: p('n'), t: p('t'), s: p('s'), e: p('e') }, { store: p('ns') !== '1' });
   return reply(out, status);
 }
 
 /* The cheapest near-mint copies for sale for one card / product. Answers are kept `keepHours`
  * (the want-list alerts ask for fresher ones: tools/push.mjs). → the /listings answer. */
-export async function findListings(env, params, { keepHours = KEEP_HOURS } = {}) {
+export async function findListings(env, params, { keepHours = KEEP_HOURS, store = true } = {}) {
   const q = (params.q || '').replace(/\s+/g, ' ').trim().slice(0, 120);
   const n = (params.n || '').trim().slice(0, 20);
   const t = ['o', 'r25', 'r30', 'ja'].includes(params.t) ? params.t : '';
   const set = (params.s || '').trim().slice(0, 60);
   if (q.length < 3) return { ok: false, reason: 'query', listings: 1, status: 400 };
   const key = `ls:v5:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
+  const fresh = (c) => c && Date.now() - Date.parse(c.asOf) < keepHours * 3600000;
+  if (fresh(memo.get(key))) return { ...memo.get(key), cached: true };
   const cached = await env.AU_KV.get(key, 'json');
-  if (cached && Date.now() - Date.parse(cached.asOf) < keepHours * 3600000) return { ...cached, cached: true };
+  if (fresh(cached)) { memo.set(key, cached); return { ...cached, cached: true }; }
 
+  // Daily cap, counted in memory (a KV counter cost a storage write per search — Cloudflare's
+  // free plan allows 1,000 writes a day). eBay enforces its own 5,000 a day too (→ 429).
   const day = new Date().toISOString().slice(0, 10);
-  const countKey = `ebaycount:${day}`;
-  const used = Number(await env.AU_KV.get(countKey)) || 0;
-  if (used >= (Number(env.EBAY_DAILY_LIMIT) || 3000)) return { ok: false, reason: 'daily-limit' };
-  await env.AU_KV.put(countKey, String(used + 1), { expirationTtl: 2 * 86400 });
+  if (searches.day !== day) { searches.day = day; searches.n = 0; }
+  if (searches.n >= (Number(env.EBAY_DAILY_LIMIT) || 3000)) return { ok: false, reason: 'daily-limit' };
+  searches.n++;
 
   // The card's language: eBay's own "Language" item detail. Sellers often leave it out, so two
   // searches: copies marked with the language, plus unmarked ones that the title shows are
@@ -86,6 +92,7 @@ export async function findListings(env, params, { keepHours = KEEP_HOURS } = {})
         headers: { authorization: `Bearer ${token}`, 'x-ebay-c-marketplace-id': 'EBAY_AU', 'x-ebay-c-enduserctx': 'contextualLocation=country=AU' },
       });
       if (res.status === 401) await env.AU_KV.delete('ebay:token');
+      if (res.status === 429) throw new Error('daily-limit');
       if (!res.ok) throw new Error(`ebay-${res.status}`);
       return (await res.json()).itemSummaries ?? [];
     };
@@ -126,6 +133,10 @@ export async function findListings(env, params, { keepHours = KEEP_HOURS } = {})
     cheapest: keep.slice(0, 5).map((r) => ({ title: r.title, aud: Math.round(r.soldPrice * 100) / 100, price: r.price, ship: r.ship, url: r.url, img: r.img })),
     asOf: new Date().toISOString(),
   };
-  await env.AU_KV.put(key, JSON.stringify(out), { expirationTtl: KEEP_HOURS * 3600 });
+  if (memo.size > 2000) memo.clear();
+  memo.set(key, out);
+  // Saved for other instances — unless asked not to (the hourly want-list check and the daily
+  // buy-ideas run: their answers are only needed once, and storage writes are limited).
+  if (store) await env.AU_KV.put(key, JSON.stringify(out), { expirationTtl: KEEP_HOURS * 3600 });
   return out;
 }

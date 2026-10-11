@@ -292,7 +292,7 @@ async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date, resea
     while (need.length) {
       const p = need.shift();
       const u = new URL('listings', WORKER);
-      u.search = new URLSearchParams({ q: p.a.q, n: p.a.n2, ...(p.a.t && { t: p.a.t }), ...(p.a.s && { s: p.a.s }), e: p.set.replace(/^Scarlet & Violet[—–-]?\s*(?=\S)/, '').replace(/^Base$/, 'Base Set') });
+      u.search = new URLSearchParams({ q: p.a.q, n: p.a.n2, ...(p.a.t && { t: p.a.t }), ...(p.a.s && { s: p.a.s }), e: p.set.replace(/^Scarlet & Violet[—–-]?\s*(?=\S)/, '').replace(/^Base$/, 'Base Set'), ns: '1' });
       try { const r = await (await fetch(u, { headers: HEADERS })).json(); if (r.ok) p.a.forSale = { count: r.count, ...(r.cheapest?.[0] && { aud: Math.round(r.cheapest[0].aud), url: r.cheapest[0].url }) }; } catch { /* skip */ }
     }
   }));
@@ -851,7 +851,7 @@ async function auPicks({ prices, cardsMeta, date, lst }) {
     while (queue.length) {
       const p = queue.shift();
       const u = new URL('listings', WORKER);
-      u.search = new URLSearchParams({ q: p.q, n: p.n, ...(p.t && { t: p.t }), ...(p.s && { s: p.s }), ...(p.e && { e: p.e }) });
+      u.search = new URLSearchParams({ q: p.q, n: p.n, ...(p.t && { t: p.t }), ...(p.s && { s: p.s }), ...(p.e && { e: p.e }), ns: '1' });
       let r = null;
       try { r = await (await fetch(u, { headers: HEADERS })).json(); } catch { /* skip */ }
       if (!r?.ok) continue;

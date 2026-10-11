@@ -126,7 +126,7 @@ export async function checkWants(env) {
   const answers = new Map();
   const listing = (w) => {
     const k = `${w.q}|${w.n}|${w.t}|${w.s}|${w.e}`.toLowerCase();
-    if (!answers.has(k)) answers.set(k, findListings(env, w, { keepHours: KEEP_HOURS }).catch(() => null));
+    if (!answers.has(k)) answers.set(k, findListings(env, w, { keepHours: KEEP_HOURS, store: false }).catch(() => null));
     return answers.get(k);
   };
   for (const id of subs) {

@@ -429,3 +429,8 @@ Claude "remove <name>".
   - Scored on the move, the supply gap, popularity, research matches, the 2007–2016 era and LV.X/Prime/Star rarity.
   - It's tracked in the pick log.
 - Today it finds 3: **Arceus LV.X 94/99** (Arceus, US$90, +26%, cheapest copy 27% above sales, none for sale in AU; the same set as Gengar LV.X), Golem 14 (Expedition, +20%) and Mr. Mime-GX 156 (Celestial Storm, +10%). Arceus LV.X also passes the ⭐ Best checks now.
+
+## 2026-10-12 — Cloudflare free-plan storage writes (1,000 a day)
+- The owner got Cloudflare limit warnings. The eBay `/listings` lookup made 2 KV writes per search (a daily counter plus the cached answer). The daily buy-ideas run (about 300 lookups), the hourly want-list check and this morning's deal scans (about 600 lookups) used up the 1,000 free writes a day.
+- The eBay daily cap is now counted in memory, so there's no write (eBay's own 429 still stops it), and answers are kept in memory first. New `ns=1` ("don't store") is used by `tools/picks.mjs` (both lookups) and the hourly push check. App lookups still store: 1 write per new card a day.
+- Remaining writes: app eBay lookups (1 per new card), AU sold searches (3 each, at most 500 a day, and rare), account sync and backups, and push "seen" updates.
