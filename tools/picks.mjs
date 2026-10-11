@@ -217,7 +217,7 @@ function anomalies({ cardsMeta, prices, sealedData, history, lst }) {
 async function loadResearch(date) {
   const cat = await readJson('catalysts.json', { items: [] });
   const age = (d) => (d ? (Date.parse(date) - Date.parse(d)) / 86400000 : 0);
-  const items = (cat.items ?? []).filter((c) => (c.kind === 'event' ? !c.date || c.date >= date : age(c.date) <= (c.effect === 'supply' ? 90 : 60)));
+  const items = (cat.items ?? []).filter((c) => (c.kind === 'event' ? !c.date || c.date >= date : age(c.date) <= (c.effect === 'supply' ? 90 : c.kind === 'hype' ? 30 : 60)));
   const up = items.filter((c) => c.effect === 'up');
   const cardOf = (c, name, number, setName) => (name === c.name || name.startsWith(`${c.name} `)) && (!c.set || setName === c.set) && (!c.number || number === c.number);
   const match = (name, number, setName, released) => ({
@@ -225,6 +225,7 @@ async function loadResearch(date) {
     set: up.find((c) => c.kind === 'set' && c.set === setName),
     mon: up.find((c) => c.kind === 'pokemon' && new RegExp(`\\b${c.pokemon}\\b`, 'i').test(name.replace(/-(EX|GX|V|VMAX|VSTAR)\b/g, ''))),
     era: up.find((c) => c.kind === 'era' && released && released.slice(0, 4) >= c.from && released.slice(0, 4) <= c.to),
+    hype: items.find((c) => c.kind === 'hype' && new RegExp(`\\b${c.pokemon}\\b`, 'i').test(name)),
   });
   return { items, up, match, cardOf };
 }
@@ -256,6 +257,7 @@ async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date, resea
     const top = TOP_MONS.test(name), fan = FAN_MONS.test(name);
     // Research: a card reported climbing (counts as a card people chase, and as movement).
     const r = research.match(name, number, set[0], set[3]);
+    if (r.hype) continue; // its rise is news hype, expected to cool (catalysts.json 'hype')
     if (!r.card && (!chase || !(top || fan))) continue; // a card people chase
     const checks = [];
     // Demand (TCGplayer).
@@ -536,6 +538,7 @@ function nicheMovers({ cardsMeta, prices, history, lst, date, research }) {
     if (!t || t.days < 3 || t.chg < 8 || t.chg > 80 || t.up < 2 || t.up <= t.down) continue;
     const top = TOP_MONS.test(name), fan = FAN_MONS.test(name);
     const r = research.match(name, number, set[0], set[3]);
+    if (r.hype) continue; // news hype, expected to cool
     const year = (set[3] || '').slice(0, 4);
     let score = Math.min(30, t.chg) + Math.min(30, (sup - 1) * 40) + (top ? 15 : fan ? 8 : 0) + (r.card || r.set || r.mon ? 10 : 0)
       + (year >= '2007' && year <= '2016' ? 6 : 0) + (/lv\.x|prime|legend|gold star|star|shining/i.test(rarity || '') ? 5 : 0);
@@ -548,6 +551,27 @@ function nicheMovers({ cardsMeta, prices, history, lst, date, research }) {
   }
   out.sort((a, b) => b.score - a.score);
   return out.slice(0, 25);
+}
+
+/* Hype watch: cards of a Pokémon in the news (catalysts.json 'hype', e.g. record Lugia auction
+ * sales) whose price has jumped — likely to cool. A warning (sell / don't chase), never a buy. */
+function hypeWatch({ cardsMeta, prices, history, research }) {
+  const out = [];
+  for (const h of research.items.filter((c) => c.kind === 'hype')) {
+    const re = new RegExp(`\\b${h.pokemon}\\b`, 'i');
+    for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
+      if (!re.test(name)) continue;
+      const row = prices.cards[id];
+      const f = row && MAIN_FINISH.find((k) => row[k] != null);
+      if (!f || row[f] < 10) continue;
+      const t = trend(history.items[`${id}:${f}`]);
+      if (!t || t.chg < 10) continue;
+      out.push({ id, name, number, set: cardsMeta.sets[setId]?.[0] ?? setId, rarity, usd: row[f], chg: Math.round(t.chg), kind: 'hype', source: h.source,
+        why: `⚠ up ${pct(t.chg)} since ${dayName(history.dates[0])} on news hype (${h.headline ?? h.note.split(' — ')[0]}) — likely to cool: a time to sell, not to buy` });
+    }
+  }
+  out.sort((a, b) => b.chg - a.chg);
+  return out.slice(0, 20);
 }
 
 /* Track record: every list's picks are logged with their price on the day (data/pick-log.json).
@@ -747,8 +771,19 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     news: newsPicks({ cardsMeta, prices, history, lst, research }),
     sellouts: await sellOuts({ cardsMeta, prices, history, lst, date }),
     contagion: contagion({ cardsMeta, prices, history, lst }),
-    niche: nicheMovers({ cardsMeta, prices, history, lst, date, research }) };
+    niche: nicheMovers({ cardsMeta, prices, history, lst, date, research }),
+    hype: hypeWatch({ cardsMeta, prices, history, research }) };
   out.record = await trackRecord(out, prices, date);
+  // News hype (expected to cool): a warning on that Pokémon's picks in every list.
+  for (const h of research.items.filter((c) => c.kind === 'hype')) {
+    const re = new RegExp(`\\b${h.pokemon}\\b`, 'i');
+    for (const list of [out.cards, out.au, out.news, out.catchUp, out.catalysts.picks, out.contagion]) for (const p of list ?? []) {
+      if (!re.test(p.name || '')) continue;
+      const warn = `⚠ ${h.pokemon} prices are up on news hype (${h.headline ?? h.note.split(' — ')[0]}) — likely to cool`;
+      if (p.reasons) p.reasons.push(warn); else if (p.checks) p.checks.push(warn); else if (p.why) p.why += ` · ${warn}`;
+      if (p.risk) p.risk = 'riskier';
+    }
+  }
   // More supply coming for a set: a warning on its picks.
   for (const c of out.catalysts.supply) {
     for (const list of [out.cards, out.best, out.au]) for (const p of list ?? []) {
@@ -757,7 +792,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
   }
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
   console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates, ${au.info.listed} checked on eBay AU)`);
-  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}; in the news: ${out.news.length}; sell-outs: ${out.sellouts.length}; contagion: ${out.contagion.length}; niche movers: ${out.niche.length}; track record: ${out.record.logged} logged`);
+  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}; in the news: ${out.news.length}; sell-outs: ${out.sellouts.length}; contagion: ${out.contagion.length}; niche movers: ${out.niche.length}; hype watch: ${out.hype.length}; track record: ${out.record.logged} logged`);
   console.log(`Best ideas: ${out.best.length} (${out.best.map((b) => b.name).join(', ')})`);
   console.log(`Anomalies: ${out.anomalies.groups.length} groups, ${out.anomalies.moves.length} single moves`);
   console.log(`Hot groups: ${out.hot.map((h) => `${h.label} (${h.up}/${h.members}, median ${pct(h.median)})`).join(', ') || 'none'}`);

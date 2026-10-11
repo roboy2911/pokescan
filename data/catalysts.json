@@ -1,6 +1,6 @@
 {
- "note": "Research kept by hand, with sources. effect 'up' = attention / reported climbing; 'supply' = more being printed / prices falling with supply. kind: 'card' (a named card reported climbing — counts as confirmed movement), 'set', 'pokemon', 'era' (a class of card), plus dated events (pokemon + date). Used by tools/picks.mjs.",
- "updated": "2026-10-11",
+ "note": "Research kept by hand, with sources. effect 'up' = attention / reported climbing; 'supply' = more being printed / prices falling with supply. kind: 'card' (a named card reported climbing — counts as confirmed movement), 'set', 'pokemon', 'era' (a class of card), plus dated events (pokemon + date), and 'hype' (a news spike expected to cool: a warning, never a buy signal). Used by tools/picks.mjs.",
+ "updated": "2026-10-12",
  "items": [
   {
    "pokemon": "Rayquaza",
@@ -156,6 +156,15 @@
    "note": "reprints of Prismatic Evolutions sealed in 2026",
    "source": "https://collectorstation.com/pokemon-tcg-schedule-upcoming-sets",
    "date": "2026-10-11"
+  },
+  {
+   "kind": "hype",
+   "pokemon": "Lugia",
+   "effect": "cooling",
+   "date": "2026-10-10",
+   "note": "record graded Lugia sales (1st Ed Neo Genesis PSA 10 $654k on 24 Sep, Call of Legends PSA 10 $367k at Goldin, Crystal Lugia PSA 10 ~$360k ~10 Oct) pulled raw Lugia prices up on hype — likely to cool",
+   "source": "https://polkastarter.com/blog/most-valuable-lugia-cards",
+   "headline": "record Lugia auction sales"
   }
  ]
 }

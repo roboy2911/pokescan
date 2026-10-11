@@ -434,3 +434,7 @@ Claude "remove <name>".
 - The owner got Cloudflare limit warnings. The eBay `/listings` lookup made 2 KV writes per search (a daily counter plus the cached answer). The daily buy-ideas run (about 300 lookups), the hourly want-list check and this morning's deal scans (about 600 lookups) used up the 1,000 free writes a day.
 - The eBay daily cap is now counted in memory, so there's no write (eBay's own 429 still stops it), and answers are kept in memory first. New `ns=1` ("don't store") is used by `tools/picks.mjs` (both lookups) and the hourly push check. App lookups still store: 1 write per new card a day.
 - Remaining writes: app eBay lookups (1 per new card), AU sold searches (3 each, at most 500 a day, and rare), account sync and backups, and push "seen" updates.
+
+## 2026-10-12 — Lugia hype (expected to cool)
+- The owner noted Lugia rising on auction news. The sources found are record graded sales, not a $10M sale: 1st Edition Neo Genesis Lugia PSA 10 at $654k (24 Sep), Call of Legends Lugia PSA 10 at $367k (Goldin) and Crystal Lugia PSA 10 at about $360k (about 10 Oct).
+- New `kind: 'hype'` in `data/catalysts.json`, used for 30 days. Hype cards are kept out of ⭐ Best and Niche movers, and get a ⚠ "likely to cool" warning (and a riskier label) in every other list. The new "⚠ Hype — likely to cool" section in the dev Best tab lists that Pokémon's cards up 10%+, framed as sell / don't chase. Today: Neo Genesis Lugia 9 (+606%, US$1,135), Lugia HGSS02 (+41%) and Lugia-EX 68 (+31%).
