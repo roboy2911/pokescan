@@ -30,7 +30,7 @@ your phone's home screen like an app (PWA), and works offline after the first vi
   account and the phone.
 - **Want list** (Collection → Want list) — ☆ on any card or sealed product, with an optional
   target price in AUD. Shows today's price, flags items at or below your target (✓) or at their
-  lowest this month, and tells you once when one drops to your target (`wants.js`).
+  lowest this month, and tells you once when a copy is listed on eBay Australia at or under your target (the target is for the cheapest listing, not the market price) (`wants.js`).
 - **Automatic backups** (Collection → ••• → Automatic backups) — a copy on the phone every day
   (last 7) and before "Remove everything" or a restore; your account also keeps each day's
   starting point for 30 days. Tap one to put it back (`backups.js`).

@@ -400,3 +400,6 @@ Claude "remove <name>".
 
 ## 2026-10-11 — AU sold: cracked ice copies excluded
 - Theme-deck "cracked ice" versions (for example Espeon / Umbreon from HS Undaunted) are a different, cheaper card, but they were counted in the regular holo's AU price. Espeon 2/90 showed A$39 when only 1 of its 5 recent sales was the real holo (A$53.70). Titles with "cracked ice" now count as junk unless the search itself asks for cracked ice.
+
+## 2026-10-11 — Want list: target = cheapest listing
+- The want-list target is now compared only with the cheapest copy for sale on eBay Australia (price + postage), not the market price. Alerts, the ✓ mark and sorting all use it. The row shows the cheapest listing as its price, plus the market price and "none for sale" when there is none. Tested with a mocked listing: A$52.50 against a A$60 target alerts, and against a A$40 target it doesn't.
