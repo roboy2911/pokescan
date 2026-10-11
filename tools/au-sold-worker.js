@@ -125,7 +125,7 @@ export default {
     const search = async (itemLocation) => {
       if (used >= limit) return null;
       used++;
-      if (env.AU_KV) await env.AU_KV.put(countKey, String(used), { expirationTtl: 2 * 86400 });
+      if (env.AU_KV) await env.AU_KV.put(countKey, String(used), { expirationTtl: 2 * 86400 }).catch(() => {});
       const api = new URL('https://api.sold-comps.com/v1/scrape');
       api.search = new URLSearchParams({ ...SOLDCOMPS_PARAMS, keyword: ebayKeyword(q, t), itemLocation });
       const res = await fetch(api, { headers: { Authorization: `Bearer ${env.SOLDCOMPS_API_KEY}` } });
@@ -151,13 +151,13 @@ export default {
     }
     result = { ...result, asOf: day };
     // Cards with too few sales are remembered too, so they don't cost a search every view.
-    if (env.AU_KV) await env.AU_KV.put(key, JSON.stringify(result), { expirationTtl: cacheDays * 86400 });
+    if (env.AU_KV) await env.AU_KV.put(key, JSON.stringify(result), { expirationTtl: cacheDays * 86400 }).catch(() => {}); // over the daily write limit: still answer
     // A compact copy for the daily "buy ideas" (GET /au-export): kept in the key's metadata so
     // exporting is one list, no reads. Keyed like the app's AU cache.
     if (env.AU_KV && result.ok) {
       const meta = { a: Math.round(result.aud), n: result.n, l: Math.round(result.low ?? result.aud), h: Math.round(result.high ?? result.aud), d: day,
         ...(result.wide && { w: 1 }), r: (result.recent ?? []).slice(0, 8).map((x) => [Math.round(x.aud), x.date]) };
-      await env.AU_KV.put(`ax:${q.toLowerCase()}|${n.toLowerCase()}${t ? `|${t}` : ''}`, '1', { metadata: meta, expirationTtl: 180 * 86400 });
+      await env.AU_KV.put(`ax:${q.toLowerCase()}|${n.toLowerCase()}${t ? `|${t}` : ''}`, '1', { metadata: meta, expirationTtl: 180 * 86400 }).catch(() => {});
     }
     return json(result, allow);
   },

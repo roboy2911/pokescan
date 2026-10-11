@@ -38,7 +38,7 @@ async function ebayToken(env) {
     throw new Error(`ebay-auth-${res.status}${why.error ? `: ${why.error}${why.error_description ? ` — ${why.error_description}` : ''}` : ''}`.slice(0, 200));
   }
   const j = await res.json();
-  await env.AU_KV.put('ebay:token', j.access_token, { expirationTtl: Math.max(60, (j.expires_in || 7200) - 300) });
+  await env.AU_KV.put('ebay:token', j.access_token, { expirationTtl: Math.max(60, (j.expires_in || 7200) - 300) }).catch(() => {});
   return j.access_token;
 }
 
@@ -137,6 +137,6 @@ export async function findListings(env, params, { keepHours = KEEP_HOURS, store 
   memo.set(key, out);
   // Saved for other instances — unless asked not to (the hourly want-list check and the daily
   // buy-ideas run: their answers are only needed once, and storage writes are limited).
-  if (store) await env.AU_KV.put(key, JSON.stringify(out), { expirationTtl: KEEP_HOURS * 3600 });
+  if (store) await env.AU_KV.put(key, JSON.stringify(out), { expirationTtl: KEEP_HOURS * 3600 }).catch(() => {}); // over the daily write limit: still answer
   return out;
 }
