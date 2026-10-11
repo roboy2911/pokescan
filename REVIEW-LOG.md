@@ -416,3 +416,6 @@ Claude "remove <name>".
 
 ## 2026-10-11 — AU sold refresh finished (run 38117825914)
 - The remainder run checked 1,067 cards (418 priced, 649 too few sales) with 5 failures (SoldComps 503) in 35 minutes. The whole refresh (both runs) checked about 3,750 cards and used about 3,790 credits. au-sold.json now holds 3,809 cards, 1,903 of them with a price. ⭐ Best ideas: Charmander (Stormfront), Slowking Prime, Gengar LV.X (A$633 in AU, 12 sales via the wide search), Jirachi ◇.
+
+## 2026-10-12 — AU sold / listings: lettered card numbers
+- Lettered numbers (RC32, TG23, SV64, XY126) now have to stand on their own. "Sylveon EX RC21/RC32" no longer counts as RC32, because it's RC21 of 32.

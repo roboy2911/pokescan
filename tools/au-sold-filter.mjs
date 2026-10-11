@@ -40,6 +40,13 @@ function numberMatcher(n) {
     const re = new RegExp(`(^|[^0-9/])0*${strip(parts[0])}(?![0-9]|\\s*/)`);
     return (title) => re.test(title.toLowerCase());
   }
+  // A lettered number ("RC32", "TG20", "SV64", "XY126"): on its own, not after a "/" ("RC21/RC32"
+  // is RC21) and not running into more digits; "RC 32" / "RC-032" are fine.
+  const m = parts[0].replace(/[\s-]/g, '').match(/^([a-z]+)0*(\d+)([a-z]?)$/);
+  if (m) {
+    const re = new RegExp(`(^|[^a-z0-9/])${m[1]}[\\s-]?0*${m[2]}${m[3]}(?![0-9])`);
+    return (title) => re.test(title.toLowerCase());
+  }
   return (title) => title.toLowerCase().replace(/[\s-]/g, '').includes(parts[0].replace(/[\s-]/g, ''));
 }
 
