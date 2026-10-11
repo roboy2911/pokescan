@@ -413,3 +413,6 @@ Claude "remove <name>".
   - The VAPID key pair is made by the worker itself and stored in KV, so there are no new secrets.
 - Encryption is RFC 8291 aes128gcm with WebCrypto. It was checked by decrypting with the `http_ece` library, and the VAPID JWT signature was verified. The app flow (subscribe → test → re-sync when a target changes) was tested in the browser with a stubbed push manager.
 - The service worker shows the notification. Tapping it opens the eBay listing, or the want list for a summary of several items.
+
+## 2026-10-11 — AU sold refresh finished (run 38117825914)
+- The remainder run checked 1,067 cards (418 priced, 649 too few sales) with 5 failures (SoldComps 503) in 35 minutes. The whole refresh (both runs) checked about 3,750 cards and used about 3,790 credits. au-sold.json now holds 3,809 cards, 1,903 of them with a price. ⭐ Best ideas: Charmander (Stormfront), Slowking Prime, Gengar LV.X (A$633 in AU, 12 sales via the wide search), Jirachi ◇.
