@@ -853,6 +853,14 @@ body.gated { overflow: hidden; }
 .collection-mode { margin: 4px 0 12px; }
 .want-list { display: none; }
 #view-collection.wants .want-list { display: grid; }
+.push-box { display: none; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+#view-collection.wants .push-box { display: block; }
+.push-box .btn { width: 100%; }
+.push-msg { margin: 6px 0 0; font-size: .85rem; color: var(--muted); line-height: 1.4; }
+.push-msg:first-child { margin-top: 0; }
+.push-actions { display: flex; gap: 16px; align-items: center; margin-top: 8px; }
+.push-actions .btn { width: auto; flex: 1; }
+.push-actions .link-btn { white-space: nowrap; }
 #view-collection.wants :is(#valueCard, #collectionTools, #tradeBar, #historyList, .small-note) { display: none !important; }
 .want-row .want-note { font-size: .8rem; color: var(--muted); margin-top: 3px; }
 .want-row .want-note .ok { color: var(--ok); }

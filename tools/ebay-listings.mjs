@@ -42,26 +42,34 @@ async function ebayToken(env) {
 export async function handleListings(request, env, url, reply) {
   if (!env.EBAY_CLIENT_ID || !env.EBAY_CLIENT_SECRET) return reply({ ok: false, reason: 'no-ebay-key', listings: 1 });
   if (!env.AU_KV) return reply({ ok: false, reason: 'no-storage' }, 500);
-  const q = (url.searchParams.get('q') || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-  const n = (url.searchParams.get('n') || '').trim().slice(0, 20);
-  const t = ['o', 'r25', 'r30', 'ja'].includes(url.searchParams.get('t')) ? url.searchParams.get('t') : '';
-  const set = (url.searchParams.get('s') || '').trim().slice(0, 60);
-  if (q.length < 3) return reply({ ok: false, reason: 'query', listings: 1 }, 400);
+  const p = (k) => url.searchParams.get(k) || '';
+  const { status = 200, ...out } = await findListings(env, { q: p('q'), n: p('n'), t: p('t'), s: p('s'), e: p('e') });
+  return reply(out, status);
+}
+
+/* The cheapest near-mint copies for sale for one card / product. Answers are kept `keepHours`
+ * (the want-list alerts ask for fresher ones: tools/push.mjs). → the /listings answer. */
+export async function findListings(env, params, { keepHours = KEEP_HOURS } = {}) {
+  const q = (params.q || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const n = (params.n || '').trim().slice(0, 20);
+  const t = ['o', 'r25', 'r30', 'ja'].includes(params.t) ? params.t : '';
+  const set = (params.s || '').trim().slice(0, 60);
+  if (q.length < 3) return { ok: false, reason: 'query', listings: 1, status: 400 };
   const key = `ls:v5:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
   const cached = await env.AU_KV.get(key, 'json');
-  if (cached) return reply({ ...cached, cached: true });
+  if (cached && Date.now() - Date.parse(cached.asOf) < keepHours * 3600000) return { ...cached, cached: true };
 
   const day = new Date().toISOString().slice(0, 10);
   const countKey = `ebaycount:${day}`;
   const used = Number(await env.AU_KV.get(countKey)) || 0;
-  if (used >= (Number(env.EBAY_DAILY_LIMIT) || 3000)) return reply({ ok: false, reason: 'daily-limit' });
+  if (used >= (Number(env.EBAY_DAILY_LIMIT) || 3000)) return { ok: false, reason: 'daily-limit' };
   await env.AU_KV.put(countKey, String(used + 1), { expirationTtl: 2 * 86400 });
 
   // The card's language: eBay's own "Language" item detail. Sellers often leave it out, so two
   // searches: copies marked with the language, plus unmarked ones that the title shows are
   // that language (for English: names the English set or says English, and no Japanese signs).
   const japanese = OTHER_LANG.test(q) || t === 'ja';
-  const setName = (url.searchParams.get('e') || '').trim().slice(0, 60);
+  const setName = (params.e || '').trim().slice(0, 60);
   let items;
   try {
     const token = await ebayToken(env);
@@ -94,7 +102,7 @@ export async function handleListings(request, env, url, reply) {
         ...all.filter((it) => !ids.has(it.itemId) && unmarkedOk(it.title || ''))];
     }
   } catch (err) {
-    return reply({ ok: false, reason: err.message }, 502);
+    return { ok: false, reason: err.message, status: 502 };
   }
   // Into the shape the sold-price checks use, then the same checks.
   const shaped = items
@@ -119,5 +127,5 @@ export async function handleListings(request, env, url, reply) {
     asOf: new Date().toISOString(),
   };
   await env.AU_KV.put(key, JSON.stringify(out), { expirationTtl: KEEP_HOURS * 3600 });
-  return reply(out);
+  return out;
 }

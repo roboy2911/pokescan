@@ -9,5 +9,7 @@
   "kv_namespaces": [
     { "binding": "AU_KV", "id": "02feafd425954c419b1078e53cfc8dc9" }
   ],
-  "vars": { "DAILY_LIMIT": "500", "CACHE_DAYS": "14" }
+  "vars": { "DAILY_LIMIT": "500", "CACHE_DAYS": "14", "EBAY_DAILY_LIMIT": "4500" },
+  // Hourly want-list check for phone notifications (tools/push.mjs): eBay listings only, never SoldComps.
+  "triggers": { "crons": ["7 * * * *"] }
 }

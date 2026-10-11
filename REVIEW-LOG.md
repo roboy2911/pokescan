@@ -403,3 +403,13 @@ Claude "remove <name>".
 
 ## 2026-10-11 — Want list: target = cheapest listing
 - The want-list target is now compared only with the cheapest copy for sale on eBay Australia (price + postage), not the market price. Alerts, the ✓ mark and sorting all use it. The row shows the cheapest listing as its price, plus the market price and "none for sale" when there is none. Tested with a mocked listing: A$52.50 against a A$60 target alerts, and against a A$40 target it doesn't.
+
+## 2026-10-11 — Want list: phone notifications (Web Push)
+- Collection → Want list now has a "🔔 Turn on phone notifications" panel. On iPhone it needs iOS 16.4+ and the Home Screen app; the panel explains how to add it if needed. Notifications are sent when a want-list item is listed on eBay Australia at or under its target.
+- Worker (`tools/push.mjs`):
+  - Routes: `/push/key`, `/push/subscribe` (the subscription plus each want's eBay search and target), `/push/unsubscribe`, `/push/test`.
+  - Hourly cron (`7 * * * *` in wrangler.jsonc) checks each item with a target via `findListings` (fresh within 54 minutes). It uses only the free eBay Browse API, never SoldComps. `EBAY_DAILY_LIMIT` is raised to 4500 (eBay allows 5,000).
+  - Alerts once per price, and again only if a copy gets cheaper or after the price goes back above the target. Subscriptions that are gone (404/410) are removed.
+  - The VAPID key pair is made by the worker itself and stored in KV, so there are no new secrets.
+- Encryption is RFC 8291 aes128gcm with WebCrypto. It was checked by decrypting with the `http_ece` library, and the VAPID JWT signature was verified. The app flow (subscribe → test → re-sync when a target changes) was tested in the browser with a stubbed push manager.
+- The service worker shows the notification. Tapping it opens the eBay listing, or the want list for a summary of several items.

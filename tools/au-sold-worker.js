@@ -28,6 +28,7 @@ import { summarise, ebayKeyword, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-
 import { handleAccount } from './account-worker.mjs';
 import { handleGradeSample } from './grade-samples.mjs';
 import { handleListings } from './ebay-listings.mjs';
+import { handlePush, checkWants } from './push.mjs';
 
 const ALLOWED_ORIGINS = ['https://roboy2911.github.io', 'http://localhost:8080', 'http://localhost:8765'];
 // The Cloudflare Pages copy of the app (pokescan.pages.dev, and its preview links).
@@ -45,6 +46,11 @@ const json = (body, origin, status = 200) => new Response(JSON.stringify(body), 
 });
 
 export default {
+  // Hourly (wrangler.jsonc): want-list targets vs eBay Australia listings → phone notifications.
+  // Free eBay searches only — no SoldComps.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(checkWants(env));
+  },
   async fetch(request, env) {
     const origin = request.headers.get('origin') || '';
     const allow = isAllowed(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -81,6 +87,9 @@ export default {
     // eBay Australia listings (for sale now) — tools/ebay-listings.mjs.
     if (url.pathname === '/listings') {
       return handleListings(request, env, url, (body, status = 200) => json(body, allow, status));
+    }
+    if (url.pathname.startsWith('/push/')) {
+      return handlePush(request, env, url, (body, status = 200) => json(body, allow, status));
     }
     if (url.pathname === '/grade-sample') {
       return handleGradeSample(request, env, url, (body, status = 200) => json(body, allow, status));

@@ -1,5 +1,5 @@
 // Caches the app and the card index so it opens fast (and works offline) as a phone app.
-const CACHE = 'pokescan-v62';
+const CACHE = 'pokescan-v63';
 const SHELL = ['./', 'index.html', 'style.css', 'cardprint.js', 'dev.js', 'detect.js', 'matcher.js', 'worker.js', 'prices.js', 'account.js', 'app.js', 'wants.js', 'backups.js', 'grade-core.js', 'grade.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -84,4 +84,23 @@ self.addEventListener('fetch', (e) => {
         return res;
       })
       .catch(() => caches.match(e.request)));
+});
+
+// Phone notifications (want-list targets, sent by the worker: tools/push.mjs).
+self.addEventListener('push', (e) => {
+  let m = {};
+  try { m = e.data?.json() ?? {}; } catch { m = { body: e.data?.text() ?? '' }; }
+  e.waitUntil(self.registration.showNotification(m.title || 'PokeScan', {
+    body: m.body || '', tag: m.tag || 'pokescan', icon: 'icon.svg', badge: 'icon.svg', data: { url: m.url || './#wants' } }));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || './#wants', self.registration.scope).href;
+  e.waitUntil((async () => {
+    if (url.startsWith(self.registration.scope)) {
+      const [win] = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      if (win) { await win.focus(); win.postMessage({ open: 'wants' }); return; }
+    }
+    await self.clients.openWindow(url);
+  })());
 });

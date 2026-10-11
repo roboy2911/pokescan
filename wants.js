@@ -18,6 +18,7 @@ function loadWants() {
 function saveWants(list) {
   try { localStorage.setItem(WANT_KEY, JSON.stringify(list)); } catch { /* storage unavailable */ }
   if (typeof accountChanged === 'function') accountChanged();
+  pushSyncSoon();
   showWantCount();
 }
 const wantOf = (id) => loadWants().find((e) => e.key === id) ?? null;
@@ -172,7 +173,7 @@ function setCollectionMode(mode) {
     b.setAttribute('aria-pressed', String(b.dataset.v === mode));
   });
   $('view-collection').classList.toggle('wants', wantMode);
-  if (wantMode) renderWants();
+  if (wantMode) { renderWants(); drawPushBox(); }
   else refreshCollection();
 }
 
@@ -230,7 +231,105 @@ async function renderWants() {
   }
 }
 
+/* ---------- Phone notifications (Web Push: tools/push.mjs) ----------
+ * The worker checks every want with a target against eBay Australia listings each hour and
+ * sends a notification when one's listed at or under it. iPhone: only from the Home Screen app
+ * (iOS 16.4+). This device's want list is sent along whenever it changes. */
+const PUSH_KEY = 'pokescan.push.v1';
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const isIos = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const pushIsOn = () => { try { return localStorage.getItem(PUSH_KEY) === '1'; } catch { return false; } };
+const urlB64 = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+
+function pushWants() {
+  return loadWants().map((e) => {
+    const { q, n, t, s } = ebaySoldQuery(e, e.variant);
+    return { key: e.key, name: e.name, target: e.target, q, n, t, s, e: e.lang === 'ja' || e.kind === 'sealed' ? '' : listingSetName(e) };
+  });
+}
+async function pushPost(path, body) {
+  const res = await fetch(new URL(path, AU_SOLD_URL), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return res.json();
+}
+async function pushSubscription(create) {
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub && create) {
+    const { key } = await (await fetch(new URL('push/key', AU_SOLD_URL))).json();
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(key) });
+  }
+  return sub;
+}
+async function pushOn() {
+  const perm = await Notification.requestPermission(); // must be straight from the tap (iPhone)
+  if (perm !== 'granted') throw new Error(perm);
+  const sub = await pushSubscription(true);
+  const r = await pushPost('push/subscribe', { sub: sub.toJSON(), wants: pushWants() });
+  if (!r.ok) throw new Error(r.reason || 'error');
+  try { localStorage.setItem(PUSH_KEY, '1'); } catch { /* storage unavailable */ }
+}
+async function pushOff() {
+  const sub = await pushSubscription(false).catch(() => null);
+  if (sub) { await pushPost('push/unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe().catch(() => {}); }
+  try { localStorage.removeItem(PUSH_KEY); } catch { /* storage unavailable */ }
+}
+let pushTimer = 0;
+function pushSyncSoon() {
+  if (!pushIsOn() || !pushSupported()) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async () => {
+    const sub = await pushSubscription(false).catch(() => null);
+    if (!sub) { try { localStorage.removeItem(PUSH_KEY); } catch { /* */ } drawPushBox(); return; }
+    pushPost('push/subscribe', { sub: sub.toJSON(), wants: pushWants() }).catch(() => {});
+  }, 1500);
+}
+
+function drawPushBox() {
+  const box = $('pushBox');
+  if (!box) return;
+  const withTarget = loadWants().filter((e) => e.target != null).length;
+  if (!pushSupported() || (isIos() && !standalone())) {
+    box.innerHTML = isIos() && !standalone()
+      ? '<p class="push-msg">🔔 <b>Phone notifications:</b> add PokeScan to your Home Screen first (Safari → Share → <b>Add to Home Screen</b>), then open it from the Home Screen icon and turn them on here.</p>'
+      : '<p class="push-msg">🔔 This browser can\'t show notifications (on iPhone you need iOS 16.4 or later and the Home Screen app).</p>';
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    box.innerHTML = '<p class="push-msg">🔔 Notifications are blocked for PokeScan — turn them on in Settings → Notifications → PokeScan, then come back here.</p>';
+    return;
+  }
+  if (pushIsOn() && Notification.permission === 'granted') {
+    box.innerHTML = `<p class="push-msg">🔔 <b>Phone notifications are on.</b> Every hour, ${withTarget ? `your ${withTarget} item${withTarget === 1 ? '' : 's'} with a target ${withTarget === 1 ? 'is' : 'are'}` : 'items with a target are'} checked against eBay Australia — you'll get a notification when one's listed at or under your price.${withTarget ? '' : ' Set a target on an item to get alerts for it.'}</p>
+      <div class="push-actions"><button type="button" class="btn ghost" id="pushTest">Send a test</button><button type="button" class="link-btn" id="pushOff">Turn off</button></div>`;
+    $('pushTest').addEventListener('click', async () => {
+      const sub = await pushSubscription(false).catch(() => null);
+      const r = sub ? await pushPost('push/test', { endpoint: sub.endpoint }).catch(() => null) : null;
+      toast(r?.ok ? 'Test sent — it should arrive in a few seconds' : 'Couldn\'t send a test — try turning notifications off and on again');
+    });
+    $('pushOff').addEventListener('click', async () => { await pushOff(); toast('Phone notifications are off'); drawPushBox(); });
+    return;
+  }
+  box.innerHTML = `<button type="button" class="btn" id="pushOn">🔔 Turn on phone notifications</button>
+    <p class="push-msg">Get a notification when something on your want list is listed on eBay Australia at or under your target — checked every hour, even when the app is closed.</p>`;
+  $('pushOn').addEventListener('click', async (ev) => {
+    ev.target.disabled = true;
+    try {
+      await pushOn();
+      toast('🔔 Phone notifications are on');
+    } catch (err) {
+      toast(err.message === 'denied' ? 'Notifications were blocked — you can allow them in Settings → Notifications → PokeScan' : err.message === 'default' ? 'Notifications weren\'t turned on' : 'Couldn\'t turn on notifications — try again in a moment');
+    }
+    drawPushBox();
+  });
+}
+
 document.querySelectorAll('#collectionMode button').forEach((b) => b.addEventListener('click', () => setCollectionMode(b.dataset.v)));
+// Opened from a notification: straight to the want list.
+const openWants = () => { showView('collection'); setCollectionMode('wants'); };
+if (location.hash === '#wants') setTimeout(openWants, 300);
+navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.open === 'wants') openWants(); });
+pushSyncSoon(); // keep the worker's copy of the want list current (e.g. after an account sync)
 showWantCount();
 // A little after opening (prices load in the background anyway).
 setTimeout(() => checkWantAlerts().catch(() => {}), 2500);
