@@ -242,14 +242,14 @@ async function devRenderPicks(box) {
   const BUDGET_KEY = 'pokescan.dev.budget';
   let budget = null;
   try { budget = Number(localStorage.getItem(BUDGET_KEY)) || null; } catch { /* no storage */ }
-  const view = { kind: 'cards', risk: 'all' };
+  const view = { kind: picks.best ? 'best' : 'cards', risk: 'all' };
   const audOf = (p) => (view.kind === 'au' ? p.aud : p.usd * rate.rate);
   const seg = (name, opts) => `<div class="seg dev-seg" data-seg="${name}">${opts.map(([v, l], i) => `<button type="button" data-v="${v}" class="${i ? '' : 'active'}">${l}</button>`).join('')}</div>`;
   box.innerHTML = `
     <p class="dev-msg">Cards and sealed product that look likely to rise, or are already rising, and why. Built ${devEsc(new Date(picks.built).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }))} from TCGplayer prices and listings${picks.days < 14 ? ` — price history only goes back to ${devEsc(shortDate(picks.since))}, so trends count for little yet (better each week)` : ''}.</p>
     ${picks.hot?.length ? `<div class="dev-hot"><b>🔥 Hot right now</b>${picks.hot.map((h) => `<div>${devEsc(h.label)}: ${h.up} of ${h.members} up a median <b>+${h.median}%</b> since ${devEsc(h.since)}</div>`).join('')}
       <small>Whole groups moving together = real demand. The ones already up can cool off; any that haven't moved yet are flagged in the lists.</small></div>` : ''}
-    <div class="dev-picks-tools">${seg('kind', [['cards', 'Cards'], ['sealed', 'Sealed'], ...(picks.au ? [['au', 'AU sold']] : []), ...(picks.anomalies ? [['anom', 'Anomalies']] : [])])}
+    <div class="dev-picks-tools">${seg('kind', [...(picks.best ? [['best', '⭐ Best']] : []), ['cards', 'Cards'], ['sealed', 'Sealed'], ...(picks.au ? [['au', 'AU sold']] : []), ...(picks.anomalies ? [['anom', 'Anomalies']] : [])])}
       ${seg('risk', [['all', 'All'], ['safer', 'Safer'], ['riskier', 'Riskier']])}</div>
     <label class="dev-budget">Max price A$ <input type="number" inputmode="decimal" min="0" step="1" placeholder="any" value="${budget ?? ''}" data-budget>
       <span>${[20, 50, 100, 250].map((v) => `<button type="button" class="chip" data-b="${v}">${v}</button>`).join('')}<button type="button" class="chip" data-b="">any</button></span></label>
@@ -259,8 +259,9 @@ async function devRenderPicks(box) {
   const draw = () => {
     const list = box.querySelector('[data-list]');
     box.querySelector('[data-au-note]').hidden = view.kind !== 'au';
-    box.querySelector('[data-seg=risk]').hidden = view.kind === 'anom';
+    box.querySelector('[data-seg=risk]').hidden = view.kind === 'anom' || view.kind === 'best';
     if (view.kind === 'anom') { drawAnomalies(list); return; }
+    if (view.kind === 'best') { drawBest(list); return; }
     const all = picks[view.kind].filter((p) => (view.risk === 'all' || p.risk === view.risk) && (!budget || audOf(p) <= budget));
     const items = all.slice(0, 40);
     list.innerHTML = items.length ? '' : `<p class="dev-msg">None in this list today${budget ? ` under A$${budget} — try a higher limit` : ''}.</p>`;
@@ -288,6 +289,27 @@ async function devRenderPicks(box) {
       list.appendChild(row);
     }
   };
+  // Best ideas: every check that agrees, as a ✓ list.
+  const drawBest = (list) => {
+    const items = picks.best.filter((p) => !budget || p.usd * rate.rate <= budget);
+    list.innerHTML = `<p class="dev-msg">The strongest ideas: cards where real demand, price movement and card quality all agree at once — every one passes all the must-haves and at least 5 checks. Few on purpose${picks.days < 14 ? ` (price history only goes back to ${devEsc(shortDate(picks.since))}, so the list grows as it builds up)` : ''}. Still not a guarantee — markets turn.</p>`;
+    if (!items.length) { list.insertAdjacentHTML('beforeend', `<p class="dev-msg">Nothing passes every check today${budget ? ` under A$${budget}` : ''} — that's the point: no forced picks.</p>`); return; }
+    for (const p of items) {
+      const card = db.byId?.get(p.id);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'dev-pick best';
+      b.innerHTML = `<img src="${devEsc(card?.image ?? '')}" alt="" loading="lazy">
+        <div class="meta"><div class="name">${devEsc(p.name)}</div>
+          <div class="sub">${devEsc([p.set, p.number && `#${p.number}`, p.finish, p.rarity].filter(Boolean).join(' · '))}</div>
+          <ul class="checks">${p.checks.map((c) => `<li>${devEsc(c)}</li>`).join('')}</ul></div>
+        <div class="side"><b>${formatAud(p.usd, rate.rate)}</b><small>US market</small>${p.aud ? `<small>AU sold ${formatAudPlain(p.aud)}</small>` : ''}
+          ${p.forSale ? `<small>${p.forSale.count ? `${p.forSale.count} for sale in AU` : 'none for sale in AU'}</small>` : ''}<span class="risk safer">${p.conviction} ✓</span></div>`;
+      b.addEventListener('click', () => { if (card) openDetail(card); });
+      list.appendChild(b);
+    }
+  };
+
   // Anomalies: groups moving together, then big single moves (US prices → AUD).
   const drawAnomalies = (list) => {
     const a = picks.anomalies;

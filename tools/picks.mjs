@@ -210,6 +210,86 @@ function anomalies({ cardsMeta, prices, sealedData, history, lst }) {
   return { groups: out.slice(0, 30), moves: uniq.slice(0, 120), from: D[n - 1 - back], to: D[n - 1], prev: D[n - 2] };
 }
 
+/* ---------- Best ideas (developer panel → Best ideas) ---------- */
+
+/* Only cards where several separate signals agree — not "maybe"s. Every pick must have:
+ *   real demand (TCGplayer's cheapest copy at/above recent sales, or hardly any for sale in
+ *   Australia at/above its AU price), price already starting to move (a steady rise that hasn't
+ *   blown out, or its group surging while it hasn't caught up), a card people chase (top rarity
+ *   or vintage holo of a popular Pokémon), a market that trades (AU sales or a reliable price),
+ *   not a new set, not a thin market, and at least 5 of the checks below. Few, on purpose. */
+async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }) {
+  const sets = cardsMeta.sets;
+  const n = history.dates.length;
+  const out = [];
+  const pending = [];
+  for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
+    const row = prices.cards[id];
+    const f = row && MAIN_FINISH.find((k) => row[k] != null);
+    if (!f || row[f] < 10) continue;
+    const usd = row[f];
+    const set = sets[setId] ?? [];
+    const age = monthsSince(set[3], date);
+    if (age != null && age < 4) continue; // still being printed
+    const vintage = (set[3] || '9') < '2004';
+    const chase = CHASE.slice(0, 2).find(([re]) => re.test(rarity || '')) || (vintage && /holo/i.test(rarity || ''));
+    const top = TOP_MONS.test(name), fan = FAN_MONS.test(name);
+    if (!chase || !(top || fan)) continue; // a card people chase
+    const checks = [];
+    // Demand (TCGplayer).
+    const sup = supply(lst.get(row.p)?.[SUBTYPE[f]]);
+    if (sup != null && sup > 1.5) continue; // thin market
+    const demandUs = sup != null && sup >= 1.0;
+    if (demandUs) checks.push(`cheapest copy for sale on TCGplayer is ${sup >= 1.02 ? `${Math.round((sup - 1) * 100)}% above` : 'at'} recent sales — demand is ahead of supply`);
+    // Movement.
+    const series = (history.items[`${id}:${f}`] ?? []).filter((v) => v != null);
+    const t = trend(history.items[`${id}:${f}`]);
+    const g = hot.get(`r:${rarity}`) ?? hot.get(`s:${setId}`);
+    let moving = false;
+    if (t && t.days >= 3 && t.chg >= 5 && t.chg <= 60 && t.up >= 2 && t.up > t.down) { moving = true; checks.push(`price rising steadily: ${pct(t.chg)} since ${dayName(history.dates[0])}, up ${t.up} of ${t.days - 1} days — not blown out yet`); }
+    if (t && Math.abs(t.chg) > 60 && !g) continue; // sudden jump on its own: unreliable
+    if (g && series.length >= 3) {
+      const from = series[Math.max(0, series.length - 1 - RECENT)];
+      const recent = ((series.at(-1) - from) / from) * 100;
+      if (recent < 10) { moving = true; checks.push(`${g.label} are surging (median ${pct(g.median)}) and this one hasn't caught up yet`); }
+    }
+    checks.push(chase === true ? 'vintage holo' : `${chase[2]}`);
+    checks.push(`${name.match(top ? TOP_MONS : FAN_MONS)[1].replace(/^./, (c) => c.toUpperCase())} — ${top ? 'one of the most collected Pokémon' : 'a fan favourite'}`);
+    if (age != null && age >= 9 && !vintage) checks.push(age > 48 ? 'long out of print — no new supply coming' : 'out of (or near the end of) its print run — no new supply coming');
+    if (vintage) checks.push('vintage — no new supply, ever');
+    const a = au.byId.get(id);
+    pending.push({ id, name, number, set: set[0] || setId, rarity, finish: FINISH_LABEL[f], usd, checks, demandUs, moving, a, sup, chg: t?.chg ?? 0 });
+  }
+  // Australia: sales, and what's for sale now (checked for those without it yet).
+  const need = pending.filter((p) => (p.demandUs || p.moving) && p.a && !p.a.forSale).slice(0, 80);
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    while (need.length) {
+      const p = need.shift();
+      const u = new URL('listings', WORKER);
+      u.search = new URLSearchParams({ q: p.a.q, n: p.a.n2, ...(p.a.t && { t: p.a.t }), ...(p.a.s && { s: p.a.s }), e: p.set.replace(/^Scarlet & Violet[—–-]?\s*(?=\S)/, '').replace(/^Base$/, 'Base Set') });
+      try { const r = await (await fetch(u, { headers: HEADERS })).json(); if (r.ok) p.a.forSale = { count: r.count, ...(r.cheapest?.[0] && { aud: Math.round(r.cheapest[0].aud), url: r.cheapest[0].url }) }; } catch { /* skip */ }
+    }
+  }));
+  for (const p of pending) {
+    const { a } = p;
+    let demandAu = false, trades = false;
+    if (a) {
+      if (a.n >= 5) { trades = true; p.checks.push(`sells regularly in Australia (${a.n} sales in 90 days, about A$${Math.round(a.aud)})`); }
+      if (a.forSale) {
+        if (a.forSale.count === 0 && a.n >= 3) { demandAu = true; p.checks.push('none for sale in Australia right now'); }
+        else if (a.forSale.count <= 3 && a.forSale.aud >= a.aud) { demandAu = true; p.checks.push(`only ${a.forSale.count} for sale in Australia, cheapest A$${a.forSale.aud} — above what it sells for`); }
+      }
+      if (a.aud < a.usAud * 0.9) p.checks.push(`Australia hasn't caught up: sells for A$${Math.round(a.aud)} here vs A$${Math.round(a.usAud)} in the US`);
+    }
+    if (!trades && p.sup != null && p.sup >= 0.9 && p.usd >= 20) trades = true;
+    if (!(p.demandUs || demandAu) || !p.moving || !trades) continue;
+    if (p.checks.length < 5) continue;
+    out.push({ ...p, aud: a?.aud ? Math.round(a.aud) : null, forSale: a?.forSale ?? null, conviction: p.checks.length, a: undefined, sup: undefined, demandUs: undefined, moving: undefined });
+  }
+  out.sort((x, y) => y.conviction - x.conviction || y.chg - x.chg);
+  return out.slice(0, 15);
+}
+
 /* Supply: cheapest listing / recent sales. */
 function supply(l) {
   if (!l?.low || !l?.market) return null;
@@ -367,9 +447,11 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
 
   const out = { built: new Date().toISOString(), since: history.dates[0] ?? date, days, currency: 'USD', cards, sealed, au: au.picks, auInfo: au.info,
     hot: [...hot.values()].sort((a, b) => b.median - a.median).slice(0, 8).map((h) => ({ ...h, since })),
-    anomalies: anomalies({ cardsMeta, prices, sealedData, history, lst }) };
+    anomalies: anomalies({ cardsMeta, prices, sealedData, history, lst }),
+    best: await bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }) };
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
   console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates, ${au.info.listed} checked on eBay AU)`);
+  console.log(`Best ideas: ${out.best.length} (${out.best.map((b) => b.name).join(', ')})`);
   console.log(`Anomalies: ${out.anomalies.groups.length} groups, ${out.anomalies.moves.length} single moves`);
   console.log(`Hot groups: ${out.hot.map((h) => `${h.label} (${h.up}/${h.members}, median ${pct(h.median)})`).join(', ') || 'none'}`);
   console.log(`Picks: ${cards.length} cards (${cards.filter((c) => c.risk === 'safer').length} safer), ${sealed.length} sealed (${sealed.filter((c) => c.risk === 'safer').length} safer); ${lst.size} listings`);
@@ -385,6 +467,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
  * Australian sales trending up, and the same rarity / popularity / set-age signals. */
 const LISTING_CHECKS = 220; // eBay AU searches a night (the worker allows 3,000 a day)
 async function auPicks({ prices, cardsMeta, date, lst }) {
+  const byId = new Map(); // card id → its AU sold answer (plain finish), for best ideas
   const [pre, rate] = await Promise.all([readJson('au-sold.json', { items: {} }), audRate()]);
   let exported = {};
   try {
@@ -403,6 +486,7 @@ async function auPicks({ prices, cardsMeta, date, lst }) {
     const fromEx = x ? { aud: x.a, n: x.n, low: x.l, high: x.h, date: x.d, recent: x.r ?? [], wide: !!x.w } : null;
     const a = !fromPre ? fromEx : !fromEx ? fromPre : fromEx.date >= fromPre.date ? fromEx : fromPre;
     if (!a || !(a.aud > 0)) continue;
+    if (!/(reverse holo|1st edition)$/i.test(t.q) && !byId.has(t.id)) byId.set(t.id, { aud: a.aud, n: a.n, usAud: t.aud, q: t.q, n2: t.n, t: t.t, s: t.set });
     priced++;
     const m = meta.get(t.id);
     if (!m) continue;
@@ -493,7 +577,8 @@ async function auPicks({ prices, cardsMeta, date, lst }) {
     out.push(p);
     if (out.length >= 200) break;
   }
-  return { picks: out, info: { priced, withSales, rate, exported: Object.keys(exported).length, asOf: pre.asOf ?? null, listed } };
+  for (const p of picks) if (p.forSale && byId.has(p.id)) byId.get(p.id).forSale = p.forSale;
+  return { picks: out, byId, rate, info: { priced, withSales, rate, exported: Object.keys(exported).length, asOf: pre.asOf ?? null, listed } };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await buildPicks();

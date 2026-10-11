@@ -965,3 +965,6 @@ body.gated { overflow: hidden; }
 .dev-anom-group [data-g] { display: grid; gap: 6px; margin-top: 8px; }
 .dev-pick .side b.up { color: var(--ok); }
 .dev-pick .side b.down { color: var(--err); }
+.dev-pick.best { border-color: rgba(255, 203, 5, .45); }
+.dev-pick ul.checks { list-style: none; padding-left: 0; }
+.dev-pick ul.checks li::before { content: '✓ '; color: var(--ok); font-weight: 700; }
