@@ -447,3 +447,11 @@ Claude "remove <name>".
   - Shows: up to 3 English chase cards of that Pokémon that haven't moved (±10%) and have normal supply.
   - Hype Pokémon are skipped. Every pick is logged in the track record, which will show whether Japan really leads.
 - Today: Lucario-GX SV64 (Hidden Fates Shiny Vault, US$86), Mega Lucario ex 188 / 179 (Mega Evolution, US$229 / US$170), Latios ★ 106 (Deoxys) and Latios 203 (Surging Sparks).
+
+## Prediction research (run 3, 10:57) — upcoming reveals (mascot effect)
+- Pattern (Kanto Post, Aug 2026): when a new set is revealed in English, older cards of its mascot jump (Rayquaza and Kyogre for Delta Reign, Darkrai before that). The next mascots, from the [Pokénnoisseur release calendar](https://pokennoisseur.ca/tools/release-calendar):
+  - Aura Seeker (Mega Lucario Z ex): Japan reportedly 27 Nov 2026; English expected Jan 2027 and not announced yet, so the reveal is still ahead.
+  - A speculative Q4 Special Deck Set with Mega Feraligatr, Dragonite and Gengar.
+- Added 3 dated `event` items (Lucario, Feraligatr, Dragonite) to `data/catalysts.json`, so 📅 Catalyst watch now lists their chase cards that haven't moved (20 picks). Lucario now has two signals: the mascot event and the Japanese lead from run 2.
+- Mega Feraligatr ex and Mega Dragonite ex already exist in Ascended Heroes, a set where TCGplayer reports supply returning. Older cards are the better play.
+- Best lead: Neo Genesis Feraligatr 4/111 (unlimited holo). US$204 (≈A$292), flat, cheapest TCGplayer copy 27% above recent sales, AU sold about A$195 (3 sales). The only AU listing is a 1st Edition at A$370. Also Feraligatr 5/111 is listed at A$51.99 against A$195–239 for the other listings (check its condition).
