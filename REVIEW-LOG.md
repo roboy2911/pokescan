@@ -419,3 +419,13 @@ Claude "remove <name>".
 
 ## 2026-10-12 — AU sold / listings: lettered card numbers
 - Lettered numbers (RC32, TG23, SV64, XY126) now have to stand on their own. "Sylveon EX RC21/RC32" no longer counts as RC32, because it's RC21 of 32.
+
+## Prediction research (run 1, 09:05) — niche movers
+- Angle: thin or niche cards, with no Australian sales required (the owner's ask). These cards spike when a few buyers clear the cheap copies: the cheapest listing goes above the last sale, and each new sale lands at the new low. That's TCGplayer's account of the Garchomp (Supreme Victors), Tyranitar (Mysterious Treasures) and Zoroark BW19 spikes ([seller blog 10/07](https://seller.tcgplayer.com/blog/price-trends-pok%C3%A9mon-cards-climbing-in-price-10-07-2026)).
+- New `nicheMovers` list in `tools/picks.mjs`, shown as "🔎 Niche movers" in the dev Best tab:
+  - Card: a niche rarity (promo, LV.X, Prime, LEGEND, Star, Shining, EX-era or secret rare, or a vintage holo), US$15+, set at least 6 months old.
+  - Supply: cheapest copy 15–200% above recent sales.
+  - Price: up 8–80% with 2+ rising days.
+  - Scored on the move, the supply gap, popularity, research matches, the 2007–2016 era and LV.X/Prime/Star rarity.
+  - It's tracked in the pick log.
+- Today it finds 3: **Arceus LV.X 94/99** (Arceus, US$90, +26%, cheapest copy 27% above sales, none for sale in AU; the same set as Gengar LV.X), Golem 14 (Expedition, +20%) and Mr. Mime-GX 156 (Celestial Storm, +10%). Arceus LV.X also passes the ⭐ Best checks now.

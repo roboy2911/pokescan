@@ -514,12 +514,48 @@ function contagion({ cardsMeta, prices, history, lst }) {
   return out.map(({ setId, mon, sup, ...c }) => c).slice(0, 30);
 }
 
+/* Niche movers: thin cards (no Australian sales needed) where the supply has dried up — the
+ * cheapest copy for sale is above what it last sold for — and the price is already climbing
+ * steadily. How niche cards explode: a few buyers clear the cheap copies, the next sale is at
+ * the new low, repeat (TCGplayer's Garchomp / Tyranitar / Zoroark spikes, Oct 2026). */
+function nicheMovers({ cardsMeta, prices, history, lst, date, research }) {
+  const NICHE = /promo|lv\.x|prime|legend|star|shining|holo ex|secret|rainbow|ultra|illustration|trainer gallery|amazing|radiant|shiny|break/i;
+  const out = [];
+  for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
+    const row = prices.cards[id];
+    const f = row && MAIN_FINISH.find((k) => row[k] != null);
+    if (!f || row[f] < 15) continue;
+    const set = cardsMeta.sets[setId] ?? [];
+    const age = monthsSince(set[3], date);
+    if (age != null && age < 6) continue;
+    const vintage = (set[3] || '9') < '2004';
+    if (!NICHE.test(rarity || '') && !(vintage && /holo/i.test(rarity || ''))) continue;
+    const sup = supply(lst.get(row.p)?.[SUBTYPE[f]]);
+    if (sup == null || sup < 1.15 || sup > 3) continue; // supply gone (but not a lone silly listing)
+    const t = trend(history.items[`${id}:${f}`]);
+    if (!t || t.days < 3 || t.chg < 8 || t.chg > 80 || t.up < 2 || t.up <= t.down) continue;
+    const top = TOP_MONS.test(name), fan = FAN_MONS.test(name);
+    const r = research.match(name, number, set[0], set[3]);
+    const year = (set[3] || '').slice(0, 4);
+    let score = Math.min(30, t.chg) + Math.min(30, (sup - 1) * 40) + (top ? 15 : fan ? 8 : 0) + (r.card || r.set || r.mon ? 10 : 0)
+      + (year >= '2007' && year <= '2016' ? 6 : 0) + (/lv\.x|prime|legend|gold star|star|shining/i.test(rarity || '') ? 5 : 0);
+    const why = [`price up ${pct(t.chg)} since ${dayName(history.dates[0])} (rising ${t.up} of ${t.days - 1} days)`,
+      `cheapest copy for sale is ${Math.round((sup - 1) * 100)}% above its last sales — the cheap copies are gone`,
+      top ? 'one of the most collected Pokémon' : fan ? 'fan-favourite Pokémon' : '',
+      r.card ? `${srcName(r.card)}: reported climbing` : r.set ? `${srcName(r.set)}: its set is rising` : r.mon ? `${srcName(r.mon)}: ${r.mon.pokemon} is rising` : '',
+      'thin market — few sales, so it can jump fast (and drop fast)'].filter(Boolean).join('; ');
+    out.push({ id, name, number, set: set[0] ?? setId, rarity, usd: row[f], chg: Math.round(t.chg), score: Math.round(score), kind: 'niche', why });
+  }
+  out.sort((a, b) => b.score - a.score);
+  return out.slice(0, 25);
+}
+
 /* Track record: every list's picks are logged with their price on the day (data/pick-log.json).
  * Later runs check how each list did after 7 and 30 days, so we learn which signals work. */
 async function trackRecord(out, prices, date) {
   const log = await readJson('pick-log.json', { picks: [] });
   const now = (id) => { const row = prices.cards[id]; const f = row && MAIN_FINISH.find((k) => row[k] != null); return f ? row[f] : null; };
-  const lists = { best: out.best, news: out.news, catchUp: out.catchUp.filter((c) => c.lang !== 'ja'), catalyst: out.catalysts.picks, sellout: out.sellouts, contagion: out.contagion,
+  const lists = { best: out.best, news: out.news, catchUp: out.catchUp.filter((c) => c.lang !== 'ja'), catalyst: out.catalysts.picks, sellout: out.sellouts, contagion: out.contagion, niche: out.niche,
     cardsSafer: out.cards.filter((c) => c.risk === 'safer').slice(0, 30) };
   const have = new Set(log.picks.map((p) => `${p.list}|${p.id}`));
   for (const [list, rows] of Object.entries(lists)) for (const r of rows ?? []) {
@@ -710,7 +746,8 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     catalysts: await catalystWatch({ cardsMeta, prices, history, lst, date, research }),
     news: newsPicks({ cardsMeta, prices, history, lst, research }),
     sellouts: await sellOuts({ cardsMeta, prices, history, lst, date }),
-    contagion: contagion({ cardsMeta, prices, history, lst }) };
+    contagion: contagion({ cardsMeta, prices, history, lst }),
+    niche: nicheMovers({ cardsMeta, prices, history, lst, date, research }) };
   out.record = await trackRecord(out, prices, date);
   // More supply coming for a set: a warning on its picks.
   for (const c of out.catalysts.supply) {
@@ -720,7 +757,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
   }
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
   console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates, ${au.info.listed} checked on eBay AU)`);
-  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}; in the news: ${out.news.length}; sell-outs: ${out.sellouts.length}; contagion: ${out.contagion.length}; track record: ${out.record.logged} logged`);
+  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}; in the news: ${out.news.length}; sell-outs: ${out.sellouts.length}; contagion: ${out.contagion.length}; niche movers: ${out.niche.length}; track record: ${out.record.logged} logged`);
   console.log(`Best ideas: ${out.best.length} (${out.best.map((b) => b.name).join(', ')})`);
   console.log(`Anomalies: ${out.anomalies.groups.length} groups, ${out.anomalies.moves.length} single moves`);
   console.log(`Hot groups: ${out.hot.map((h) => `${h.label} (${h.up}/${h.members}, median ${pct(h.median)})`).join(', ') || 'none'}`);
