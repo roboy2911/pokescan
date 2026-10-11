@@ -387,3 +387,8 @@ Claude "remove <name>".
 - `data/catalysts.json` now holds hand-checked research with sources (TCGplayer's weekly "Biggest Price Spikes" for 9 Sep, 2 Oct and 7 Oct, plus reprint news): named cards reported climbing, sets / Pokémon / an era on the rise, and sets getting more supply.
 - `tools/picks.mjs`: research counts in ⭐ Best ideas (a named card counts as moving; set, Pokémon and 2007–2016 era add a ✓). The new "📰 In the news" list shows the named cards and the top cards of rising sets / Pokémon that haven't moved yet. Supply news adds ⚠ warnings. Research expires after 60 days (supply news after 90).
 - Best ideas now has 4 (Charmander Stormfront, Slowking Prime, Gengar LV.X, Gyarados Base Set 2). In the news has 24.
+
+## 2026-10-11 — Buy ideas: early signals and a track record
+- **Sell-out watch** (`data/lows.json`): TCGplayer's cheapest copy of each A$10+ chase card is now saved daily (kept 45 days). The app flags cards where the cheapest copy jumped 25%+ but the sold price moved less than 10%, meaning cheap copies are selling out. This needs 3+ days of data, so it's empty until then.
+- **Contagion:** when 4+ chase cards of one Pokémon (and a quarter of all of its chase cards) are up 15% or more, the ones that haven't moved are flagged. The same goes for a set whose top card made a real jump (+40–200%, with normal supply). The strict filters drop thin-market spikes such as Houndoom from Aquapolis (+293%).
+- **Track record** (`data/pick-log.json`): every list's picks are logged with their price on the day. After 7 and 30 days the dev Best tab shows how many rose and the average change for each list, so we learn which signals actually work.

@@ -429,6 +429,123 @@ function newsPicks({ cardsMeta, prices, history, lst, research }) {
   return rows.slice(0, 40);
 }
 
+/* ---------- Early signals (developer panel → ⭐ Best → 🚀 Early signals) ---------- */
+
+/* Sell-out watch: TCGplayer's cheapest copy for each card (A$10+ chase cards), kept 45 days in
+ * data/lows.json. When the cheap copies sell out the cheapest listing jumps first and the
+ * market (sold) price follows a few days later — catch it in between. */
+async function sellOuts({ cardsMeta, prices, history, lst, date }) {
+  const lows = await readJson('lows.json', { dates: [], items: {} });
+  if (lows.dates.at(-1) !== date) lows.dates.push(date);
+  const di = lows.dates.length - 1;
+  const out = [];
+  for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
+    const row = prices.cards[id];
+    const f = row && MAIN_FINISH.find((k) => row[k] != null);
+    if (!f || row[f] < 10) continue;
+    const set = cardsMeta.sets[setId] ?? [];
+    const chase = CHASE.find(([rx]) => rx.test(rarity || '')) || ((set[3] || '9') < '2004' && /holo/i.test(rarity || ''));
+    if (!chase) continue;
+    const l = lst.get(row.p)?.[SUBTYPE[f]];
+    if (!l?.low) continue;
+    const k = `${id}:${f}`;
+    const ser = lows.items[k] ?? (lows.items[k] = []);
+    ser[di] = Math.round(l.low * 100);
+    // Cheapest copy now vs its median over the previous days; market price over the same days.
+    const past = ser.slice(0, di).filter((v) => v != null).slice(-7);
+    if (past.length < 3) continue;
+    const before = [...past].sort((a, b) => a - b)[Math.floor(past.length / 2)];
+    const lowChg = ((ser[di] - before) / before) * 100;
+    const t = trend((history.items[k] ?? []).slice(-8));
+    const mktChg = t?.chg ?? 0;
+    if (lowChg >= 25 && mktChg < 10 && l.low <= row[f] * 2.5) {
+      out.push({ id, name, number, set: set[0] ?? setId, rarity, usd: row[f], chg: Math.round(mktChg), kind: 'sellout',
+        why: `cheapest copy on TCGplayer jumped ${pct(lowChg)} (US$${(before / 100).toFixed(0)} → US$${l.low.toFixed(0)}) while the sold price has only moved ${pct(mktChg)} — the cheap copies are selling out; the sold price usually follows` });
+    }
+  }
+  // Keep 45 days.
+  const drop = Math.max(0, lows.dates.length - 45);
+  if (drop) { lows.dates = lows.dates.slice(drop); for (const k of Object.keys(lows.items)) lows.items[k] = lows.items[k].slice(drop); }
+  for (const k of Object.keys(lows.items)) if (!lows.items[k].some((v) => v != null)) delete lows.items[k];
+  await writeFile(dataFile('lows.json'), JSON.stringify(lows));
+  out.sort((a, b) => b.usd - a.usd);
+  return out.slice(0, 25);
+}
+
+/* Contagion: when several cards of one Pokémon are rising (e.g. Rayquaza before a Rayquaza set),
+ * or a set's chase card jumps (Jirachi ◇ → the rest of Celestial Storm), the others tend to
+ * follow. The chase cards of that Pokémon / set that haven't moved yet. */
+function contagion({ cardsMeta, prices, history, lst }) {
+  const mon = (name) => name.replace(/^(M|Mega|Dark|Light|Shining|Radiant|Team \w+'s|\w+'s)\s+/i, '').split(/[\s-]/)[0].replace(/[◇★δ]/g, '').toLowerCase();
+  const info = [];
+  for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
+    const row = prices.cards[id];
+    const f = row && MAIN_FINISH.find((k) => row[k] != null);
+    if (!f || row[f] < 15) continue;
+    const set = cardsMeta.sets[setId] ?? [];
+    const chase = CHASE.slice(0, 2).find(([rx]) => rx.test(rarity || '')) || ((set[3] || '9') < '2004' && /holo/i.test(rarity || ''));
+    if (!chase) continue;
+    const t = trend(history.items[`${id}:${f}`]);
+    if (!t || t.days < 3) continue;
+    const sup = supply(lst.get(row.p)?.[SUBTYPE[f]]);
+    info.push({ id, name, number, setId, set: set[0] ?? setId, rarity, usd: row[f], chg: t.chg, mon: mon(name), sup });
+  }
+  const by = (key) => { const m = new Map(); for (const c of info) { const k = key(c); if (!m.has(k)) m.set(k, []); m.get(k).push(c); } return m; };
+  const out = [];
+  const seen = new Set();
+  // Pokémon: at least 4 chase cards up 15%+ and they're at least a quarter of its chase cards.
+  for (const [m, cards] of by((c) => c.mon)) {
+    const up = cards.filter((c) => c.chg >= 15 && (c.sup == null || c.sup <= 1.5));
+    if (cards.length < 6 || up.length < 4 || up.length < cards.length * 0.25) continue;
+    for (const c of cards.filter((x) => x.chg < 5 && x.chg > -10 && (x.sup == null || (x.sup >= 0.85 && x.sup <= 1.5))).sort((a, b) => b.usd - a.usd).slice(0, 5)) {
+      seen.add(c.id);
+      out.push({ ...c, chg: Math.round(c.chg), kind: 'pokemon', why: `${up.length} of ${cards.length} ${c.name.split(' ')[0]} chase cards are up 15%+ (e.g. ${up.sort((a, b) => b.chg - a.chg).slice(0, 2).map((u) => `${u.set} ${pct(u.chg)}`).join(', ')}) — this one hasn't moved yet` });
+    }
+  }
+  // Set: its priciest chase card (or one of its top 3) up 40%+ and steady (not a thin market).
+  for (const [, cards] of by((c) => c.setId)) {
+    const top = [...cards].sort((a, b) => b.usd - a.usd).slice(0, 3);
+    const leader = top.find((c) => c.chg >= 40 && c.chg <= 200 && c.sup != null && c.sup >= 0.85 && c.sup <= 1.5); // a real move, not one odd sale
+    if (!leader) continue;
+    for (const c of cards.filter((x) => x !== leader && x.chg < 5 && x.chg > -10 && x.usd >= 20 && !seen.has(x.id) && (x.sup == null || (x.sup >= 0.85 && x.sup <= 1.5))).sort((a, b) => b.usd - a.usd).slice(0, 4)) {
+      out.push({ ...c, chg: Math.round(c.chg), kind: 'set', why: `${leader.name} from ${leader.set} is up ${pct(leader.chg)} — the set's other chase cards often follow; this one hasn't moved yet` });
+    }
+  }
+  return out.map(({ setId, mon, sup, ...c }) => c).slice(0, 30);
+}
+
+/* Track record: every list's picks are logged with their price on the day (data/pick-log.json).
+ * Later runs check how each list did after 7 and 30 days, so we learn which signals work. */
+async function trackRecord(out, prices, date) {
+  const log = await readJson('pick-log.json', { picks: [] });
+  const now = (id) => { const row = prices.cards[id]; const f = row && MAIN_FINISH.find((k) => row[k] != null); return f ? row[f] : null; };
+  const lists = { best: out.best, news: out.news, catchUp: out.catchUp.filter((c) => c.lang !== 'ja'), catalyst: out.catalysts.picks, sellout: out.sellouts, contagion: out.contagion,
+    cardsSafer: out.cards.filter((c) => c.risk === 'safer').slice(0, 30) };
+  const have = new Set(log.picks.map((p) => `${p.list}|${p.id}`));
+  for (const [list, rows] of Object.entries(lists)) for (const r of rows ?? []) {
+    if (!r.id || have.has(`${list}|${r.id}`) || r.usd == null) continue;
+    log.picks.push({ list, id: r.id, name: r.name, date, usd: r.usd });
+  }
+  const days = (d) => (Date.parse(date) - Date.parse(d)) / 86400000;
+  const summary = {};
+  for (const p of log.picks) {
+    const n = now(p.id);
+    if (n == null) continue;
+    for (const [w, min] of [['d7', 7], ['d30', 30]]) {
+      if (days(p.date) < min) continue;
+      if (p[w] == null && days(p.date) <= min + 3) p[w] = n; // the price at about that age
+      if (p[w] == null) continue;
+      const s = (summary[p.list] ??= {})[w] ??= { n: 0, up: 0, sum: 0 };
+      const chg = ((p[w] - p.usd) / p.usd) * 100;
+      s.n++; s.sum += chg; if (chg > 0) s.up++;
+    }
+  }
+  for (const l of Object.values(summary)) for (const s of Object.values(l)) { s.avg = Math.round(s.sum / s.n); s.hit = Math.round((s.up / s.n) * 100); delete s.sum; }
+  log.picks = log.picks.filter((p) => days(p.date) <= 120);
+  await writeFile(dataFile('pick-log.json'), JSON.stringify(log));
+  return { since: log.picks.reduce((m, p) => (p.date < m ? p.date : m), date), logged: log.picks.length, lists: summary };
+}
+
 /* Supply: cheapest listing / recent sales. */
 function supply(l) {
   if (!l?.low || !l?.market) return null;
@@ -591,7 +708,10 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     best: await bestIdeas({ cardsMeta, prices, history, lst, hot, au, date, research }),
     catchUp: await catchUps({ hot, cardsMeta, prices, history }),
     catalysts: await catalystWatch({ cardsMeta, prices, history, lst, date, research }),
-    news: newsPicks({ cardsMeta, prices, history, lst, research }) };
+    news: newsPicks({ cardsMeta, prices, history, lst, research }),
+    sellouts: await sellOuts({ cardsMeta, prices, history, lst, date }),
+    contagion: contagion({ cardsMeta, prices, history, lst }) };
+  out.record = await trackRecord(out, prices, date);
   // More supply coming for a set: a warning on its picks.
   for (const c of out.catalysts.supply) {
     for (const list of [out.cards, out.best, out.au]) for (const p of list ?? []) {
@@ -600,7 +720,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
   }
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
   console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates, ${au.info.listed} checked on eBay AU)`);
-  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}; in the news: ${out.news.length}`);
+  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}; in the news: ${out.news.length}; sell-outs: ${out.sellouts.length}; contagion: ${out.contagion.length}; track record: ${out.record.logged} logged`);
   console.log(`Best ideas: ${out.best.length} (${out.best.map((b) => b.name).join(', ')})`);
   console.log(`Anomalies: ${out.anomalies.groups.length} groups, ${out.anomalies.moves.length} single moves`);
   console.log(`Hot groups: ${out.hot.map((h) => `${h.label} (${h.up}/${h.members}, median ${pct(h.median)})`).join(', ') || 'none'}`);
