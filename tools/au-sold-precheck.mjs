@@ -7,6 +7,7 @@
 //   BUDGET=270        searches tonight (default: list size / REFRESH_DAYS)
 //   MIN_AUD=50        cheapest card (per finish) to pre-check
 //   RATE=60           searches started per minute (default: 6 at a time, unpaced)
+//   REFRESH_DAYS=0    re-check answers older than this (default 14; 0 = everything)
 //   DRY_RUN=1         print what would be checked, no searches
 //
 // data/au-sold.json: { asOf, minAud, items: { "<query>|<number>": [aud, sales, low, high, date] |
@@ -16,7 +17,7 @@ import { summarise, ebayKeyword, OTHER_LANG, SOLDCOMPS_PARAMS } from './au-sold-
 import { targets, audRate } from './au-sold-keys.mjs';
 
 const MIN_AUD = Number(process.env.MIN_AUD) || 50;
-const REFRESH_DAYS = 14;
+const REFRESH_DAYS = process.env.REFRESH_DAYS !== undefined && process.env.REFRESH_DAYS !== '' ? Number(process.env.REFRESH_DAYS) : 14;
 const KEEP_DAYS = 45; // drop answers older than this (cards that fell under MIN_AUD)
 const CONCURRENCY = 6;
 const DRY_RUN = !!process.env.DRY_RUN;
@@ -52,7 +53,7 @@ for (const [k, v] of Object.entries(store.items)) if (ageDays(v[4]) > KEEP_DAYS)
 // Never checked first (most valuable first), then the oldest answers.
 const due = all.filter((t) => !store.items[t.key] || ageDays(store.items[t.key][4]) >= REFRESH_DAYS)
   .sort((a, b) => (store.items[a.key]?.[4] ?? '').localeCompare(store.items[b.key]?.[4] ?? '') || b.aud - a.aud);
-const budget = Number(process.env.BUDGET) || Math.ceil(all.length / REFRESH_DAYS);
+const budget = Number(process.env.BUDGET) || Math.ceil(all.length / (REFRESH_DAYS || 1));
 const tonight = due.slice(0, budget);
 console.log(`AU sold pre-check: ${all.length} singles ≥ A$${MIN_AUD} (rate ${rate}), ${due.length} due, checking ${tonight.length}`);
 if (DRY_RUN) {

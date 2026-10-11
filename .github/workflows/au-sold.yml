@@ -14,6 +14,9 @@ on:
       rate:
         description: 'Searches started per minute (blank = 6 at a time)'
         default: ''
+      refresh_days:
+        description: 'Re-check prices older than this many days (blank = 14; 0 = everything)'
+        default: ''
 
 permissions:
   contents: write
@@ -25,7 +28,7 @@ concurrency:
 jobs:
   au-sold:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -36,8 +39,10 @@ jobs:
           SOLDCOMPS_API_KEY: ${{ secrets.SOLDCOMPS_API_KEY }}
           BUDGET: ${{ inputs.budget }}
           RATE: ${{ inputs.rate }}
+          REFRESH_DAYS: ${{ inputs.refresh_days }}
         run: node tools/au-sold-precheck.mjs
       - name: Commit if changed
+        if: always() # keep what was checked even if the run stopped early
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
