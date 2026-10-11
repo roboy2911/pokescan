@@ -553,6 +553,56 @@ function nicheMovers({ cardsMeta, prices, history, lst, date, research }) {
   return out.slice(0, 25);
 }
 
+/* Japanese lead: when 2+ different Japanese cards of one Pokémon (US$10+) jump 20%+, English
+ * collectors often follow. Japanese TCGplayer prices are thin — one sale can move a card a lot —
+ * so a single card proves nothing; a cluster is a soft hint. The English chase cards of that
+ * Pokémon that haven't moved. Logged in the track record to learn whether Japan really leads. */
+async function jpLeads({ cardsMeta, prices, history, lst, research }) {
+  const [ja, jaHist] = await Promise.all([readJson('cards-ja.json'), readJson('history-ja.json', { dates: [], items: {} })]);
+  if (!ja?.cards) return [];
+  const mon = (name) => name.replace(/^(Mega|M|Dark|Light|Shining|Radiant|Alolan|Galarian|Hisuian|Paldean)\s+/i, '').split(/[\s-]/)[0].replace(/[◇★δ]/g, '').toLowerCase();
+  const meta = new Map(ja.cards.map((r) => [r[0], r]));
+  const movers = new Map();
+  for (const [k, ser0] of Object.entries(jaHist.items)) {
+    const ser = ser0.filter((v) => v != null);
+    if (ser.length < 2 || ser.at(-1) < 1000) continue;
+    const chg = (ser.at(-1) / ser[0] - 1) * 100;
+    if (chg < 20 || chg > 500) continue; // 5×+ in days: one odd sale
+    const r = meta.get(k.slice(0, k.lastIndexOf(':')));
+    if (!r || /energy|trainer|supporter/i.test(r[4] || '')) continue;
+    const m = mon(r[1]);
+    if (m.length < 3) continue;
+    if (!movers.has(m)) movers.set(m, []);
+    if (!movers.get(m).some((x) => x.id === r[0])) movers.get(m).push({ id: r[0], name: r[1], set: ja.sets[r[3]]?.[0], chg });
+  }
+  const out = [];
+  for (const [m, jp] of movers) {
+    if (jp.length < 2) continue;
+    const re = new RegExp(`\\b${m}\\b`, 'i');
+    if (research.items.some((c) => c.kind === 'hype' && re.test(c.pokemon))) continue;
+    const en = [];
+    for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
+      if (!re.test(name)) continue;
+      const row = prices.cards[id];
+      const f = row && MAIN_FINISH.find((k) => row[k] != null);
+      if (!f || row[f] < 20) continue;
+      const set = cardsMeta.sets[setId] ?? [];
+      const chase = CHASE.slice(0, 2).find(([rx]) => rx.test(rarity || '')) || ((set[3] || '9') < '2004' && /holo/i.test(rarity || ''));
+      if (!chase) continue;
+      const t = trend(history.items[`${id}:${f}`]);
+      if (t && (t.chg >= 10 || t.chg <= -10)) continue;
+      const sup = supply(lst.get(row.p)?.[SUBTYPE[f]]);
+      if (sup != null && (sup > 1.5 || sup < 0.8)) continue;
+      en.push({ id, name, number, set: set[0] ?? setId, rarity, usd: row[f], chg: t ? Math.round(t.chg) : 0, kind: 'jplead', sup });
+    }
+    const ex = jp.sort((a, b) => b.chg - a.chg).slice(0, 2).map((j) => `${j.name} (${j.set}) ${pct(j.chg)}`).join(', ');
+    for (const c of en.sort((a, b) => (b.sup ?? 0) - (a.sup ?? 0) || b.usd - a.usd).slice(0, 3)) {
+      out.push({ ...c, sup: undefined, why: `Japanese ${m[0].toUpperCase() + m.slice(1)} cards are jumping (${jp.length} up 20%+, e.g. ${ex}) — English often follows; this one hasn't moved. Early, thin signal — riskier` });
+    }
+  }
+  return out.slice(0, 15);
+}
+
 /* Hype watch: cards of a Pokémon in the news (catalysts.json 'hype', e.g. record Lugia auction
  * sales) whose price has jumped — likely to cool. A warning (sell / don't chase), never a buy. */
 function hypeWatch({ cardsMeta, prices, history, research }) {
@@ -579,7 +629,7 @@ function hypeWatch({ cardsMeta, prices, history, research }) {
 async function trackRecord(out, prices, date) {
   const log = await readJson('pick-log.json', { picks: [] });
   const now = (id) => { const row = prices.cards[id]; const f = row && MAIN_FINISH.find((k) => row[k] != null); return f ? row[f] : null; };
-  const lists = { best: out.best, news: out.news, catchUp: out.catchUp.filter((c) => c.lang !== 'ja'), catalyst: out.catalysts.picks, sellout: out.sellouts, contagion: out.contagion, niche: out.niche,
+  const lists = { best: out.best, news: out.news, catchUp: out.catchUp.filter((c) => c.lang !== 'ja'), catalyst: out.catalysts.picks, sellout: out.sellouts, contagion: out.contagion, niche: out.niche, jpLead: out.jpLead,
     cardsSafer: out.cards.filter((c) => c.risk === 'safer').slice(0, 30) };
   const have = new Set(log.picks.map((p) => `${p.list}|${p.id}`));
   for (const [list, rows] of Object.entries(lists)) for (const r of rows ?? []) {
@@ -772,7 +822,8 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     sellouts: await sellOuts({ cardsMeta, prices, history, lst, date }),
     contagion: contagion({ cardsMeta, prices, history, lst }),
     niche: nicheMovers({ cardsMeta, prices, history, lst, date, research }),
-    hype: hypeWatch({ cardsMeta, prices, history, research }) };
+    hype: hypeWatch({ cardsMeta, prices, history, research }),
+    jpLead: await jpLeads({ cardsMeta, prices, history, lst, research }) };
   out.record = await trackRecord(out, prices, date);
   // News hype (expected to cool): a warning on that Pokémon's picks in every list.
   for (const h of research.items.filter((c) => c.kind === 'hype')) {
@@ -792,7 +843,7 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
   }
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
   console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates, ${au.info.listed} checked on eBay AU)`);
-  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}; in the news: ${out.news.length}; sell-outs: ${out.sellouts.length}; contagion: ${out.contagion.length}; niche movers: ${out.niche.length}; hype watch: ${out.hype.length}; track record: ${out.record.logged} logged`);
+  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}; in the news: ${out.news.length}; sell-outs: ${out.sellouts.length}; contagion: ${out.contagion.length}; niche movers: ${out.niche.length}; hype watch: ${out.hype.length}; JP leads: ${out.jpLead.length}; track record: ${out.record.logged} logged`);
   console.log(`Best ideas: ${out.best.length} (${out.best.map((b) => b.name).join(', ')})`);
   console.log(`Anomalies: ${out.anomalies.groups.length} groups, ${out.anomalies.moves.length} single moves`);
   console.log(`Hot groups: ${out.hot.map((h) => `${h.label} (${h.up}/${h.members}, median ${pct(h.median)})`).join(', ') || 'none'}`);

@@ -438,3 +438,12 @@ Claude "remove <name>".
 ## 2026-10-12 — Lugia hype (expected to cool)
 - The owner noted Lugia rising on auction news. The sources found are record graded sales, not a $10M sale: 1st Edition Neo Genesis Lugia PSA 10 at $654k (24 Sep), Call of Legends Lugia PSA 10 at $367k (Goldin) and Crystal Lugia PSA 10 at about $360k (about 10 Oct).
 - New `kind: 'hype'` in `data/catalysts.json`, used for 30 days. Hype cards are kept out of ⭐ Best and Niche movers, and get a ⚠ "likely to cool" warning (and a riskier label) in every other list. The new "⚠ Hype — likely to cool" section in the dev Best tab lists that Pokémon's cards up 10%+, framed as sell / don't chase. Today: Neo Genesis Lugia 9 (+606%, US$1,135), Lugia HGSS02 (+41%) and Lugia-EX 68 (+31%).
+
+## Prediction research (run 2, 09:57) — Japanese lead
+- Angle: do Japanese prices move before English? Over the 3 days of `history-ja.json`, 34 Japanese cards (US$8+) rose 20%+. Most are thin one-sale jumps: promos +300–900%, Oracle (Split Earth) +900%. Japanese TCGplayer prices are too thin to trust card by card.
+- Clusters are the better signal: Latios (2 cards, both promos; no news found, English Latios flat) and Lucario (Lucario EX, The Best of XY, +149%; Lucario V starter deck +33%). Lucario fits the expected first English set of 2027, Japan's Aura Seeker, led by Mega Lucario (not officially confirmed).
+- New `jpLeads` in `tools/picks.mjs`, shown under "🚀 Early signals":
+  - Trigger: 2+ different Japanese cards of one Pokémon (US$10+) up 20–500%.
+  - Shows: up to 3 English chase cards of that Pokémon that haven't moved (±10%) and have normal supply.
+  - Hype Pokémon are skipped. Every pick is logged in the track record, which will show whether Japan really leads.
+- Today: Lucario-GX SV64 (Hidden Fates Shiny Vault, US$86), Mega Lucario ex 188 / 179 (Mega Evolution, US$229 / US$170), Latios ★ 106 (Deoxys) and Latios 203 (Surging Sparks).
