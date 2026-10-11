@@ -40,6 +40,7 @@ jobs:
           BUDGET: ${{ inputs.budget }}
           RATE: ${{ inputs.rate }}
           REFRESH_DAYS: ${{ inputs.refresh_days }}
+          TIME_LIMIT_MIN: '320' # stop cleanly before the job's 330-minute timeout
         run: node tools/au-sold-precheck.mjs
       - name: Commit if changed
         if: always() # keep what was checked even if the run stopped early

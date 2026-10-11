@@ -50,7 +50,7 @@ export function targets(cardsMeta, prices, rate, minAud = 0) {
   const rp = reprintIndex(cardsMeta);
   for (const [id, name, number, setId] of cardsMeta.cards) {
     const row = prices[id];
-    if (!row) continue;
+    if (!row || /^[a-z]$/i.test(number)) continue; // a lone letter (30th Celebration Mew R/G/B) can't be searched for
     const [setName, , setTotal, releaseDate] = cardsMeta.sets[setId] ?? [];
     const card = { name, number, setName, setTotal, releaseDate,
       printed: rp.of.get(id), t: rp.of.has(id) ? REPRINT_SETS[setId] : rp.originals.has(id) ? 'o' : '' };

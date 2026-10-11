@@ -51,8 +51,9 @@ const all = targets(cardsMeta, pricesFile.cards, rate, MIN_AUD);
 for (const [k, v] of Object.entries(store.items)) if (ageDays(v[4]) > KEEP_DAYS) delete store.items[k];
 
 // Never checked first (most valuable first), then the oldest answers.
-const due = all.filter((t) => !store.items[t.key] || ageDays(store.items[t.key][4]) >= REFRESH_DAYS)
-  .sort((a, b) => (store.items[a.key]?.[4] ?? '').localeCompare(store.items[b.key]?.[4] ?? '') || b.aud - a.aud);
+const checked = (row) => row[5] ?? row[4];
+const due = all.filter((t) => !store.items[t.key] || ageDays(checked(store.items[t.key])) >= REFRESH_DAYS)
+  .sort((a, b) => (store.items[a.key] ? checked(store.items[a.key]) : '').localeCompare(store.items[b.key] ? checked(store.items[b.key]) : '') || b.aud - a.aud);
 const budget = Number(process.env.BUDGET) || Math.ceil(all.length / (REFRESH_DAYS || 1));
 const tonight = due.slice(0, budget);
 console.log(`AU sold pre-check: ${all.length} singles ≥ A$${MIN_AUD} (rate ${rate}), ${due.length} due, checking ${tonight.length}`);
@@ -78,7 +79,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function checkOne(t) {
   try {
     const r = await lookup(t);
-    store.items[t.key] = r.ok ? [r.aud, r.n, r.low, r.high, today] : [null, r.n ?? 0, null, null, today];
+    // Too few Australian-seller sales: keep an earlier price (e.g. from every seller, via the
+    // worker) rather than wiping it — it keeps its own date and ages out by itself.
+    const prev = store.items[t.key];
+    if (r.ok) store.items[t.key] = [r.aud, r.n, r.low, r.high, today];
+    else if (prev?.[0] != null && ageDays(prev[4]) <= 21) prev[5] = today; // [5]: last checked
+    else store.items[t.key] = [null, r.n ?? 0, null, null, today];
     done++;
     if (r.ok) priced++;
     if (done % 100 === 0) {
