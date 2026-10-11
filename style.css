@@ -968,3 +968,4 @@ body.gated { overflow: hidden; }
 .dev-pick.best { border-color: rgba(255, 203, 5, .45); }
 .dev-pick ul.checks { list-style: none; padding-left: 0; }
 .dev-pick ul.checks li::before { content: '✓ '; color: var(--ok); font-weight: 700; }
+.dev-src { display: block; color: var(--muted); font-size: .7rem; margin-top: 2px; }

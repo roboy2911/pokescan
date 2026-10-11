@@ -293,7 +293,7 @@ async function devRenderPicks(box) {
   const drawBest = (list) => {
     const items = picks.best.filter((p) => !budget || p.usd * rate.rate <= budget);
     list.innerHTML = `<p class="dev-msg">The strongest ideas: cards where real demand, price movement and card quality all agree at once — every one passes all the must-haves and at least 5 checks. Few on purpose${picks.days < 14 ? ` (price history only goes back to ${devEsc(shortDate(picks.since))}, so the list grows as it builds up)` : ''}. Still not a guarantee — markets turn.</p>`;
-    if (!items.length) { list.insertAdjacentHTML('beforeend', `<p class="dev-msg">Nothing passes every check today${budget ? ` under A$${budget}` : ''} — that's the point: no forced picks.</p>`); return; }
+    if (!items.length) list.insertAdjacentHTML('beforeend', `<p class="dev-msg">Nothing passes every check today${budget ? ` under A$${budget}` : ''} — that's the point: no forced picks.</p>`);
     for (const p of items) {
       const card = db.byId?.get(p.id);
       const b = document.createElement('button');
@@ -308,6 +308,28 @@ async function devRenderPicks(box) {
       b.addEventListener('click', () => { if (card) openDetail(card); });
       list.appendChild(b);
     }
+    // Riskier, research-led ideas: their own sections.
+    const extra = async (title, intro, rows) => {
+      const shown = rows.filter((r) => !budget || r.usd * rate.rate <= budget);
+      if (!shown.length) return;
+      list.insertAdjacentHTML('beforeend', `<h4 class="dev-h">${title}</h4><p class="dev-msg">${intro}</p>`);
+      if (shown.some((r) => r.lang === 'ja')) await loadJapanese().catch(() => {});
+      for (const r of shown.slice(0, 20)) {
+        const card = db.byId?.get(r.id);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'dev-pick';
+        b.innerHTML = `<img src="${devEsc(card?.image ?? '')}" alt="" loading="lazy">
+          <div class="meta"><div class="name">${devEsc(r.name)}${r.lang === 'ja' ? ' <span class="jp-badge">JP</span>' : ''}</div>
+            <div class="sub">${devEsc([r.set, r.rarity].filter(Boolean).join(' · '))}</div><ul><li>${devEsc(r.why)}</li></ul>
+            ${r.source ? `<small class="dev-src">Source: ${devEsc(new URL(r.source).hostname)}</small>` : ''}</div>
+          <div class="side"><b>${formatAud(r.usd, rate.rate)}</b><small>${r.chg > 0 ? '+' : ''}${r.chg}% so far</small><span class="risk riskier">Riskier</span></div>`;
+        b.addEventListener('click', () => { if (card) openDetail(card); });
+        list.appendChild(b);
+      }
+    };
+    extra('🔁 Catch-up plays', 'A group is surging — these belong with it but haven\'t moved yet. Prices often follow, but not always.', picks.catchUp ?? [])
+      .then(() => extra('📅 Catalyst watch', 'Something coming up could pull these up (from news / release schedules; source shown). They haven\'t moved yet — a bet on the event.', picks.catalysts?.picks ?? []));
   };
 
   // Anomalies: groups moving together, then big single moves (US prices → AUD).

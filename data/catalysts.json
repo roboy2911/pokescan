@@ -1,0 +1,20 @@
+{
+  "note": "Upcoming events that can move prices, kept by hand (checked against the sources listed). effect: 'up' = new attention on that Pokémon; 'supply' = more of that set / card being printed. Used by tools/picks.mjs (Best ideas → Catalyst watch).",
+  "updated": "2026-10-11",
+  "items": [
+    {
+      "pokemon": "Rayquaza",
+      "effect": "up",
+      "date": "2026-11-06",
+      "event": "Mega Rayquaza is the chase card of Mega Evolution: Delta Reign (prereleases from 24 Oct)",
+      "source": "https://cardtrack.com/pokemon/upcoming-sets"
+    },
+    {
+      "set": "30th Celebration",
+      "effect": "supply",
+      "date": "2026-12-04",
+      "event": "more 30th Celebration products on 30 Oct, 6 Nov and 4 Dec — supply still coming",
+      "source": "https://pokennoisseur.ca/tools/release-calendar"
+    }
+  ]
+}

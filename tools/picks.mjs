@@ -290,6 +290,76 @@ async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }) {
   return out.slice(0, 15);
 }
 
+/* Catch-up plays: a group is surging (e.g. Prism Stars) — the same cards in Japanese, and any
+ * English members, that haven't moved yet. Riskier than the strict list (the market may not
+ * follow), so they're their own section. */
+async function catchUps({ hot, cardsMeta, prices, history }) {
+  const out = [];
+  if (!hot.size) return out;
+  const [ja, jaPrices, jaHist] = await Promise.all([readJson('cards-ja.json'), readJson('prices-ja.json'), readJson('history-ja.json', { dates: [], items: {} })]);
+  // English movers per group: Pokémon names and their move.
+  for (const g of hot.values()) {
+    const [kind, val] = [g.key.slice(0, 1), g.key.slice(2)];
+    const members = cardsMeta.cards.filter((r) => (kind === 'r' ? r[4] === val : r[3] === val));
+    const moved = new Map();
+    for (const [id, name] of members) {
+      const row = prices.cards[id];
+      const f = row && MAIN_FINISH.find((k) => row[k] != null);
+      const t = f && trend(history.items[`${id}:${f}`]);
+      if (t && t.chg >= 25) moved.set(name.replace(/\s*◇.*$|\s*★.*$/, '').trim().toLowerCase(), Math.round(t.chg));
+      else if (t && t.chg < 10 && row[f] >= 3) out.push({ lang: 'en', id, name, set: cardsMeta.sets[members.find((r) => r[0] === id)[3]]?.[0], usd: row[f], chg: Math.round(t.chg),
+        why: `${g.label} are surging (median ${pct(g.median)}); this English one hasn't moved (${pct(t.chg)})` });
+    }
+    // Japanese printings of the movers (same Pokémon, same special rarity).
+    if (kind === 'r' && ja?.cards) {
+      const word = /prism/i.test(val) ? /prism star|◇/i : /gold star|★/i.test(val) ? /★|star/i : null;
+      for (const [id, name, , setId] of ja.cards) {
+        if (!word || !word.test(name)) continue;
+        const mon = name.replace(/\s*(prism star|◇|★|gold star).*$/i, '').trim().toLowerCase();
+        if (!moved.has(mon)) continue;
+        const row = jaPrices?.cards?.[id];
+        const f = row && MAIN_FINISH.find((k) => row[k] != null);
+        if (!f) continue;
+        const t = trend(jaHist.items[`${id}:${f}`]);
+        if (t && t.chg >= 25) continue; // already moved
+        out.push({ lang: 'ja', id, name, set: ja.sets[setId]?.[0] ?? setId, usd: row[f], chg: t ? Math.round(t.chg) : 0,
+          why: `English ${name.replace(/\s*prism star/i, ' ◇')} is up ${pct(moved.get(mon))}; this Japanese printing hasn't moved yet — Japanese prices often follow (thinner market, riskier)` });
+      }
+    }
+  }
+  out.sort((a, b) => b.usd - a.usd);
+  return out.slice(0, 30);
+}
+
+/* Catalyst watch: events from data/catalysts.json (kept by hand, with sources). 'up' → chased
+ * cards of that Pokémon that haven't moved yet; 'supply' → a warning on that set's picks. */
+async function catalystWatch({ cardsMeta, prices, history, lst, date }) {
+  const cat = await readJson('catalysts.json', { items: [] });
+  const out = [];
+  for (const c of cat.items ?? []) {
+    if (c.date && c.date < date && c.effect === 'up') continue; // passed
+    if (c.effect !== 'up' || !c.pokemon) continue;
+    const re = new RegExp(`\\b${c.pokemon}\\b`, 'i');
+    for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
+      if (!re.test(name)) continue;
+      const row = prices.cards[id];
+      const f = row && MAIN_FINISH.find((k) => row[k] != null);
+      if (!f || row[f] < 10) continue;
+      const set = cardsMeta.sets[setId] ?? [];
+      const chase = CHASE.slice(0, 2).find(([rx]) => rx.test(rarity || '')) || ((set[3] || '9') < '2004' && /holo/i.test(rarity || ''));
+      if (!chase) continue;
+      const t = trend(history.items[`${id}:${f}`]);
+      if (t && t.chg >= 25) continue;
+      const sup = supply(lst.get(row.p)?.[SUBTYPE[f]]);
+      if (sup != null && sup > 1.5) continue;
+      out.push({ id, name, number, set: set[0] ?? setId, rarity, usd: row[f], chg: t ? Math.round(t.chg) : 0, sup: sup && Math.round(sup * 100) / 100,
+        why: `${c.event} (${c.date}) — older ${c.pokemon} chase cards often get pulled up by a new one; this one hasn't moved yet${sup != null && sup >= 1 ? '; cheapest copy already at/above recent sales' : ''}`, source: c.source });
+    }
+  }
+  out.sort((a, b) => (b.sup ?? 0) - (a.sup ?? 0) || b.usd - a.usd);
+  return { picks: out.slice(0, 20), supply: (cat.items ?? []).filter((c) => c.effect === 'supply' && (!c.date || c.date >= date)) };
+}
+
 /* Supply: cheapest listing / recent sales. */
 function supply(l) {
   if (!l?.low || !l?.market) return null;
@@ -448,9 +518,18 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
   const out = { built: new Date().toISOString(), since: history.dates[0] ?? date, days, currency: 'USD', cards, sealed, au: au.picks, auInfo: au.info,
     hot: [...hot.values()].sort((a, b) => b.median - a.median).slice(0, 8).map((h) => ({ ...h, since })),
     anomalies: anomalies({ cardsMeta, prices, sealedData, history, lst }),
-    best: await bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }) };
+    best: await bestIdeas({ cardsMeta, prices, history, lst, hot, au, date }),
+    catchUp: await catchUps({ hot, cardsMeta, prices, history }),
+    catalysts: await catalystWatch({ cardsMeta, prices, history, lst, date }) };
+  // More supply coming for a set: a warning on its picks.
+  for (const c of out.catalysts.supply) {
+    for (const list of [out.cards, out.best, out.au]) for (const p of list ?? []) {
+      if (c.set && p.set && p.set.startsWith(c.set)) (p.reasons ?? p.checks)?.push?.(`⚠ ${c.event}`);
+    }
+  }
   await writeFile(dataFile('picks.json'), JSON.stringify(out));
   console.log(`AU picks: ${au.picks.length} (${au.info.priced} cards with an AU sold price, ${au.info.withSales} with recent sale dates, ${au.info.listed} checked on eBay AU)`);
+  console.log(`Catch-up: ${out.catchUp.length}; catalyst watch: ${out.catalysts.picks.length}`);
   console.log(`Best ideas: ${out.best.length} (${out.best.map((b) => b.name).join(', ')})`);
   console.log(`Anomalies: ${out.anomalies.groups.length} groups, ${out.anomalies.moves.length} single moves`);
   console.log(`Hot groups: ${out.hot.map((h) => `${h.label} (${h.up}/${h.members}, median ${pct(h.median)})`).join(', ') || 'none'}`);
