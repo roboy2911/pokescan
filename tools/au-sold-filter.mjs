@@ -9,7 +9,7 @@ export const SOLDCOMPS_PARAMS = {
 const MIN_SALES = 3;
 
 // Listings that aren't a single raw copy of the card.
-const JUNK = /\b(world\s?champ\w*|worlds?\s?(deck|\d{2,4})|wcd|championship\s?deck|not\s?for\s?tournament|cracked\s?ice|gold\s?border(ed)?|psa|cgc|bgs|beckett|ace\s?\d|tag\s?\d|ags\s?\d|sgc|ark\s?\d|mnt\s?\d|pca\s?\d|gma\s?\d|hga\s?\d|ksa\s?\d|graded|slab|gem\s?mint(\s?\d+(\.\d)?)?|lot|bundle|bulk|mystery|repack|custom|proxy|replica|fake|diy|inspired|fan\s?art|handmade|unofficial|orica|metal|gold\s?(card|plated|foil)|coin|sticker|poster|art\s?print|digital|code\s?card|choose|pick\s?(your|a|one)|you\s?pick|empty|case\s?only|toploader\s?only)\b/i;
+const JUNK = /\b(world\s?champ\w*|worlds?\s?(deck|\d{2,4})|wcd|championship\s?deck|not\s?for\s?tournament|cracked\s?ice|gold\s?border(ed)?|psa|cgc|bgs|beckett|cga|oce|grade|grading|ace\s?\d|tag\s?\d|ags\s?\d|sgc|ark\s?\d|mnt\s?\d|pca\s?\d|gma\s?\d|hga\s?\d|ksa\s?\d|graded|slab|gem\s?mint(\s?\d+(\.\d)?)?|lot|bundle|bulk|mystery|repack|custom|proxy|replica|fake|diy|inspired|fan\s?art|handmade|unofficial|orica|metal|gold\s?(card|plated|foil)|coin|sticker|poster|art\s?print|digital|code\s?card|choose|pick\s?(your|a|one)|you\s?pick|empty|case\s?only|toploader\s?only)\b/i;
 // More than one item: "x 2", "2x", "x3", "set of", "pair".
 const MULTI = /(\bx\s?[2-9]\d?\b|\b[2-9]\d?\s?x\b|\bset of\b|\bpair\b|\b[2-9]\d? (packs|boxes|bundles|etbs|tins)\b)/i;
 // Not Near Mint: prices are for NM copies (the app values other conditions from it), so
@@ -18,6 +18,29 @@ const NOT_NM = /\b(lp|mp|dmg|damaged?|(lightly|moderately|heavily|light|heavy)[\
 const NOT_NM_CONDITION = /played|poor|damaged|excellent|\bgood\b/i; // eBay's card condition field
 const NEGATED = /\b(no|never|without|zero|not|free\s+of)\b(\s+[\w-]+){1,3}/gi;
 const notNearMint = (it) => NOT_NM.test((it.title || '').replace(NEGATED, ' ')) || NOT_NM_CONDITION.test(it.condition || '');
+// Not a trading card at all (merchandise and video-game listings that happen to share the
+// name and a number: "Shiny 6IV Torchic", "12pcs Pikachu", "T-Shirt Size 12").
+const NOT_A_CARD = /\b(\d?iv|plush|figures?|figurines?|toys?|t-?shirts?|shirts?|hoodie|pencils?|key\s?(chain|ring)s?|legends?\s?z-?a|nintendo\s?switch|dlc|jigsaw|puzzle|mug|backpack|pcs)\b/i;
+// Pricier versions of the same card that a plain search also finds. A sale only counts for the
+// version searched for: no "1st Edition" in an unlimited search, no reverse holo in a holo one,
+// and no stamped / staff / prerelease / swirl / shadowless / error copies of a set card unless
+// that's what's searched for (a promo's own number is often sold as "stamped" or "prerelease").
+const FIRST_ED = /\b(1st|first)\s?ed(ition|\.)?\b/i;
+const REVERSE = /\brev(erse)?\.?\s?(holo|foil)?\b|\breverse\b/i;
+const SPECIAL = /\b(stamp(ed)?|staff|pre-?release|swirl|shadowless|error|misprint|miscut|holo\s?bleed|ink\s?error)\b/i;
+// "Charizard ex 006/165" is a different card from "Charizard 6/165" (same number in another
+// set). After the card's name, a mechanic its name doesn't have means another card. "EX" is
+// also how sellers write the EX-era sets ("EX Dragon"), so that's allowed before a set word.
+const MECHANIC = /^(gx|v|vmax|vstar|v-union|lv\.?\s?x|lvx|break|prime|legend|ex)\b(?!\s*(dragon|deoxys|holon|legend|team|unseen|delta|emerald|crystal|power|hidden|fire\s?red|firered|ruby|sandstorm|series|era|set))/i;
+function otherMechanic(title, nameWords) {
+  if (!nameWords.length) return false;
+  const t = plain(title);
+  const last = nameWords[nameWords.length - 1];
+  const re = new RegExp(`\\b${last}\\b\\s+(.*)$`);
+  const m = t.match(re);
+  return !!m && MECHANIC.test(m[1]);
+}
+
 export const OTHER_LANG = /\b(japanese|japan|jpn|chinese|korean|kor|thai|indonesian|german|french|italian|italiano|ita|spanish|portuguese)\b|\bjp\b/i;
 
 const median = (xs) => {
@@ -37,7 +60,8 @@ function numberMatcher(n) {
   }
   // A promo's bare number ("44"): on its own ("#44", "SVP 044", "SVP044"), not "44/64" or "144".
   if (/^\d+$/.test(parts[0])) {
-    const re = new RegExp(`(^|[^0-9/])0*${strip(parts[0])}(?![0-9]|\\s*/)`);
+    // Not a level or HP ("LV.40", "40 HP"), and not running into letters ("6IV", "12pcs", "25th").
+    const re = new RegExp(`(^|[^0-9/])(?<!(lv|lvl|level|hp|size|gen)\\.?\\s?)0*${strip(parts[0])}(?![0-9a-z]|\\s*/|\\s?hp\\b|\\s?(pcs|pack|pieces)\\b)`);
     return (title) => re.test(title.toLowerCase());
   }
   // A lettered number ("RC32", "TG20", "SV64", "XY126"): on its own, not after a "/" ("RC21/RC32"
@@ -90,13 +114,20 @@ function setMatcher(set, mode) {
 // What to ask eBay for: the query, minus graded slabs (they'd fill the 60 newest sales), and for
 // a reprinted original, minus the reprints.
 export function ebayKeyword(q, mode = '') {
-  return `${q} -psa -cgc -bgs${mode === 'o' ? ' -celebrations -classic -25th -30th' : ''}`;
+  // "holo" / "non holo" (a card sold both ways) are told apart in the titles (matching()), not
+  // searched for: sellers don't always write them.
+  const words = q.replace(/\s+(non\s)?holo$/i, '');
+  return `${words} -psa -cgc -bgs${mode === 'o' ? ' -celebrations -classic -25th -30th' : ''}`;
 }
 
 // min: fewest sales that make a price (1 for the "last sold" fallback, see au-sold-worker.js).
 export function summarise(items, n, wantsOtherLang, q = '', mode = '', { min = MIN_SALES, set = '' } = {}) {
+  // The same listing sold several times (a seller's stock of one card) counts once, so one
+  // seller can't set the price.
+  const seen = new Set();
   let sales = matching(items, n, wantsOtherLang, q, mode, set)
-    .map((it) => ({ title: it.title, aud: Number(it.soldPrice), date: (it.endedAt || '').slice(0, 10), url: it.url }));
+    .map((it) => ({ title: it.title, aud: Number(it.soldPrice), date: (it.endedAt || '').slice(0, 10), url: it.url }))
+    .filter((s) => { const k = `${s.title.toLowerCase().replace(/\s+/g, ' ').trim()}|${s.aud}`; return !seen.has(k) && seen.add(k); });
   if (sales.length >= 4) {
     // Drop outliers: outside 0.5×–2× the median (mislabelled lots, damaged copies, typos).
     const m = median(sales.map((s) => s.aud));
@@ -125,7 +156,10 @@ export function matching(items, n, wantsOtherLang, q = '', mode = '', set = '') 
   const inMode = MODES[mode] ?? (() => true);
   // Words searched for don't count as junk ("Booster Bundle" is a product, not a lot).
   const qWords = new RegExp(`\\b(${q.toLowerCase().split(/\s+/).filter((w) => /^[a-z]+$/.test(w)).join('|') || '$^'})\\b`, 'gi');
-  const isJunk = (title) => JUNK.test(title.replace(qWords, ' ')) || MULTI.test(title);
+  // Two different card numbers in one title ("92/95 & 93/95", "3/6/7/16/17"): more than one card.
+  const twoCards = (title) => new Set((title.match(/\b\d{1,3}\s?\/\s?\d{1,3}\b/g) || []).map((x) => x.replace(/\s|^0+/g, ''))).size > 1
+    || /\b\d{1,3}(\/\d{1,3}){2,}\b/.test(title);
+  const isJunk = (title) => JUNK.test(title.replace(qWords, ' ')) || MULTI.test(title) || twoCards(title);
   // Without a card number (sealed product) every searched word must be in the title.
   const words = n ? [] : q.toLowerCase().split(/\s+/).filter((w) => w.length >= 3 || /\d/.test(w))
     .map((w) => w.normalize('NFD').replace(/[^a-z0-9]/g, '').replace(/(.{4})s$/, '$1')).filter(Boolean); // "evolutions" ~ "evolution"
@@ -133,7 +167,23 @@ export function matching(items, n, wantsOtherLang, q = '', mode = '', set = '') 
     const t = title.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, ' ');
     return words.every((w) => t.includes(w));
   };
+  // The version searched for (see FIRST_ED / REVERSE / SPECIAL).
+  const ql = q.toLowerCase();
+  const wantsFirst = FIRST_ED.test(ql), wantsReverse = REVERSE.test(ql);
+  const setCard = /\//.test(n || '');
+  // A card sold both as holo and non-holo: "… holo" needs a holo sale, "… non holo" any sale
+  // that doesn't say holo (or says non-holo).
+  const NON_HOLO = /\bnon[\s-]?holo(foil)?\b/i;
+  const wantsNonHolo = /\snon\sholo$/.test(ql), wantsHolo = !wantsNonHolo && /\sholo$/.test(ql) && !wantsReverse;
+  const otherFinish = (title) => (wantsHolo && (NON_HOLO.test(title) || !/holo|foil/i.test(title)))
+    || (wantsNonHolo && !NON_HOLO.test(title) && /\bholo(foil)?\b|\bfoil\b/i.test(title));
+  const otherVersion = (title) => otherFinish(title) || (!wantsFirst && FIRST_ED.test(title)) || (wantsFirst && /\bunlimited\b/i.test(title))
+    || (!wantsReverse && REVERSE.test(title)) || (setCard && SPECIAL.test(title) && !SPECIAL.test(ql)) || (!setCard && /\bstaff\b/i.test(title) && !/\bstaff\b/.test(ql));
+  const at = n ? ql.indexOf(` ${n.toLowerCase()}`) : -1;
+  const nameWords = at > 0 ? plain(q.slice(0, at)).split(' ').filter(Boolean) : [];
+  const nameHasMechanic = nameWords.some((w) => /^(gx|v|vmax|vstar|lv|x|break|prime|legend|ex)$/.test(w));
   return items
     .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
+    .filter((it) => !n || (!NOT_A_CARD.test(it.title) && !otherVersion(it.title) && (nameHasMechanic || !otherMechanic(it.title, nameWords))))
     .filter((it) => !isJunk(it.title) && !notNearMint(it) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasName(it.title) && hasSet(it.title) && hasWords(it.title) && inMode(it.title));
 }

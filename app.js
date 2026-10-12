@@ -825,7 +825,11 @@ async function showPrice(card) {
     els.priceValue.textContent = au?.ok ? formatAudPlain(au.aud) : tcg;
     els.priceValue.className = 'price-value';
     label.textContent = au?.ok ? auLabel(au) : 'Market price (AUD)';
+    // Far from TCGplayer either way: say so — it's either a real local difference or sales of
+    // another version slipping through, so it's worth a look at the sales.
+    const far = au?.ok && v.usd > 0 && (au.aud / (v.usd * rate.rate) > 2.5 || au.aud / (v.usd * rate.rate) < 0.4);
     els.priceNote.innerHTML = (au === undefined ? 'Checking Australian eBay sales (can take ~20 s)… · ' : '')
+      + (far ? '⚠ Very different from TCGplayer — check the sales · ' : '')
       + (au?.ok ? `${esc(auSoldText(au, tcg))}` : tcgNote) + soldLink();
     if (typeof showModeOffers === 'function') showModeOffers(au?.ok ? au.aud : v.usd * rate.rate); // show.js
   };
@@ -1210,7 +1214,12 @@ const EBAY_FINISH_WORDS = {
  * "4/102"), so they're searched as the original and told apart by the words in sale titles
  * (tools/au-sold-filter.mjs). Built once from the card list: reprint id → original card, and the
  * originals that were reprinted. */
+// Holo and non-holo of the same card searched apart (prices.js hasHoloAndNormal; the same in
+// tools/au-sold-keys.mjs). eBay is searched without these words (au-sold-filter ebayKeyword).
+const SPLIT_FINISH_WORDS = { holofoil: 'holo', normal: 'non holo' };
 const REPRINT_SETS = { cel25c: 'r25', me55c: 'r30' };
+// Reprints whose original can't be told by name and number alone (several cards share them).
+const REPRINT_OF = { 'me55c-11': 'ex11-11' };
 let reprintIndex = null;
 function reprintInfo(item) {
   if (!db.cards) return {};
@@ -1226,8 +1235,13 @@ function reprintInfo(item) {
       const o = REPRINT_SETS[c.setId] && earliest.get(`${c.name}|${c.number}`);
       if (o && (o.releaseDate || '') < (c.releaseDate || '')) { reprintIndex.of.set(c.id, o); reprintIndex.originals.add(o.id); }
     }
+    for (const [r, o] of Object.entries(REPRINT_OF)) { // fixed originals replace the guessed ones
+      const guess = reprintIndex.of.get(r);
+      if (guess && guess.id !== o && ![...reprintIndex.of.entries()].some(([k, v]) => k !== r && v.id === guess.id)) reprintIndex.originals.delete(guess.id);
+      reprintIndex.originals.add(o);
+    }
   }
-  const original = reprintIndex.of.get(item.id);
+  const original = REPRINT_OF[item.id] ? db.byId.get(REPRINT_OF[item.id]) : reprintIndex.of.get(item.id);
   if (original) return { original, t: REPRINT_SETS[item.setId] };
   return reprintIndex.originals.has(item.id) ? { t: 'o' } : {};
 }
@@ -1256,7 +1270,8 @@ function ebaySoldQuery(item, variant = null) {
     n = coded || !printed.setTotal ? raw : `${num}/${total}`;
     // Sellers write "Gold Star", not ★ (and often leave out δ).
     q = `${item.name.replace(/★/g, ' Gold Star').replace(/δ/g, '')} ${n}`;
-    const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim() : EBAY_FINISH_WORDS[variant];
+    const finish = variant?.startsWith('x:') ? variant.slice(2).replace(/\bPattern\b/i, '').trim()
+      : EBAY_FINISH_WORDS[variant] ?? (hasHoloAndNormal(item.id) ? SPLIT_FINISH_WORDS[variant] : null);
     if (finish) q += ` ${finish}`;
     // Japanese cards: search "… Japanese" and count only sales that say so (au-sold-filter).
     if (item.lang === 'ja') { q += ' Japanese'; t = 'ja'; }

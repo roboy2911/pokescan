@@ -70,8 +70,8 @@ const VARIANTS = [
  * AU_SOLD_KEEP). Empty AU_SOLD_URL = off. */
 const AU_SOLD_URL = 'https://pokescan-au-sold.minecraftfishies.workers.dev/';
 // v1 held promo prices from other cards' sales; v2 had no overseas / "last sold" answers.
-const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v4'; // v4: answers before the World Championship filter dropped
-try { ['v1', 'v2'].forEach((v) => localStorage.removeItem(`pokescan.auSold.${v}`)); } catch { /* storage blocked */ }
+const AU_SOLD_CACHE_KEY = 'pokescan.auSold.v5'; // v5: answers before the 12 Oct accuracy fixes dropped
+try { ['v1', 'v2', 'v3', 'v4'].forEach((v) => localStorage.removeItem(`pokescan.auSold.${v}`)); } catch { /* storage blocked */ }
 const AU_SOLD_MAX_AGE = 14 * 86400 * 1000;
 const AU_SOLD_KEEP = 45 * 86400 * 1000;
 let auSoldMem = null;
@@ -218,9 +218,16 @@ function getAudRate() {
 
 /* The daily snapshot (loaded once). */
 let snapshotPromise = null;
+let snapshotLoaded = null; // the same, once it has arrived (for synchronous checks)
 function getSnapshot() {
-  snapshotPromise ??= fetchRetry('data/prices.json').catch(() => { snapshotPromise = null; return null; });
+  snapshotPromise ??= fetchRetry('data/prices.json').then((s) => (snapshotLoaded = s)).catch(() => { snapshotPromise = null; return null; });
   return snapshotPromise;
+}
+/* A card sold both as a holo and as a non-holo at the same number (Legendary Collection
+ * Charizard 3/110, many EX-era rares): its two versions get separate AU sold prices. */
+function hasHoloAndNormal(id) {
+  const row = snapshotLoaded?.cards?.[id];
+  return !!row && row.h != null && row.n != null;
 }
 
 /* Extra printings TCGplayer sells as their own product (Poké Ball pattern, Master Ball
