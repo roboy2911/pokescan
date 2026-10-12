@@ -443,7 +443,10 @@ function newsPicks({ cardsMeta, prices, history, lst, research }) {
  * market (sold) price follows a few days later — catch it in between. */
 async function sellOuts({ cardsMeta, prices, history, lst, date }) {
   const lows = await readJson('lows.json', { dates: [], items: {} });
-  if (lows.dates.at(-1) !== date) lows.dates.push(date);
+  // Keyed by the price snapshot's date (history.json), not the clock: TCGplayer data changes
+  // once a day, and two runs either side of midnight UTC would otherwise log the same snapshot twice.
+  const day = history.dates.at(-1) ?? date;
+  if (lows.dates.at(-1) !== day) lows.dates.push(day);
   const di = lows.dates.length - 1;
   const out = [];
   for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
