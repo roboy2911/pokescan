@@ -512,3 +512,5 @@ Claude "remove <name>".
   5. Japanese clusters are weak hints; single Japanese jumps are noise.
   6. News hype cools off (Lugia).
   7. Delta Reign: the new cards already fell; the older Evolving Skies alt art is about −25% from its September high in AU, while XY Megas are still holding.
+
+- **Tweak: faster scan lock-in** (owner: "scan way faster", one card at a time, slow part = recognising). A frame scoring ≥ 0.93 with a lead ≥ 0.04 over the runner-up now locks in at once; other confident frames still need two in a row. Simulated live scans, 120 real cards × 8 frames (clean, glare, sleeve + streaks): frames to lock 2.41 → 1.75 (≈27% sooner), right 112 → 113, 0 wrong. Single hard photos (testHard, 60 real cards × 8 conditions): the instant rule fired on 215 of 480 with 0 wrong (the normal one-frame rule has 6 wrong there, which the two-frame rule catches). Tunable in developer mode (Instant lock: score / lead; score 1 turns it off). Cache v67. *Remove:* revert this commit.
