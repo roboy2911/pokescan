@@ -804,6 +804,7 @@ async function showPrice(card) {
   els.priceValue.className = 'price-value none';
   els.variantChips.innerHTML = '';
   els.priceNote.textContent = '';
+  if (typeof showModeOffers === 'function') showModeOffers(null);
   const [prices, rate] = await Promise.all([getTcgPrices([card.id]), getAudRate()]);
   if (token !== priceToken) return; // another card is showing now
   const info = prices[card.id];
@@ -826,6 +827,7 @@ async function showPrice(card) {
     label.textContent = au?.ok ? auLabel(au) : 'Market price (AUD)';
     els.priceNote.innerHTML = (au === undefined ? 'Checking Australian eBay sales (can take ~20 s)… · ' : '')
       + (au?.ok ? `${esc(auSoldText(au, tcg))}` : tcgNote) + soldLink();
+    if (typeof showModeOffers === 'function') showModeOffers(au?.ok ? au.aud : v.usd * rate.rate); // show.js
   };
   let auReq = 0;
   const pick = async (v, remember = false) => {
@@ -834,8 +836,9 @@ async function showPrice(card) {
     els.variantChips.querySelectorAll('.chip').forEach((b) => b.classList.toggle('active', b.dataset.key === v.key));
     const { q, n, t, s } = ebaySoldQuery(card, v.key);
     const req = ++auReq;
-    // Bulk mode: saved answers only (any age), so a big session costs no searches.
-    if (bulk.on) return showAu(v, auSoldCached(q, n, t, { anyAge: true }));
+    // Bulk and card show mode: saved answers only (any age) — a big session costs no searches,
+    // and a show hall often has no signal.
+    if (bulk.on || (typeof showModeOn === 'function' && showModeOn())) return showAu(v, auSoldCached(q, n, t, { anyAge: true }));
     const cached = auSoldCached(q, n, t);
     if (cached) return showAu(v, cached);
     showAu(v, undefined);
@@ -960,6 +963,12 @@ function renderScanResults(matches, { found = null } = {}) {
 
 els.addBtn.addEventListener('click', () => {
   if (!shownCard) return;
+  if (typeof showModeOn === 'function' && showModeOn()) { // card show mode: onto the pile (show.js)
+    showModeAdd(shownCard, shownVariant);
+    if (stream) resumeScanning();
+    else hideResult();
+    return;
+  }
   const qty = addToCollection(shownCard, shownVariant);
   toast(qty > 1 ? `Added ${shownCard.name} — you have ${qty}` : `Added ${shownCard.name} to your collection`);
   // Straight on to the next card when using the camera.

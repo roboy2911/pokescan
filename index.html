@@ -34,6 +34,11 @@
           <button type="button" id="bulkUndo" class="btn small secondary">Undo last</button>
         </div>
 
+        <div id="showBar" class="bulk-bar show-bar" hidden>
+          <div class="bulk-text"><b id="showCount"></b><span id="showOffer"></span></div>
+          <button type="button" id="showPileBtn" class="btn small secondary">Pile</button>
+        </div>
+
         <div class="camera-msg" id="cameraMsg">
           <div class="camera-msg-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -49,6 +54,9 @@
           </button>
           <button id="bulkBtn" class="icon-btn" aria-label="Bulk add: add every card found" aria-pressed="false">
             <svg viewBox="0 0 24 24"><rect x="7" y="3" width="12" height="16" rx="2"/><path d="M5 7v12a2 2 0 0 0 2 2h9"/><path d="M13 8v6M10 11h6"/></svg>
+          </button>
+          <button id="showBtn" class="icon-btn" aria-label="Card show mode: offer prices and a running total" aria-pressed="false" title="Card show mode">
+            <svg viewBox="0 0 24 24"><path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.5"/></svg>
           </button>
           <button id="jpScanBtn" class="icon-btn jp-btn" aria-label="Scan Japanese cards too" aria-pressed="false" title="Scan Japanese cards too">JP</button>
           <button id="soundBtn" class="icon-btn" aria-label="Beep when a card is found" aria-pressed="false">
@@ -73,6 +81,7 @@
             <div class="price-slot">
               <span class="price-label">Market price (AUD)</span>
               <span class="price-value" id="priceValue">—</span>
+              <div class="offer-row" id="offerRow" hidden></div>
               <div class="variant-chips" id="variantChips"></div>
               <span class="price-note" id="priceNote"></span>
             </div>
@@ -261,6 +270,7 @@
   <script src="account.js"></script>
   <script src="app.js"></script>
   <script src="wants.js"></script>
+  <script src="show.js"></script>
   <script src="backups.js"></script>
   <script src="detect.js"></script>
   <script src="grade-core.js"></script>
