@@ -13,11 +13,13 @@
 const DEV_KEY = 'pokescan.dev.v1';
 const DEV_PIN_HASH = '87d657b0335fa42f30da02abe25ed7cd6a6b95125fab738ac41d69d40843e7a5'; // sha256('pokescan-dev:' + PIN)
 const DEV_UNLOCKED = 'pokescan.dev.unlocked'; // sessionStorage: no PIN again until the app is closed
-const DEV_DEFAULTS = { minScore: 0.88, minGap: 0.015, lockFrames: 2, bulkAbsentMs: 1000, bulkRepeatMs: 2000, overlay: false };
+const DEV_DEFAULTS = { minScore: 0.88, minGap: 0.015, lockFrames: 2, instantScore: 0.93, instantGap: 0.04, bulkAbsentMs: 1000, bulkRepeatMs: 2000, overlay: false };
 const DEV_LIMITS = {
   minScore: [0.7, 0.98, 0.005, 'Best match score needed', 'Higher = fewer wrong answers, more "pick the card"'],
   minGap: [0, 0.1, 0.005, 'Lead over the runner-up', 'How far ahead of the 2nd match the best must be'],
   lockFrames: [1, 6, 1, 'Frames in a row to lock in', 'Confident frames needed before showing the card'],
+  instantScore: [0.85, 1, 0.005, 'Instant lock: score', 'A frame this sure locks in at once (1 = never)'],
+  instantGap: [0, 0.2, 0.005, 'Instant lock: lead', 'Lead over the runner-up needed to lock in at once'],
   bulkAbsentMs: [200, 5000, 100, 'Bulk: card out of view (ms)', 'Before the same card can be added again'],
   bulkRepeatMs: [500, 10000, 100, 'Bulk: repeat gap (ms)', 'Minimum time between adding the same card twice'],
 };
