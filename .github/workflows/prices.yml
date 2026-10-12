@@ -29,5 +29,8 @@ jobs:
             echo "No price changes"
           else
             git commit -m "Update prices"
+            # Someone else may have pushed meanwhile: rebase onto it (this run's fresh data wins
+            # any conflict in data/) and try again.
+            for i in 1 2 3; do git push && exit 0; sleep $((i * 5)); git pull --rebase -X theirs -q || exit 1; done
             git push
           fi
