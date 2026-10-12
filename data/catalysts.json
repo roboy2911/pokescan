@@ -171,24 +171,24 @@
    "pokemon": "Lucario",
    "effect": "up",
    "date": "2027-01-31",
-   "event": "Aura Seeker (Mega Lucario Z ex) — Japanese release reported for 27 Nov 2026, English version expected Jan 2027 (not yet announced); the English reveal usually lifts the mascot's older cards",
-   "source": "https://pokennoisseur.ca/tools/release-calendar"
+   "event": "Aura Seeker (Mega Lucario Z ex, with Riolu) — Japan 27 Nov 2026 (reported), English expected Jan 2027 (not yet announced); the English reveal usually lifts the mascot's older cards",
+   "source": "https://www.pokebeach.com/2026/05/aura-seeker-japanese-tcg-set-to-release-in-november"
   },
   {
    "kind": "event",
    "pokemon": "Feraligatr",
    "effect": "up",
-   "date": "2026-12-31",
-   "event": "Special Deck Set with Mega Feraligatr (speculative, Q4 2026) — more attention on Feraligatr",
-   "source": "https://pokennoisseur.ca/tools/release-calendar"
+   "date": "2026-11-13",
+   "event": "Japanese Special Deck Set (Mega Feraligatr ex / Mega Dragonite ex / Mega Gengar ex), Japan 13 Nov 2026, ¥5,500 — a deck product, smaller effect than a main set",
+   "source": "https://www.pokebeach.com/2026/08/mega-x-mega-parade-high-class-pokemon-tcg-set-to-release-in-february"
   },
   {
    "kind": "event",
    "pokemon": "Dragonite",
    "effect": "up",
-   "date": "2026-12-31",
-   "event": "Special Deck Set with Mega Dragonite (speculative, Q4 2026)",
-   "source": "https://pokennoisseur.ca/tools/release-calendar"
+   "date": "2026-11-13",
+   "event": "Japanese Special Deck Set (Mega Feraligatr ex / Mega Dragonite ex / Mega Gengar ex), Japan 13 Nov 2026, ¥5,500 — a deck product, smaller effect than a main set",
+   "source": "https://www.pokebeach.com/2026/08/mega-x-mega-parade-high-class-pokemon-tcg-set-to-release-in-february"
   },
   {
    "kind": "pokemon",
@@ -221,6 +221,14 @@
    "date": "2026-10-12",
    "note": "TCGplayer: Giratina cards were on the monthly 'climbing in price' list in 3 of 9 months this year (Jan–Oct 2026) — lasting demand, not a one-off",
    "source": "https://seller.tcgplayer.com/blog/price-trends-pok%C3%A9mon-cards-climbing-in-price-10-07-2026"
+  },
+  {
+   "kind": "event",
+   "pokemon": "Raichu",
+   "effect": "up",
+   "date": "2027-02-19",
+   "event": "MEGA x MEGA Parade (Japan's High Class Pack, 19 Feb 2027) headlined by Mega Raichu X and Mega Raichu Y — card reveals expected from Dec/Jan; older Raichu chase cards may lift first",
+   "source": "https://www.techtimes.com/articles/325739/20260827/pokemon-tcg-japan-high-class-pack-crowns-mega-raichu-its-february-2027-headliner.htm"
   }
  ]
 }

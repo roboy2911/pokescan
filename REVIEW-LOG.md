@@ -483,3 +483,11 @@ Claude "remove <name>".
 ## 2026-10-12 — Price updates are manual only
 - The owner asked to stop the nightly price update. `prices.yml` no longer has a schedule; it runs only when started by hand (Actions → Update prices → Run workflow, or on request). The AU sold workflow was already manual. The hourly want-list eBay check (worker cron) is a separate thing and is unchanged.
 - Correction (same day): the owner wants **TCGplayer nightly** and only **AU sold prices** by request. The nightly schedule is restored in `prices.yml`, which uses only free TCGplayer data. `au-sold.yml` stays manual.
+
+## 2026-10-12 — Delta Reign check, Raichu / Lucario / deck-set catalysts
+- Delta Reign: the new Mega Rayquaza cards fell after the Japanese release (gold Mega Rayquaza about −70% Aug→Sep, Kanto Post) and are flat now. Older English Rayquaza and Kyogre cards are not dropping yet on TCGplayer, 6–12 Oct: 17 of 60 up, 3 down, and only 1 more than 5% below its high this week. The big jump for older cards came at the reveal in August. Expect a peak around the 24 Oct prereleases and the 6 Nov release, then a fade.
+- `catalysts.json`:
+  - Feraligatr / Dragonite: now the Japanese Special Deck Set (Mega Feraligatr / Dragonite / Gengar ex), Japan 13 Nov, ¥5,500 (PokeBeach). It's a deck product, so a smaller effect.
+  - Lucario: Aura Seeker, Japan 27 Nov (reported), with Riolu.
+  - New Raichu event: MEGA x MEGA Parade, Japan's High Class Pack on 19 Feb 2027, headlined by Mega Raichu X and Y (TechTimes / PokeBeach).
+- A combined pass over every list for cards flagged by 3+ signals: Gengar LV.X, Charmander (Stormfront), Slowking Prime, Rayquaza-GX 177 and Lucario-GX SV64.
