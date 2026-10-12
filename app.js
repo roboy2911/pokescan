@@ -514,7 +514,7 @@ async function scanLoop() {
       if (typeof devFrame === 'function') devFrame(matches, performance.now() - t0);
       if (auto.state !== 'scanning') break;
       onFrame(matches, where, { w, h }, glare, combined, { size, grid });
-      await sleep(80);
+      await sleep(30); // a short breather for the page; matching runs in the worker
     }
   } catch (err) {
     console.error(err);
