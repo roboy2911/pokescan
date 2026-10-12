@@ -491,3 +491,24 @@ Claude "remove <name>".
   - Lucario: Aura Seeker, Japan 27 Nov (reported), with Riolu.
   - New Raichu event: MEGA x MEGA Parade, Japan's High Class Pack on 19 Feb 2027, headlined by Mega Raichu X and Y (TechTimes / PokeBeach).
 - A combined pass over every list for cards flagged by 3+ signals: Gengar LV.X, Charmander (Stormfront), Slowking Prime, Rayquaza-GX 177 and Lucario-GX SV64.
+
+## Prediction research (run 7, 14:57) — the next Prism Stars? (wrap-up)
+- Angle: special-rarity groups like Prism Stars (one era, a gimmick frame, a small fixed set of cards) that have never boomed. From cards.json, prices and history:
+  - **Prism Star:** median US$11.7, +90% in 6 days.
+  - **BREAK:** 28 cards (2015–17), median US$4.8, flat.
+  - **Amazing Rare:** about 10 cards (2020–21), median US$4.2, flat or falling.
+  - **Shining Legends "Shining":** 6 cards (2017), median US$35, flat.
+  - **Hidden Fates baby shinies:** 45 cards, median US$6, flat.
+  - **Radiant:** 15 cards, median US$1.4.
+  - LV.X and Prime are already climbing; Gold Star and Shining (Neo) boomed long ago.
+- Candidates told to the owner: Raichu BREAK 50 (Mega Raichu catalyst), Amazing Jirachi 119 (the same Pokémon that sparked the Prism Star run), Amazing Celebi 9, Shining Jirachi 42 and Shining Arceus 57.
+- No code change was needed: `groupSurges` already watches every rarity group (that's how the Prism Star surge was caught), so a BREAK or Amazing Rare surge would show up in the "Hot right now" banner and Anomalies automatically.
+- Routine disabled after this run.
+- **Today's lessons**, now built into `tools/picks.mjs` and `data/catalysts.json`:
+  1. Pre-2020 risers keep rising (15 of 20); modern ones are a coin flip.
+  2. Some Pokémon stay in demand all year: Gengar (7 of 9 months on TCGplayer's risers list), Pikachu, Umbreon, Mew, Giratina.
+  3. A set reveal lifts older cards of its mascot (Lucario Jan, Raichu Feb, a Japanese Feraligatr/Dragonite deck set 13 Nov).
+  4. Niche cards spike when the cheap copies run out (cheapest listing above the last sale).
+  5. Japanese clusters are weak hints; single Japanese jumps are noise.
+  6. News hype cools off (Lugia).
+  7. Delta Reign: the new cards already fell; the older Evolving Skies alt art is about −25% from its September high in AU, while XY Megas are still holding.
