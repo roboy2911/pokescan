@@ -33,7 +33,9 @@ import { handlePush, checkWants } from './push.mjs';
 const ALLOWED_ORIGINS = ['https://roboy2911.github.io', 'http://localhost:8080', 'http://localhost:8765'];
 // The Cloudflare Pages copy of the app (pokescan.pages.dev, and its preview links).
 const PAGES_ORIGIN = /^https:\/\/([a-z0-9-]+\.)?pokescan[a-z0-9-]*\.pages\.dev$/;
-const isAllowed = (origin) => ALLOWED_ORIGINS.includes(origin) || PAGES_ORIGIN.test(origin);
+// The PC copy (START-POKESCAN.bat): localhost or 127.0.0.1 on any port.
+const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const isAllowed = (origin) => ALLOWED_ORIGINS.includes(origin) || PAGES_ORIGIN.test(origin) || LOCAL_ORIGIN.test(origin);
 const json = (body, origin, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: {
