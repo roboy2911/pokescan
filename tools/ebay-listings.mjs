@@ -47,7 +47,9 @@ export async function handleListings(request, env, url, reply) {
   if (!env.AU_KV) return reply({ ok: false, reason: 'no-storage' }, 500);
   const p = (k) => url.searchParams.get(k) || '';
   const { status = 200, ...out } = await findListings(env, { q: p('q'), n: p('n'), t: p('t'), s: p('s'), e: p('e') }, { store: p('ns') !== '1' });
-  return reply(out, status);
+  // k=<n> (up to 30): more than the 5 cheapest (e.g. to find ones listed as near mint).
+  const k = Math.min(30, Number(p('k')) || 5);
+  return reply({ ...out, cheapest: (out.all ?? out.cheapest ?? []).slice(0, k), all: undefined }, status);
 }
 
 /* The cheapest near-mint copies for sale for one card / product. Answers are kept `keepHours`
@@ -130,13 +132,14 @@ export async function findListings(env, params, { keepHours = KEEP_HOURS, store 
     raw: items.length,
     lv: 5,
     median: keep.length ? Math.round(keep[Math.floor(keep.length / 2)].soldPrice * 100) / 100 : null,
-    cheapest: keep.slice(0, 5).map((r) => ({ title: r.title, aud: Math.round(r.soldPrice * 100) / 100, price: r.price, ship: r.ship, url: r.url, img: r.img })),
+    all: keep.slice(0, 30).map((r) => ({ title: r.title, aud: Math.round(r.soldPrice * 100) / 100, price: r.price, ship: r.ship, url: r.url, img: r.img })),
     asOf: new Date().toISOString(),
   };
   if (memo.size > 2000) memo.clear();
   memo.set(key, out);
   // Saved for other instances — unless asked not to (the hourly want-list check and the daily
   // buy-ideas run: their answers are only needed once, and storage writes are limited).
+  out.cheapest = out.all.slice(0, 5);
   if (store) await env.AU_KV.put(key, JSON.stringify(out), { expirationTtl: KEEP_HOURS * 3600 }).catch(() => {}); // over the daily write limit: still answer
   return out;
 }
