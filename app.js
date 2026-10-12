@@ -1070,6 +1070,26 @@ function rankCards(list, tokens) {
 const SEARCH_LIMIT = 60;
 const SEALED_WORDS = /\b(box|tin|pack|bundle|collection|blister|etb|upc|deck|display|case|premium|booster)\b/i;
 let searchToken = 0;
+/* English or Japanese cards (and sealed) in search: the switch under the search box, remembered
+ * on this device. Typing "jp" / "japanese" or Japanese text still searches Japanese either way. */
+const SEARCH_LANG_KEY = 'pokescan.searchLang';
+let searchLang = 'en';
+try { if (localStorage.getItem(SEARCH_LANG_KEY) === 'ja') searchLang = 'ja'; } catch { /* no storage */ }
+{
+  const seg = $('searchLang');
+  const draw = () => seg.querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.v === searchLang);
+    b.setAttribute('aria-pressed', String(b.dataset.v === searchLang));
+  });
+  draw();
+  seg.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    searchLang = b.dataset.v;
+    try { localStorage.setItem(SEARCH_LANG_KEY, searchLang); } catch { /* no storage */ }
+    draw();
+    if (searchLang === 'ja') loadJapanese(); // start loading the Japanese list straight away
+    runSearch();
+  }));
+}
 let searchTimer = null;
 
 async function runSearch() {
@@ -1087,7 +1107,7 @@ async function runSearch() {
     setStatus(els.searchStatus, `Card database didn't load: ${esc(err.message)}`, 'err');
     return;
   }
-  const wantJa = tokens.some((t) => JP_WORDS.has(t.text)) || hasJapanese(query);
+  const wantJa = searchLang === 'ja' || tokens.some((t) => JP_WORDS.has(t.text)) || hasJapanese(query);
   const cardTokens = wantJa ? tokens.filter((t) => !JP_WORDS.has(t.text)) : tokens;
   if (wantJa) await loadJapanese();
   if (token !== searchToken) return;
