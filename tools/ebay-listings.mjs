@@ -60,7 +60,7 @@ export async function findListings(env, params, { keepHours = KEEP_HOURS, store 
   const t = ['o', 'r25', 'r30', 'ja'].includes(params.t) ? params.t : '';
   const set = (params.s || '').trim().slice(0, 60);
   if (q.length < 3) return { ok: false, reason: 'query', listings: 1, status: 400 };
-  const key = `ls:v5:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
+  const key = `ls:v6:${q.toLowerCase()}|${n.toLowerCase()}|${t}|${set.toLowerCase()}`;
   const fresh = (c) => c && Date.now() - Date.parse(c.asOf) < keepHours * 3600000;
   if (fresh(memo.get(key))) return { ...memo.get(key), cached: true };
   const cached = await env.AU_KV.get(key, 'json');
@@ -119,7 +119,8 @@ export async function findListings(env, params, { keepHours = KEEP_HOURS, store 
     .map((it) => {
       const price = Number(it.price.value);
       const ship = Number(it.shippingOptions?.[0]?.shippingCost?.value ?? 0) || 0;
-      return { title: it.title || '', soldPrice: price + ship, soldCurrency: 'AUD', condition: it.condition || '', url: it.itemWebUrl, img: it.image?.imageUrl || '', price, ship };
+      return { title: it.title || '', soldPrice: price + ship, soldCurrency: 'AUD', condition: it.condition || '', url: it.itemWebUrl, img: it.image?.imageUrl || '', price, ship,
+        more: (it.additionalImages ?? []).map((x) => x.imageUrl).filter(Boolean).slice(0, 6) }; // e.g. the back
     });
   const real = matching(shaped, n, OTHER_LANG.test(q), q, t, set).sort((a, b) => a.soldPrice - b.soldPrice);
   // Drop suspiciously cheap ones (fakes / proxies / wrong card): under 35% of the middle price.
@@ -130,9 +131,9 @@ export async function findListings(env, params, { keepHours = KEEP_HOURS, store 
     ok: true,
     count: keep.length,
     raw: items.length,
-    lv: 5,
+    lv: 6,
     median: keep.length ? Math.round(keep[Math.floor(keep.length / 2)].soldPrice * 100) / 100 : null,
-    all: keep.slice(0, 30).map((r) => ({ title: r.title, aud: Math.round(r.soldPrice * 100) / 100, price: r.price, ship: r.ship, url: r.url, img: r.img })),
+    all: keep.slice(0, 30).map((r) => ({ title: r.title, aud: Math.round(r.soldPrice * 100) / 100, price: r.price, ship: r.ship, url: r.url, img: r.img, ...(r.more?.length && { more: r.more }) })),
     asOf: new Date().toISOString(),
   };
   if (memo.size > 2000) memo.clear();
