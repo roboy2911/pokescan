@@ -1,8 +1,11 @@
 name: Update prices
 
-# Snapshot of TCGplayer prices (data/prices.json) for the app, plus history, market and buy ideas.
-# MANUAL ONLY — the owner wants prices updated only when they ask; don't add a schedule.
+# Nightly snapshot of TCGplayer prices (data/prices.json) for the app, plus history, market and
+# buy ideas. TCGplayer data only (free) — Australian sold prices (au-sold.yml, SoldComps credits)
+# are never updated on a schedule: only when the owner asks.
 on:
+  schedule:
+    - cron: '30 18 * * *'   # 04:30 AEST
   workflow_dispatch:
 
 permissions:

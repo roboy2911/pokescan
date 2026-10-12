@@ -482,3 +482,4 @@ Claude "remove <name>".
 
 ## 2026-10-12 — Price updates are manual only
 - The owner asked to stop the nightly price update. `prices.yml` no longer has a schedule; it runs only when started by hand (Actions → Update prices → Run workflow, or on request). The AU sold workflow was already manual. The hourly want-list eBay check (worker cron) is a separate thing and is unchanged.
+- Correction (same day): the owner wants **TCGplayer nightly** and only **AU sold prices** by request. The nightly schedule is restored in `prices.yml`, which uses only free TCGplayer data. `au-sold.yml` stays manual.
