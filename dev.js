@@ -411,6 +411,7 @@ function devOpen() {
       <button type="button" class="btn ghost" data-act="refresh">Refresh</button></details>
     <details><summary>Scan tuning</summary><div data-box="tuning"></div></details>
     <details><summary>Buy ideas</summary><div data-box="picks"></div></details>
+    <button type="button" class="btn ghost" data-act="market">Open Market (risers, fallers, highs, lows)</button>
     <details><summary>Data tools</summary><div data-box="tools"></div></details>
     <button type="button" class="btn ghost" data-act="lock">Lock developer mode</button>`;
   document.body.appendChild(dlg);
@@ -425,6 +426,8 @@ function devOpen() {
     e.target.removeEventListener('toggle', once);
     devRenderPicks(box('picks'));
   });
+  // The Market tab is developer-only (owner request): no bottom-bar button, opened from here.
+  dlg.querySelector('[data-act=market]').addEventListener('click', () => { dlg.close(); showView('market'); });
   dlg.querySelector('[data-act=refresh]').addEventListener('click', () => devRenderStatus(box('status')));
   dlg.querySelector('[data-act=lock]').addEventListener('click', () => {
     try { sessionStorage.removeItem(DEV_UNLOCKED); } catch { /* storage blocked */ }
