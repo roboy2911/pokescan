@@ -479,3 +479,6 @@ Claude "remove <name>".
 - Angle: sell-outs, where the cheapest listing jumps before the sold price follows. It couldn't be measured yet, and the reason was a bug: `lows.json` was keyed by the clock date. Two runs either side of midnight UTC both stamped the same TCGplayer snapshot as different days (11 and 12 Oct were identical for all 2,341 cards), so a "jump" could never show. It's now keyed by the price snapshot's date (`history.dates.at(-1)`), and the duplicate column was collapsed to 12 Oct. Sell-out signals can start once 3 more daily snapshots exist (about Thu 15 Oct).
 - The daily price update had failed overnight (push rejected by a research commit). Fixed with a rebase-and-retry loop, re-run by hand at 13:00, and prices are now current to 12 Oct.
 - With fresh prices, ⭐ Best has 6: Gengar LV.X, Charmander (Stormfront), Slowking Prime, Jirachi ◇, **Blastoise & Piplup-GX (Cosmic Eclipse, new)** and Rayquaza-GX.
+
+## 2026-10-12 — Price updates are manual only
+- The owner asked to stop the nightly price update. `prices.yml` no longer has a schedule; it runs only when started by hand (Actions → Update prices → Run workflow, or on request). The AU sold workflow was already manual. The hourly want-list eBay check (worker cron) is a separate thing and is unchanged.
