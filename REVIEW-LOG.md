@@ -466,3 +466,8 @@ Claude "remove <name>".
   - ⭐ Best: a pre-2020 card that's moving gets a ✓ check.
   - Niche movers: +6 for pre-2020, −8 for 2021+.
 - ⭐ Best now has 5 ideas: Charmander, Slowking Prime, Gengar LV.X, Jirachi ◇ and **Rayquaza-GX 177 (Celestial Storm)**.
+
+## Prediction research (run 5, 12:57) — lasting "theme" Pokémon
+- Angle: which Pokémon keep coming back on TCGplayer's monthly risers lists (9 posts, Jan–Oct 2026, 87 entries)? Gengar was on the list in **7 of 9 months** (often Gengar & Mimikyu-GX), Pikachu in 6, Umbreon in 4, and Mew and Giratina in 3 each. That's lasting demand rather than one-off spikes, and it matches run 4 (Gengar Prime +54% and Gengar & Mimikyu +78% since January).
+- Added `pokemon` research items for Gengar, Pikachu, Umbreon and Giratina (Mew was already there, now with the count) to `data/catalysts.json`. They give a ✓ in ⭐ Best and fill "📰 In the news" with each Pokémon's chase cards that haven't moved (40 entries now).
+- `newsPicks` now lists pre-2020 cards first (run 4: their rises last) and skips Classic Collection reprints (cel25c, me55c), which aren't the original card.

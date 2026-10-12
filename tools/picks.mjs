@@ -210,6 +210,8 @@ function anomalies({ cardsMeta, prices, sealedData, history, lst }) {
   return { groups: out.slice(0, 30), moves: uniq.slice(0, 120), from: D[n - 1 - back], to: D[n - 1], prev: D[n - 2] };
 }
 
+const REPRINTS = new Set(['cel25c', 'me55c']); // Classic Collection reprints (same name and number as the original)
+
 /* ---------- Research (data/catalysts.json, kept by hand with sources) ---------- */
 
 /* 'up' research is used for 60 days after its date, supply news for 90, dated events until
@@ -415,7 +417,7 @@ function newsPicks({ cardsMeta, prices, history, lst, research }) {
     for (const [id, name, number, setId, rarity] of cardsMeta.cards) {
       const set = cardsMeta.sets[setId] ?? [];
       if (c.kind === 'set' ? set[0] !== c.set : !re.test(name.replace(/-(EX|GX|V|VMAX|VSTAR)\b/g, ''))) continue;
-      if (rows.some((x) => x.id === id)) continue;
+      if (rows.some((x) => x.id === id) || REPRINTS.has(setId)) continue; // Classic Collection reprints aren't the card
       const chase = CHASE.slice(0, 2).find(([rx]) => rx.test(rarity || '')) || ((set[3] || '9') < '2004' && /holo/i.test(rarity || ''));
       if (!chase) continue;
       const p = priced(id);
@@ -424,11 +426,12 @@ function newsPicks({ cardsMeta, prices, history, lst, research }) {
       if (t && t.chg >= 25) continue; // already moved
       const sup = supply(lst.get(p.row.p)?.[SUBTYPE[p.f]]);
       if (sup != null && (sup > 1.5 || sup < 0.8)) continue; // thin, or plenty of cheap copies
-      cand.push({ id, name, number, set: set[0] ?? setId, rarity, usd: p.usd, chg: t ? Math.round(t.chg) : 0, kind: c.kind, sup,
+      cand.push({ id, name, number, set: set[0] ?? setId, rarity, usd: p.usd, chg: t ? Math.round(t.chg) : 0, kind: c.kind, sup, old: (set[3] || '9') < '2020',
         why: `${srcName(c)} (${dayName(c.date)}): ${c.note.replace(/^TCGplayer:\s*/, '')} — this one hasn't moved in our data yet${sup != null && sup >= 1 ? '; cheapest copy at/above recent sales' : ''}`, source: c.source });
     }
-    cand.sort((a, b) => (b.sup ?? 0) - (a.sup ?? 0) || b.usd - a.usd);
-    rows.push(...cand.slice(0, 6).map(({ sup, ...x }) => x));
+    // Pre-2020 first: their rises tend to last (run 4, data/past-risers.json).
+    cand.sort((a, b) => b.old - a.old || (b.sup ?? 0) - (a.sup ?? 0) || b.usd - a.usd);
+    rows.push(...cand.slice(0, 6).map(({ sup, old, ...x }) => x));
   }
   return rows.slice(0, 40);
 }

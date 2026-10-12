@@ -119,7 +119,7 @@
    "kind": "pokemon",
    "pokemon": "Mew",
    "effect": "up",
-   "note": "TCGplayer: 'a big year for Mew' — Mew printings keep climbing",
+   "note": "TCGplayer: 'a big year for Mew' — Mew printings keep climbing (Mew cards also on TCGplayer's climbing list in 3 of 9 months this year)",
    "source": "https://www.tcgplayer.com/content/article/The-Biggest-Price-Spikes-in-Pok%C3%A9mon-This-Week-09-09-2026/096e6aa2-fa10-4164-af3c-2e8798e026a6/",
    "date": "2026-09-09"
   },
@@ -189,6 +189,38 @@
    "date": "2026-12-31",
    "event": "Special Deck Set with Mega Dragonite (speculative, Q4 2026)",
    "source": "https://pokennoisseur.ca/tools/release-calendar"
+  },
+  {
+   "kind": "pokemon",
+   "pokemon": "Gengar",
+   "effect": "up",
+   "date": "2026-10-12",
+   "note": "TCGplayer: Gengar cards were on the monthly 'climbing in price' list in 7 of 9 months this year (Jan–Oct 2026) — lasting demand, not a one-off",
+   "source": "https://seller.tcgplayer.com/blog/price-trends-pok%C3%A9mon-cards-climbing-in-price-10-07-2026"
+  },
+  {
+   "kind": "pokemon",
+   "pokemon": "Pikachu",
+   "effect": "up",
+   "date": "2026-10-12",
+   "note": "TCGplayer: Pikachu cards were on the monthly 'climbing in price' list in 6 of 9 months this year (Jan–Oct 2026) — lasting demand, not a one-off",
+   "source": "https://seller.tcgplayer.com/blog/price-trends-pok%C3%A9mon-cards-climbing-in-price-10-07-2026"
+  },
+  {
+   "kind": "pokemon",
+   "pokemon": "Umbreon",
+   "effect": "up",
+   "date": "2026-10-12",
+   "note": "TCGplayer: Umbreon cards were on the monthly 'climbing in price' list in 4 of 9 months this year (Jan–Oct 2026) — lasting demand, not a one-off",
+   "source": "https://seller.tcgplayer.com/blog/price-trends-pok%C3%A9mon-cards-climbing-in-price-10-07-2026"
+  },
+  {
+   "kind": "pokemon",
+   "pokemon": "Giratina",
+   "effect": "up",
+   "date": "2026-10-12",
+   "note": "TCGplayer: Giratina cards were on the monthly 'climbing in price' list in 3 of 9 months this year (Jan–Oct 2026) — lasting demand, not a one-off",
+   "source": "https://seller.tcgplayer.com/blog/price-trends-pok%C3%A9mon-cards-climbing-in-price-10-07-2026"
   }
  ]
 }
