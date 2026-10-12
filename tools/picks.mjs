@@ -271,8 +271,10 @@ async function bestIdeas({ cardsMeta, prices, history, lst, hot, au, date, resea
     const g = hot.get(`r:${rarity}`) ?? hot.get(`s:${setId}`);
     let moving = false;
     if (r.card) { moving = true; checks.push(`${srcName(r.card)} (${dayName(r.card.date)}): ${r.card.note.replace(/^TCGplayer:\s*/, '')}`); }
+    const oldCard = (set[3] || '9') < '2020';
     if (t && t.days >= 3 && t.chg >= 5 && t.chg <= 60 && t.up >= 2 && t.up > t.down) { moving = true; checks.push(`price rising steadily: ${pct(t.chg)} since ${dayName(history.dates[0])}, up ${t.up} of ${t.days - 1} days — not blown out yet`); }
     if (t && Math.abs(t.chg) > 60 && !g) continue; // sudden jump on its own: unreliable
+    if (moving && oldCard) checks.push('pre-2020 card that\'s started climbing — 15 of 20 past ones kept going (median about +30%)');
     if (g && series.length >= 3) {
       const from = series[Math.max(0, series.length - 1 - RECENT)];
       const recent = ((series.at(-1) - from) / from) * 100;
@@ -541,7 +543,7 @@ function nicheMovers({ cardsMeta, prices, history, lst, date, research }) {
     if (r.hype) continue; // news hype, expected to cool
     const year = (set[3] || '').slice(0, 4);
     let score = Math.min(30, t.chg) + Math.min(30, (sup - 1) * 40) + (top ? 15 : fan ? 8 : 0) + (r.card || r.set || r.mon ? 10 : 0)
-      + (year >= '2007' && year <= '2016' ? 6 : 0) + (/lv\.x|prime|legend|gold star|star|shining/i.test(rarity || '') ? 5 : 0);
+      + (year >= '2007' && year <= '2016' ? 6 : 0) + (year && year < '2020' ? 6 : year >= '2021' ? -8 : 0) + (/lv\.x|prime|legend|gold star|star|shining/i.test(rarity || '') ? 5 : 0);
     const why = [`price up ${pct(t.chg)} since ${dayName(history.dates[0])} (rising ${t.up} of ${t.days - 1} days)`,
       `cheapest copy for sale is ${Math.round((sup - 1) * 100)}% above its last sales — the cheap copies are gone`,
       top ? 'one of the most collected Pokémon' : fan ? 'fan-favourite Pokémon' : '',
@@ -731,7 +733,15 @@ export async function buildPicks({ date = new Date().toISOString().slice(0, 10),
     if (g && t && t.days >= 3) { /* the group surge explains the jump — not a thin market */ }
     else if (t && t.days >= 3 && Math.abs(t.chg) > 60) { thin = true; risky++; reasons.push(`price jumped ${pct(t.chg)} in days — few sales, unreliable`); }
     else if (t && t.days >= 3) {
-      if (t.chg > 0 && t.up >= t.down + 1) { score += Math.min(16, 3 + t.chg * 0.7); reasons.push(`up ${pct(t.chg)} since ${dayName(history.dates[0])} (rising ${t.up} of ${t.days - 1} days)`); }
+      if (t.chg > 0 && t.up >= t.down + 1) {
+        score += Math.min(16, 3 + t.chg * 0.7);
+        reasons.push(`up ${pct(t.chg)} since ${dayName(history.dates[0])} (rising ${t.up} of ${t.days - 1} days)`);
+        // Momentum by era (TCGplayer's "climbing" lists, Jan–Sep 2026, checked against today's prices):
+        // pre-2020 risers mostly kept climbing (15 of 20, median about +30%); 2021+ risers were a coin flip (8 of 16, about 0%).
+        const yr = (set[3] || '').slice(0, 4);
+        if (yr && yr < '2020') { score += 6; reasons.push('older cards that start climbing usually keep going (15 of 20 past risers still higher months later)'); }
+        else if (yr >= '2021' && chase?.[1] !== 18) { risky++; reasons.push('modern cards that jump often give it back (half of past risers did)'); }
+      }
       else if (t.chg < -8) { score -= 8; reasons.push(`down ${pct(t.chg)} since ${dayName(history.dates[0])}`); }
       if (t.chg > 25) { risky++; reasons.push('rising fast — could cool off'); }
     }

@@ -455,3 +455,14 @@ Claude "remove <name>".
 - Added 3 dated `event` items (Lucario, Feraligatr, Dragonite) to `data/catalysts.json`, so 📅 Catalyst watch now lists their chase cards that haven't moved (20 picks). Lucario now has two signals: the mascot event and the Japanese lead from run 2.
 - Mega Feraligatr ex and Mega Dragonite ex already exist in Ascended Heroes, a set where TCGplayer reports supply returning. Older cards are the better play.
 - Best lead: Neo Genesis Feraligatr 4/111 (unlimited holo). US$204 (≈A$292), flat, cheapest TCGplayer copy 27% above recent sales, AU sold about A$195 (3 sales). The only AU listing is a 1st Edition at A$370. Also Feraligatr 5/111 is listed at A$51.99 against A$195–239 for the other listings (check its condition).
+
+## Prediction research (run 4, 11:57) — do risers keep rising?
+- Angle: what happens after a card is reported climbing? I parsed TCGplayer's monthly "Pokémon Cards Climbing in Price" lists ([Jan–Sep 2026](https://seller.tcgplayer.com/blog/price-trends-pok%C3%A9mon-cards-climbing-in-price-01-06-2026), 77 cards) and matched 36 to today's prices (saved in `data/past-risers.json`).
+  - **Pre-2020 cards:** 15 of 20 are still higher, median about +30%. Examples: Gengar & Mimikyu-GX alt art (+38% to +78% from each listing), Umbreon Prime (+63%), Garchomp POP 9 (+157%), Judge FA (+92%), Pikachu & Zekrom-GX (+77%).
+  - **2021+ cards:** 8 of 16 higher, median about 0%. Crown Zenith, Paldean Fates and Prismatic Evolutions risers gave it back; Evolving Skies alt arts were the exception.
+  - Overall 23 of 36 are higher (median +20%). Momentum is real for out-of-print cards.
+- `tools/picks.mjs`:
+  - Cards list: a pre-2020 riser gets +6 and a reason. A 2021+ riser that isn't a top chase card is marked riskier.
+  - ⭐ Best: a pre-2020 card that's moving gets a ✓ check.
+  - Niche movers: +6 for pre-2020, −8 for 2021+.
+- ⭐ Best now has 5 ideas: Charmander, Slowking Prime, Gengar LV.X, Jirachi ◇ and **Rayquaza-GX 177 (Celestial Storm)**.
