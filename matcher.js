@@ -55,9 +55,6 @@ const ALIGN_MIN = 0.4;     // views whose edges line up worse than this aren't c
 // A block comes from an older view only when the newest is this much more glared there
 // (min-channel level, 0-255).
 const GLARE_MARGIN = 25;
-/* Early answer (speed): search the few outlines nearest the guide first and keep a result this
- * clear without looking at the rest (the app's instant lock-in rule; app.js isInstant). */
-const EARLY = { outlines: 3, score: 0.93, gap: 0.04 };
 const COMBINED_BONUS = 0.03; // preference for the combined view when choosing the card's position
 // A cell counts as glare for the "tilt it" hint when blown out or under a veil this strong.
 const GLARE_VEIL = 0.35;
@@ -547,7 +544,7 @@ function createMatcher(indexBuffer) {
    * can't be recognised: each candidate position is scored on its own, minus a penalty
    * for being off-centre. */
   function match(regions, topN = 12,
-    { fineTop = 8, shortlistSize = 800, perCandidate = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER, plain = PLAIN, live = false, combinedBonus = COMBINED_BONUS, memFrames = 0, block = 0, early = EARLY.outlines } = {}) {
+    { fineTop = 8, shortlistSize = 800, perCandidate = 300, preTop = 40, centreWeight = 0.06, windowPenalty = 0.03, keep = MATCH_ROBUST_KEEP, maskPenalty = MASK_PENALTY, drop = 0, debugIdx = null, step = SEARCH_STEP, maxOutlines = 16, tl = TOPLOADER, plain = PLAIN, live = false, combinedBonus = COMBINED_BONUS, memFrames = 0, block = 0 } = {}) {
     const t0 = performance.now();
     const cands = regions.flatMap((r) => candidates(r, { step, maxOutlines, tl, plain }).map((c) => ({ ...c, region: r })));
     // Live scanning: also the combined view of the last few frames (glare memory).
@@ -558,99 +555,81 @@ function createMatcher(indexBuffer) {
     if (combined) cands.push(combined);
     if (!cands.length) return { matches: [], where: null };
     const t1 = performance.now();
-    // Quick pass + close look over some of the candidate positions; returns the best one.
-    let debug = null;
-    const search = (cands) => {
-      // Each candidate has one or more quick-pass fingerprints.
-      const queries = [];
-      const owner = [];
-      cands.forEach((c, ci) => c.coarse.forEach((q) => { queries.push(q); owner.push(ci); }));
-      const { cardBest, queryBest, candBest } = quickPass(queries, drop, owner, cands.length);
-      cands.forEach((c) => { c.quick = -Infinity; });
-      queryBest.forEach((s, qi) => { cands[owner[qi]].quick = Math.max(cands[owner[qi]].quick, s); });
-      cands.forEach((c) => {
-        c.dist = centreDistance(c);
-        // A detected outline is real evidence of a card; a smaller plain box is just a guess
-        // (the full-size box is where the guide says the card is, so it isn't penalised).
-        c.penalty = centreWeight * c.dist + (c.kind === 'window' && c.rect.s < 1 ? windowPenalty : 0);
-        c.prio = c.quick - c.penalty;
-      });
+    // Each candidate has one or more quick-pass fingerprints.
+    const queries = [];
+    const owner = [];
+    cands.forEach((c, ci) => c.coarse.forEach((q) => { queries.push(q); owner.push(ci); }));
+    const { cardBest, queryBest, candBest } = quickPass(queries, drop, owner, cands.length);
+    const t2 = performance.now();
+    cands.forEach((c) => { c.quick = -Infinity; });
+    queryBest.forEach((s, qi) => { cands[owner[qi]].quick = Math.max(cands[owner[qi]].quick, s); });
+    cands.forEach((c) => {
+      c.dist = centreDistance(c);
+      // A detected outline is real evidence of a card; a smaller plain box is just a guess
+      // (the full-size box is where the guide says the card is, so it isn't penalised).
+      c.penalty = centreWeight * c.dist + (c.kind === 'window' && c.rect.s < 1 ? windowPenalty : 0);
+      c.prio = c.quick - c.penalty;
+    });
 
-      const shortlist = Array.from(cardBest.keys()).sort((a, b) => cardBest[b] - cardBest[a]).slice(0, shortlistSize);
-      const order = Array.from(cands.keys()).sort((a, b) => cands[b].prio - cands[a].prio);
-      // The centred full-size window (a card filling the guide) is always checked closely too.
-      const centre = cands.findIndex((c) => c.kind === 'window' && c.rect.s === 1);
-      const comb = cands.findIndex((c) => c.combined);
-      const chosen = [...new Set([...order.slice(0, fineTop), ...(centre >= 0 ? [centre] : []), ...(comb >= 0 ? [comb] : [])])];
+    const shortlist = Array.from(cardBest.keys()).sort((a, b) => cardBest[b] - cardBest[a]).slice(0, shortlistSize);
+    const order = Array.from(cands.keys()).sort((a, b) => cands[b].prio - cands[a].prio);
+    // The centred full-size window (a card filling the guide) is always checked closely too.
+    const centre = cands.findIndex((c) => c.kind === 'window' && c.rect.s === 1);
+    const comb = combined ? cands.length - 1 : -1;
+    const chosen = [...new Set([...order.slice(0, fineTop), ...(centre >= 0 ? [centre] : []), ...(comb >= 0 ? [comb] : [])])];
 
-      // Testing aid (tools/sim.js): how the correct card fares at each candidate position.
-      debug = debugIdx === null ? null : {
-        inShortlist: shortlist.includes(debugIdx),
-        coarseRank: Array.from(cardBest.keys()).filter((c) => cardBest[c] > cardBest[debugIdx]).length,
-        cands: [],
-        lists: [],
-      };
-
-      let best = null;
-      for (const qi of chosen) {
-        const c = cands[qi];
-        // Outlines can be a sleeve/binder pocket slightly bigger than the card, so also try
-        // zooming in a little — or a lot, for a toploader (fineTl).
-        const fine = (c.kind === 'outline'
-          ? fpCrops(c.warped, WARP_W, WARP_H, [0.91, 0.96, 1], [-0.015, 0, 0.015])
-          : fpCropsRect(c.region.data, c.region.w, c.region.h, c.rect));
-        const fineTl = c.kind === 'outline' && tl?.fine ? fpCropsXY(c.warped, WARP_W, WARP_H, tl.fine.s, tl.fine.dx, tl.fine.dy) : null;
-        if (!fine.length) continue;
-        // Narrow the shortlist with this position's few quick fingerprints first, then
-        // compare all the crops against the best of it only.
-        // Its own best coarse matches join the shared shortlist: a position that really is the
-        // card can rank it well even when junk positions (outlines along a reflection's edges)
-        // crowd it out of the shared list.
-        const own = perCandidate ? topIndices(candBest[qi], perCandidate) : [];
-        const list = own.length ? [...new Set([...shortlist, ...own])] : shortlist;
-        const pre = preTop ? robustScores(c.coarse, list, preTop, keep, maskPenalty).map((r) => r.i) : list;
-        let ranked = robustScores(fine, pre, topN, keep, maskPenalty);
-        if (fineTl?.length) {
-          // Toploader crops: a small handicap, so a zoomed-in part of a sleeved card can't
-          // beat the real match just by resembling another card.
-          const byCard = new Map(ranked.map((r) => [r.i, r]));
-          for (const r of robustScores(fineTl, pre, topN, keep, maskPenalty)) {
-            const sc = r.score - (tl.penalty ?? 0);
-            if (!byCard.has(r.i) || byCard.get(r.i).score < sc) byCard.set(r.i, { i: r.i, score: sc });
-          }
-          ranked = [...byCard.values()].sort((a, b) => b.score - a.score).slice(0, topN);
-        }
-        // The combined view (glare memory) rests on several frames, so it's preferred a little
-        // when choosing where the card is — its scores themselves aren't changed.
-        const score = ranked[0].score - c.penalty + (c.combined ? combinedBonus : 0);
-        if (!best || score > best.score) best = { score, ranked, c };
-        const tq = fine[ranked[0].q] ?? fineTl?.[ranked[0].q];
-        debug?.lists?.push({ penalty: c.penalty, ranked: ranked.map((r) => [r.i, +r.score.toFixed(4)]) });
-        debug?.cands.push({
-          used: tq?.w ? tq.w.reduce((a, b) => a + b, 0) : 88,
-          detail: (() => { const dd = c.kind === 'outline' ? fpDetail(c.warped, WARP_W, WARP_H) : null; return dd ? `${dd.edges.toFixed(0)}/${dd.chroma.toFixed(0)}` : ''; })(),
-          kind: c.kind === 'outline' ? 'outline' : `win${c.rect.s}`,
-          dist: +c.dist.toFixed(2),
-          top: +ranked[0].score.toFixed(3),
-          target: +robustScores(fine, [debugIdx], 1, keep, maskPenalty)[0].score.toFixed(3),
-        });
-      }
-      return best;
+    // Testing aid (tools/sim.js): how the correct card fares at each candidate position.
+    const debug = debugIdx === null ? null : {
+      inShortlist: shortlist.includes(debugIdx),
+      coarseRank: Array.from(cardBest.keys()).filter((c) => cardBest[c] > cardBest[debugIdx]).length,
+      cands: [],
+      lists: [],
     };
-    // Speed: first only the outlines nearest the guide (plus the centred box and the combined
-    // view). A result that clear (see EARLY) is kept; otherwise everything is searched as before.
+
     let best = null;
-    if (early && debugIdx === null) {
-      const near = cands.filter((c) => c.kind === 'outline' && !c.combined).sort((a, b) => centreDistance(a) - centreDistance(b)).slice(0, early);
-      const sub = cands.filter((c) => near.includes(c) || c.combined || (c.kind === 'window' && c.rect.s === 1));
-      if (sub.length && sub.length < cands.length) {
-        const b = search(sub);
-        const [r0, r1] = b?.ranked ?? [];
-        if (r0 && r0.score >= EARLY.score && r0.score - (r1?.score ?? 0) >= EARLY.gap) best = b;
+    for (const qi of chosen) {
+      const c = cands[qi];
+      // Outlines can be a sleeve/binder pocket slightly bigger than the card, so also try
+      // zooming in a little — or a lot, for a toploader (fineTl).
+      const fine = (c.kind === 'outline'
+        ? fpCrops(c.warped, WARP_W, WARP_H, [0.91, 0.96, 1], [-0.015, 0, 0.015])
+        : fpCropsRect(c.region.data, c.region.w, c.region.h, c.rect));
+      const fineTl = c.kind === 'outline' && tl?.fine ? fpCropsXY(c.warped, WARP_W, WARP_H, tl.fine.s, tl.fine.dx, tl.fine.dy) : null;
+      if (!fine.length) continue;
+      // Narrow the shortlist with this position's few quick fingerprints first, then
+      // compare all the crops against the best of it only.
+      // Its own best coarse matches join the shared shortlist: a position that really is the
+      // card can rank it well even when junk positions (outlines along a reflection's edges)
+      // crowd it out of the shared list.
+      const own = perCandidate ? topIndices(candBest[qi], perCandidate) : [];
+      const list = own.length ? [...new Set([...shortlist, ...own])] : shortlist;
+      const pre = preTop ? robustScores(c.coarse, list, preTop, keep, maskPenalty).map((r) => r.i) : list;
+      let ranked = robustScores(fine, pre, topN, keep, maskPenalty);
+      if (fineTl?.length) {
+        // Toploader crops: a small handicap, so a zoomed-in part of a sleeved card can't
+        // beat the real match just by resembling another card.
+        const byCard = new Map(ranked.map((r) => [r.i, r]));
+        for (const r of robustScores(fineTl, pre, topN, keep, maskPenalty)) {
+          const sc = r.score - (tl.penalty ?? 0);
+          if (!byCard.has(r.i) || byCard.get(r.i).score < sc) byCard.set(r.i, { i: r.i, score: sc });
+        }
+        ranked = [...byCard.values()].sort((a, b) => b.score - a.score).slice(0, topN);
       }
+      // The combined view (glare memory) rests on several frames, so it's preferred a little
+      // when choosing where the card is — its scores themselves aren't changed.
+      const score = ranked[0].score - c.penalty + (c.combined ? combinedBonus : 0);
+      if (!best || score > best.score) best = { score, ranked, c };
+      const tq = fine[ranked[0].q] ?? fineTl?.[ranked[0].q];
+      debug?.lists?.push({ penalty: c.penalty, ranked: ranked.map((r) => [r.i, +r.score.toFixed(4)]) });
+      debug?.cands.push({
+        used: tq?.w ? tq.w.reduce((a, b) => a + b, 0) : 88,
+        detail: (() => { const dd = c.kind === 'outline' ? fpDetail(c.warped, WARP_W, WARP_H) : null; return dd ? `${dd.edges.toFixed(0)}/${dd.chroma.toFixed(0)}` : ''; })(),
+        kind: c.kind === 'outline' ? 'outline' : `win${c.rect.s}`,
+        dist: +c.dist.toFixed(2),
+        top: +ranked[0].score.toFixed(3),
+        target: +robustScores(fine, [debugIdx], 1, keep, maskPenalty)[0].score.toFixed(3),
+      });
     }
-    best ??= search(cands);
-    const t2 = t1; // quick and close passes are timed together now
     if (!best) return { matches: [], where: null };
     // How much of the card is glare (blown out, or a heavy veil): the app asks for a tilt.
     const gc = best.c.kind === 'outline' ? best.c : anchorOf(cands);
