@@ -208,6 +208,8 @@ function devRenderTools(box) {
     <button type="button" class="btn ghost" data-act="reload">Reload card &amp; price data now</button>
     <button type="button" class="btn ghost" data-act="cache">Clear offline cache &amp; reload app</button>
     <button type="button" class="btn ghost" data-act="export">Export debug info (file)</button>
+    <button type="button" class="btn ghost" data-act="unpriced">Show my cards without a price (and why)</button>
+    <div data-box="unpriced"></div>
     <button type="button" class="btn primary" data-act="auall">AU price all cards in my collection</button>
     <p class="dev-msg" data-box="auall"></p>
     <p class="dev-msg">Your collection is never touched by these.</p>`;
@@ -233,10 +235,38 @@ function devRenderTools(box) {
       location.reload();
     } else if (act === 'export') {
       devExport();
+    } else if (act === 'unpriced') {
+      devShowUnpriced(box.querySelector('[data-box=unpriced]'));
     } else if (act === 'auall') {
       devAuPriceAll(box.querySelector('[data-box=auall]'), e.target.closest('[data-act]'));
     }
   });
+}
+
+/* Collection items with no value, and why: no TCGplayer price for that print (Japanese, an
+ * alternate "a" print, an old promo), sealed product not in the list, or nothing loaded. An AU
+ * sold price fills the gap (the "AU price all" button). */
+async function devShowUnpriced(box) {
+  box.innerHTML = '<p class="dev-msg"><span class="spinner"></span>Checking…</p>';
+  const list = loadCollection();
+  if (list.some((e) => e.lang === 'ja')) await loadJapanese();
+  const ids = [...new Set(list.filter((e) => e.kind !== 'sealed').map((e) => e.id))];
+  const [prices, rate, sealed] = await Promise.all([getTcgPrices(ids), getAudRate(), getSealed()]);
+  const rows = [];
+  for (const e of list) {
+    if (entryUsd(e, prices, sealed, rate) != null) continue;
+    const { q, n, t } = ebaySoldQuery(e, e.variant);
+    const au = auSoldCached(q, n, t, { anyAge: true });
+    const why = e.kind === 'sealed' ? 'not in TCGplayer\'s sealed price list'
+      : e.lang === 'ja' ? 'Japanese card TCGplayer has no price for'
+        : /\d+[a-z]$/i.test(String(e.number)) ? 'alternate "a" print — TCGplayer has no separate price'
+          : !prices[e.id] ? 'no TCGplayer price for this card' : 'TCGplayer has no price for any finish';
+    const auWhy = !au ? 'AU sold not looked up yet' : au.ok === false ? 'too few AU sales' : '';
+    rows.push(`<li><b>${devEsc(e.name)}</b> ${devEsc(e.setName || '')} ${e.kind === 'sealed' ? '' : `#${devEsc(e.number)}`}${e.variant ? ` · ${devEsc(variantLabel(e.variant))}` : ''} — ${devEsc(why)}${auWhy ? `; ${auWhy}` : ''}</li>`);
+  }
+  box.innerHTML = rows.length
+    ? `<p class="dev-msg">${rows.length} of ${list.length} items have no price:</p><ul class="dev-list">${rows.join('')}</ul><p class="dev-msg">"AU price all cards" below fills these from Australian eBay sales where there are enough.</p>`
+    : `<p class="dev-msg">Every item in your collection (${list.length}) has a price.</p>`;
 }
 
 /* Look up the AU sold price of every card (and sealed item) in the collection that hasn't got a
@@ -256,6 +286,9 @@ async function devAuPriceAll(msg, btn) {
     seen.add(key);
     if (auSoldCached(q, n, t)) fresh++; else todo.push({ e, q, n, t, s });
   }
+  // Items with no price at all go first (a TCGplayer price at least gives them a value).
+  const { prices } = (typeof collectionPrices !== 'undefined' && collectionPrices) || {};
+  if (prices) todo.sort((a, b) => (prices[a.e.id] ? 1 : 0) - (prices[b.e.id] ? 1 : 0));
   if (!todo.length) { msg.textContent = `All ${fresh} already have a fresh AU sold price — nothing to look up.`; return; }
   if (!confirm(`Look up ${todo.length} card${todo.length === 1 ? '' : 's'} on eBay AU? Each new one uses 1–2 of the 500 daily searches (${fresh} already have a fresh price).`)) return;
   devAuRunning = true;
