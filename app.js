@@ -465,6 +465,11 @@ function resumeScanning() {
     startCamera();
     return;
   }
+  if (els.wrap.classList.contains('photo')) { // back from a photo to the live camera
+    els.still.hidden = true;
+    els.video.hidden = false;
+    els.wrap.classList.remove('photo');
+  }
   auto.ignoreKey = auto.lockedKey;
   auto.lockedKey = null;
   auto.lastKey = null;
@@ -819,7 +824,64 @@ async function onPhotoChosen(input) {
   img.src = url;
 }
 els.file.addEventListener('change', () => onPhotoChosen(els.file));
-$('photoInput').addEventListener('change', () => onPhotoChosen($('photoInput')));
+
+/* 📷: take a still photo with the camera that's already on, inside the app — for a card live
+ * scanning can't settle on. Uses the camera's full photo resolution where the browser allows
+ * (ImageCapture), otherwise the full video frame; the picture freezes on screen while it's
+ * matched — the whole view, and the box around the card guide up close. */
+async function grabStill() {
+  const track = stream?.getVideoTracks()[0];
+  if (typeof ImageCapture !== 'undefined' && track) {
+    try {
+      const bmp = await new ImageCapture(track).grabFrame();
+      if (bmp.width >= els.video.videoWidth) return bmp;
+    } catch { /* fall back to the video frame */ }
+  }
+  const c = document.createElement('canvas');
+  c.width = els.video.videoWidth;
+  c.height = els.video.videoHeight;
+  c.getContext('2d').drawImage(els.video, 0, 0);
+  return c;
+}
+$('photoBtn').addEventListener('click', async () => {
+  if (!stream || !els.video.videoWidth) { startCamera(); toast('Point at the card, then tap 📷'); return; }
+  auto.state = 'photo'; // pause live scanning
+  const { box, toSource } = videoMapping();
+  const view = toSource(box), guide = toSource(els.guide.getBoundingClientRect());
+  const still = await grabStill();
+  // Video pixels → still pixels (the same unless the still is bigger).
+  const k = still.width / els.video.videoWidth;
+  const sc = (r) => ({ x: r.x * k, y: r.y * k, w: r.w * k, h: r.h * k });
+  const c = document.createElement('canvas');
+  c.width = still.width; c.height = still.height;
+  c.getContext('2d').drawImage(still, 0, 0);
+  els.still.src = c.toDataURL('image/jpeg', 0.85);
+  els.still.hidden = false;
+  els.video.hidden = true;
+  els.wrap.classList.add('photo');
+  els.wrap.classList.remove('stuck');
+  navigator.vibrate?.(30);
+  setStatus(els.status, 'Matching the photo…', 'busy');
+  try {
+    await ready;
+    const g = sc(guide);
+    const whole = await identify(captureRegion(c, sc(view), g));
+    let best = whole;
+    if (!isConfident(whole.matches)) {
+      // Up close: the guide box plus a margin, so the card gets more of the pixels.
+      const m = 0.25;
+      const near = { x: Math.max(0, g.x - g.w * m), y: Math.max(0, g.y - g.h * m), w: 0, h: 0 };
+      near.w = Math.min(c.width, g.x + g.w * (1 + m)) - near.x;
+      near.h = Math.min(c.height, g.y + g.h * (1 + m)) - near.y;
+      const close = await identify(captureRegion(c, near, g));
+      if ((close.matches[0]?.score ?? 0) > (whole.matches[0]?.score ?? 0)) best = close;
+    }
+    auto.state = 'locked';
+    renderScanResults(best.matches);
+  } catch (err) {
+    setStatus(els.status, `Something went wrong: ${esc(err.message)}`, 'err');
+  }
+});
 
 /* ------------------------------------------------------------------ */
 /* Results                                                             */
