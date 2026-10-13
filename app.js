@@ -1722,18 +1722,21 @@ function renderCollection() {
   renderTradeBar(list, rate);
   const q = normName(els.collectionSearch.value.trim());
   const onlySet = els.collectionSet.value;
+  renderCollectionChips(list);
   const shown = list
     .filter((e) => (onlySet === TRADE_FILTER ? e.trade : !onlySet || e.setId === onlySet))
     .filter((e) => !q || normName(`${e.name} ${e.setName} ${e.number} ${variantLabel(e.variant)}`).includes(q))
+    .filter((e) => Object.entries(collChips.on).every(([cat, v]) => COLL_CHIPS[cat].test(e, v)))
     .sort(SORTS[els.collectionSort.value] ?? SORTS.recent);
 
   els.historyList.innerHTML = '';
+  els.historyList.className = `grid view-${collView}`;
   if (!list.length) {
     els.historyList.innerHTML = '<p class="empty">No cards yet — scan one and tap “Add to collection”.</p>';
     return;
   }
   if (!shown.length) {
-    els.historyList.innerHTML = '<p class="empty">No cards match your search.</p>';
+    els.historyList.innerHTML = `<p class="empty">No cards match${Object.keys(collChips.on).length ? ' these filters' : ' your search'}.</p>`;
     return;
   }
   for (const e of shown) {
@@ -1745,18 +1748,116 @@ function renderCollection() {
     const price = e.unit == null ? ''
       : e.qty > 1 ? `${formatAud(e.total, rate.rate)} <small>(${e.qty} × ${formatAud(e.unit, rate.rate)})</small>`
         : formatAud(e.unit, rate.rate);
+    const mv = entryMoves.get(e.key);
+    const move = mv == null || Math.abs(mv) < 0.05 ? ''
+      : `<span class="move ${mv > 0 ? 'up' : 'down'}">${mv > 0 ? '▲' : '▼'} ${Math.abs(mv).toFixed(Math.abs(mv) >= 10 ? 0 : 1)}%</span>`;
+    if (collView === 'list') {
+      item.className = 'card-row coll-row';
+      item.innerHTML = `<img src="${esc(e.image)}" alt="" loading="lazy">
+        <div class="meta"><div class="name">${esc(e.name)}${jpBadge(e)}${e.qty > 1 ? ` <span class="qty-tag">×${e.qty}</span>` : ''}</div>
+          <div class="sub">${esc(e.setName)}${e.kind === 'sealed' ? ` · ${esc(e.type || '')}` : ` · ${esc(numberText(e))}`}${finish ? ` · ${esc(finish)}` : ''}</div></div>
+        <div class="mv"><b>${e.unit == null ? '—' : esc(formatAud(e.total, rate.rate))}</b>${move}</div>`;
+      item.addEventListener('click', () => (e.kind === 'sealed'
+        ? openSealedDetail(e, { entryKey: e.key }) : openDetail(e, { entryKey: e.key })));
+      els.historyList.appendChild(item);
+      continue;
+    }
     item.innerHTML = `
       <div class="thumb"><img src="${esc(e.image)}" alt="" loading="lazy">${e.qty > 1 ? `<span class="qty">×${e.qty}</span>` : ''}</div>
       <span class="name">${esc(e.name)}${jpBadge(e)}</span>
       <span class="sub">${esc(e.setName)}${e.kind === 'sealed' ? '' : ` · ${esc(numberText(e))}`}</span>
       ${e.kind === 'sealed' ? `<span class="sub finish">${esc(e.type)}</span>` : ''}
       ${finish ? `<span class="sub finish">${esc(finish)}</span>` : ''}
-      <span class="price">${price}</span>`;
+      <span class="price">${price}${move ? ` ${move}` : ''}</span>`;
     item.addEventListener('click', () => (e.kind === 'sealed'
       ? openSealedDetail(e, { entryKey: e.key }) : openDetail(e, { entryKey: e.key })));
     els.historyList.appendChild(item);
   }
 }
+
+/* ---------- Collection: filter chips, views, compact value box ---------- */
+
+// Each price's move over the value box's period (1 / 7 / 30 days), by entry key: renderValueTrend.
+let entryMoves = new Map();
+const ERAS = [['Vintage (–2003)', 0, 2003], ['2003–2010', 2003, 2011], ['2011–2019', 2011, 2020], ['2020+', 2020, 9999]];
+const yearOf = (e) => +(e.releaseDate || '').slice(0, 4) || null;
+/* Filter categories: chips within one category are alternatives (one at a time), categories
+ * combine. `options(list)` gives the chips worth showing for this collection. */
+const COLL_CHIPS = {
+  move: {
+    options: () => (entryMoves.size ? [['up', '▲ Rising'], ['down', '▼ Falling']] : []),
+    test: (e, v) => { const m = entryMoves.get(e.key) ?? 0; return v === 'up' ? m > 0.05 : m < -0.05; },
+  },
+  worth: {
+    options: (list) => (list.some((e) => e.unit != null && e.unit * (collectionPrices?.rate?.rate ?? 1.5) >= 100) ? [['100', 'A$100+'], ['20', 'Under A$20']] : []),
+    test: (e, v) => { const aud = e.unit == null ? null : e.unit * (collectionPrices?.rate?.rate ?? 1.5); return aud != null && (v === '100' ? aud >= 100 : aud < 20); },
+  },
+  finish: {
+    options: (list) => [...new Set(list.filter((e) => e.kind !== 'sealed' && e.variant).map((e) => e.variant))].map((v) => [v, variantLabel(v)]),
+    test: (e, v) => e.variant === v,
+  },
+  era: {
+    options: (list) => ERAS.filter(([, lo, hi]) => list.some((e) => yearOf(e) >= lo && yearOf(e) < hi)).map(([label]) => [label, label]),
+    test: (e, v) => { const [, lo, hi] = ERAS.find(([l]) => l === v); const y = yearOf(e); return y != null && y >= lo && y < hi; },
+  },
+  kind: {
+    options: (list) => [
+      ...(list.some((e) => e.lang === 'ja') ? [['ja', 'Japanese']] : []),
+      ...(list.some((e) => e.kind === 'sealed') ? [['sealed', 'Sealed']] : []),
+      ...(list.some((e) => e.qty > 1) ? [['dupes', 'Duplicates']] : []),
+      ...(list.some((e) => e.trade) ? [['trade', 'For trade']] : []),
+    ],
+    test: (e, v) => (v === 'ja' ? e.lang === 'ja' : v === 'sealed' ? e.kind === 'sealed' : v === 'dupes' ? e.qty > 1 : !!e.trade),
+  },
+};
+const collChips = { on: {} };
+function renderCollectionChips(list) {
+  const box = $('collectionChips');
+  const chips = Object.entries(COLL_CHIPS).flatMap(([cat, c]) => c.options(list).map(([v, label]) => ({ cat, v, label })));
+  // A chosen chip that no longer applies (e.g. its cards were removed) is dropped.
+  for (const [cat, v] of Object.entries(collChips.on)) if (!chips.some((c) => c.cat === cat && c.v === v)) delete collChips.on[cat];
+  box.hidden = chips.length < 2;
+  const n = Object.keys(collChips.on).length;
+  box.innerHTML = (n ? '<button type="button" class="chip clear" data-clear="1">✕ Clear</button>' : '')
+    + chips.map((c) => `<button type="button" class="chip${collChips.on[c.cat] === c.v ? ' active' : ''}" data-cat="${esc(c.cat)}" data-v="${esc(c.v)}" aria-pressed="${collChips.on[c.cat] === c.v}">${esc(c.label)}</button>`).join('');
+}
+$('collectionChips').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button');
+  if (!b) return;
+  if (b.dataset.clear) collChips.on = {};
+  else if (collChips.on[b.dataset.cat] === b.dataset.v) delete collChips.on[b.dataset.cat];
+  else collChips.on[b.dataset.cat] = b.dataset.v;
+  renderCollection();
+});
+
+// Grid / list / big cards, remembered on this device.
+const VIEW_KEY = 'pokescan.collectionView';
+let collView = 'grid';
+try { collView = ['grid', 'list', 'big'].includes(localStorage.getItem(VIEW_KEY)) ? localStorage.getItem(VIEW_KEY) : 'grid'; } catch { /* no storage */ }
+function drawViewSeg() {
+  $('collectionView').querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.v === collView);
+    b.setAttribute('aria-pressed', String(b.dataset.v === collView));
+  });
+}
+drawViewSeg();
+$('collectionView').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+  collView = b.dataset.v;
+  try { localStorage.setItem(VIEW_KEY, collView); } catch { /* no storage */ }
+  drawViewSeg();
+  renderCollection();
+}));
+
+// The value box: one line (value + change) with the chart, movers and sets behind "Details".
+const VALUE_OPEN_KEY = 'pokescan.valueOpen';
+function setValueOpen(open) {
+  els.valueCard.classList.toggle('open', open);
+  $('valueMore').setAttribute('aria-expanded', String(open));
+  $('valueMore').textContent = open ? 'Less ▴' : 'Details ▾';
+  try { localStorage.setItem(VALUE_OPEN_KEY, open ? '1' : '0'); } catch { /* no storage */ }
+}
+try { setValueOpen(localStorage.getItem(VALUE_OPEN_KEY) === '1'); } catch { setValueOpen(false); }
+$('valueMore').addEventListener('click', () => setValueOpen(!els.valueCard.classList.contains('open')));
 
 /* Load prices for everything in the collection, then redraw. */
 async function refreshCollection() {
@@ -1881,7 +1982,8 @@ function renderValueTrend(list = loadCollection()) {
   const box = $('valueTrend');
   const h = valueHistory;
   const { prices, rate, sealed } = collectionPrices ?? {};
-  if (!h || !prices || !list.length || h.dates.length < 2) { box.hidden = true; return; }
+  entryMoves = new Map();
+  if (!h || !prices || !list.length || h.dates.length < 2) { box.hidden = true; $('valueQuick').innerHTML = ''; return; }
   const days = h.dates.length;
   const last = days - 1;
   let from = 0;
@@ -1905,6 +2007,7 @@ function renderValueTrend(list = loadCollection()) {
     }
     const a = series?.[from], b = series?.[last];
     if (a && b && a !== b) moves.push({ e, now: b / 100, pct: ((b - a) / a) * 100, gain: ((b - a) / 100) * factor * e.qty });
+    if (a && b) entryMoves.set(e.key, ((b - a) / a) * 100);
   }
   box.hidden = false;
   const change = totals[last] - totals[from];
@@ -1915,6 +2018,7 @@ function renderValueTrend(list = loadCollection()) {
   $('valueChange').innerHTML = !cents ? `<span class="muted">No change ${esc(since)}</span>`
     : `<b class="${cents > 0 ? 'up' : 'down'}">${cents > 0 ? '+' : '−'}${esc(formatAud(Math.abs(change), rate.rate))}</b> ${esc(since)}`
       + ` <span class="${cents > 0 ? 'up' : 'down'}">${cents > 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}%</span>`;
+  $('valueQuick').innerHTML = $('valueChange').innerHTML; // the one-line summary shown when Details is closed
   $('valueTrendNote').textContent = `TCGplayer price history, ${shortDate(h.dates[0])} – ${shortDate(h.dates[last])}`;
 
   // Inline SVG line of the daily totals (whole history; the window's start is marked).

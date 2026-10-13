@@ -182,8 +182,14 @@
       <div id="pushBox" class="push-box"></div>
       <div id="wantList" class="results want-list"></div>
       <div class="value-card" id="valueCard" hidden>
-        <span class="price-label">Estimated value</span>
-        <span class="value-total" id="valueTotal">—</span>
+        <div class="value-head">
+          <div class="value-main">
+            <span class="price-label">Estimated value</span>
+            <span class="value-total" id="valueTotal">—</span>
+            <span class="value-quick" id="valueQuick"></span>
+          </div>
+          <button type="button" class="btn ghost small value-more" id="valueMore" aria-expanded="false">Details ▾</button>
+        </div>
         <span class="price-note" id="valueNote"></span>
         <div class="value-trend" id="valueTrend" hidden>
           <div class="seg" id="valueWindow" role="group" aria-label="Period">
@@ -211,9 +217,15 @@
           <option value="set">Set (newest first)</option>
           <option value="qty">Quantity</option>
         </select>
-        <select id="collectionSet" aria-label="Show set" class="span2">
+        <select id="collectionSet" aria-label="Show set">
           <option value="">All sets</option>
         </select>
+        <div class="seg view-seg" id="collectionView" role="group" aria-label="View">
+          <button type="button" data-v="grid" class="active" aria-pressed="true" aria-label="Grid" title="Grid"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg></button>
+          <button type="button" data-v="list" aria-pressed="false" aria-label="List" title="List"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><rect x="3" y="4.5" width="3" height="3" rx=".5"/><rect x="3" y="10.5" width="3" height="3" rx=".5"/><rect x="3" y="16.5" width="3" height="3" rx=".5"/></svg></button>
+          <button type="button" data-v="big" aria-pressed="false" aria-label="Big cards" title="Big cards"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="18" rx="1.5"/><rect x="13" y="3" width="8" height="18" rx="1.5"/></svg></button>
+        </div>
+        <div class="filter-chips span2" id="collectionChips" role="group" aria-label="Filters"></div>
       </div>
       <div class="trade-bar" id="tradeBar" hidden>
         <span id="tradeTotal"></span>
