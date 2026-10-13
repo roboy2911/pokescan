@@ -208,6 +208,8 @@ function devRenderTools(box) {
     <button type="button" class="btn ghost" data-act="reload">Reload card &amp; price data now</button>
     <button type="button" class="btn ghost" data-act="cache">Clear offline cache &amp; reload app</button>
     <button type="button" class="btn ghost" data-act="export">Export debug info (file)</button>
+    <button type="button" class="btn primary" data-act="auall">AU price all cards in my collection</button>
+    <p class="dev-msg" data-box="auall"></p>
     <p class="dev-msg">Your collection is never touched by these.</p>`;
   box.addEventListener('click', async (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
@@ -231,8 +233,53 @@ function devRenderTools(box) {
       location.reload();
     } else if (act === 'export') {
       devExport();
+    } else if (act === 'auall') {
+      devAuPriceAll(box.querySelector('[data-box=auall]'), e.target.closest('[data-act]'));
     }
   });
+}
+
+/* Look up the AU sold price of every card (and sealed item) in the collection that hasn't got a
+ * fresh one yet. Developer mode + logged in only. Each new lookup is 1–2 SoldComps searches,
+ * counted against the worker's daily limit; fresh answers (saved or nightly) cost nothing. */
+let devAuRunning = false;
+async function devAuPriceAll(msg, btn) {
+  if (devAuRunning) return;
+  if (typeof acct === 'undefined' || !acct.session) { msg.textContent = 'Log in first — this only works on your account.'; return; }
+  const seen = new Set();
+  const todo = [];
+  let fresh = 0;
+  for (const e of loadCollection()) {
+    const { q, n, t, s } = ebaySoldQuery(e, e.variant);
+    const key = auSoldKey(q, n, t);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (auSoldCached(q, n, t)) fresh++; else todo.push({ e, q, n, t, s });
+  }
+  if (!todo.length) { msg.textContent = `All ${fresh} already have a fresh AU sold price — nothing to look up.`; return; }
+  if (!confirm(`Look up ${todo.length} card${todo.length === 1 ? '' : 's'} on eBay AU? Each new one uses 1–2 of the 500 daily searches (${fresh} already have a fresh price).`)) return;
+  devAuRunning = true;
+  btn.disabled = true;
+  let done = 0, priced = 0, few = 0, failed = 0, stopped = '';
+  const queue = [...todo];
+  const draw = () => { msg.textContent = `${done} of ${todo.length} looked up · ${priced} priced · ${few} too few sales${failed ? ` · ${failed} failed` : ''}${stopped ? ` · stopped: ${stopped}` : ''}`; };
+  draw();
+  await Promise.all(Array.from({ length: 3 }, async () => {
+    while (queue.length && !stopped) {
+      const it = queue.shift();
+      const r = await getAuSold(it.q, it.n, it.t, it.s).catch(() => null);
+      done++;
+      if (r?.ok) priced++;
+      else if (r?.reason === 'daily-limit' || r?.reason === 'paused') stopped = r.reason === 'paused' ? 'lookups are paused' : 'daily limit reached — try tomorrow';
+      else if (r?.reason === 'few-sales') few++;
+      else failed++;
+      draw();
+    }
+  }));
+  devAuRunning = false;
+  btn.disabled = false;
+  msg.textContent += ' · done';
+  if (typeof refreshCollection === 'function') refreshCollection();
 }
 
 /* ---------- Buy ideas (data/picks.json, built daily by tools/picks.mjs) ---------- */
