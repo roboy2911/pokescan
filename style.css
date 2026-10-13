@@ -33,9 +33,10 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
 html, body { overflow-x: hidden; overflow-x: clip; }
 /* iPhones zoom in on a text box with text under 16px when it's tapped (then the page can be
  * dragged sideways), so phone text boxes are 16px. */
-@media (max-width: 699px) {
-  input, select, textarea { font-size: 16px !important; }
-}
+input, select, textarea { font-size: 16px !important; }
+/* No zooming (owner request): no double-tap zoom; pinch is blocked in app.js. */
+html, body { touch-action: pan-x pan-y; }
+button, a, label, summary, .grid-item, .card-row { touch-action: manipulation; }
 
 svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 

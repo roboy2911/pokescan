@@ -12,6 +12,13 @@
 
 const $ = (id) => document.getElementById(id);
 
+/* No zooming on any page (owner request). iPhones ignore user-scalable=no in the viewport tag,
+ * so pinch gestures are cancelled here; on a computer, Ctrl + wheel / Ctrl +/- / Ctrl 0 too. */
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', (e) => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, { passive: false });
+document.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && ['+', '=', '-', '_', '0'].includes(e.key)) e.preventDefault(); });
+
 const els = {
   video: $('video'),
   still: $('stillPreview'),
