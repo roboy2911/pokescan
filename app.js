@@ -470,6 +470,7 @@ function resumeScanning() {
   auto.lastKey = null;
   auto.streak = 0;
   auto.recent = [];
+  auto.lookingSince = null;
   auto.state = 'scanning';
   els.wrap.classList.remove('locked');
   setStatus(els.status, 'Looking for a card…', 'busy');
@@ -568,6 +569,8 @@ const COMBINED_CONFIDENT = { score: 0.86, gap: 0.03 };
 /* Biggest outline in the guide smaller than this (in guide heights), two frames running →
  * "move back". Simulated: never in normal scans; ~45% of frames of a card held 1.45–1.8× the box. */
 const CLOSE_SIZE = 0.8;
+// Looking this long without even a likely card → suggest taking a photo instead.
+const STUCK_MS = 6000;
 const isConfidentCombined = ([best, second]) => best && best.score >= COMBINED_CONFIDENT.score
   && best.score - (second?.score ?? 0) >= COMBINED_CONFIDENT.gap;
 function onFrame(matches, where, region, glare = 0, combined = 0, { size = 1, grid = false } = {}) {
@@ -611,8 +614,13 @@ function onFrame(matches, where, region, glare = 0, combined = 0, { size = 1, gr
   const ignored = key && key === auto.ignoreKey;
   showOutline(key && !ignored ? where : null, region);
 
+  // Nothing found for a while: offer a photo (the phone's camera app focuses better).
+  if (key) auto.lookingSince = null;
+  else auto.lookingSince ??= performance.now();
+  const stuck = !key && performance.now() - auto.lookingSince > STUCK_MS;
+  els.wrap.classList.toggle('stuck', stuck);
   if (!key || ignored) {
-    setStatus(els.status, ignored ? 'Got it — point at the next card' : hint || 'Looking for a card…', 'busy');
+    setStatus(els.status, ignored ? 'Got it — point at the next card' : hint || (stuck ? 'Not scanning? Tap 📷 to take a photo instead' : 'Looking for a card…'), 'busy');
     return;
   }
   // A very clear single frame locks in straight away; otherwise wait for a second one.
@@ -769,9 +777,25 @@ showBulk();
 /* Photo upload                                                        */
 /* ------------------------------------------------------------------ */
 
-els.file.addEventListener('change', async () => {
-  const file = els.file.files?.[0];
-  els.file.value = '';
+/* A photo (uploaded, or taken with the phone's camera app): the whole photo, and — when that
+ * isn't a clear answer — the middle of it too, where the card usually is, so a card that's
+ * small in a big photo still gets enough pixels. The better result is shown. */
+async function scanPhoto(img) {
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const whole = await identify(capturePhoto(img, w, h));
+  if (isConfident(whole.matches)) return whole;
+  const cw = w * 0.6, ch = h * 0.6, cx = (w - cw) / 2, cy = (h - ch) / 2;
+  const ratio = 63 / 88;
+  let gw = cw, gh = ch;
+  if (cw / ch > ratio) gw = ch * ratio; else gh = cw / ratio;
+  gw *= 0.9; gh *= 0.9;
+  const mid = await identify(captureRegion(img, { x: cx, y: cy, w: cw, h: ch }, { x: cx + (cw - gw) / 2, y: cy + (ch - gh) / 2, w: gw, h: gh }));
+  return (mid.matches[0]?.score ?? 0) > (whole.matches[0]?.score ?? 0) ? mid : whole;
+}
+
+async function onPhotoChosen(input) {
+  const file = input.files?.[0];
+  input.value = '';
   if (!file) return;
   if (stream) stopCamera();
   const url = URL.createObjectURL(file);
@@ -785,7 +809,7 @@ els.file.addEventListener('change', async () => {
     setStatus(els.status, 'Matching artwork…', 'busy');
     try {
       await ready;
-      const { matches } = await identify(capturePhoto(img, img.naturalWidth, img.naturalHeight));
+      const { matches } = await scanPhoto(img);
       renderScanResults(matches);
     } catch (err) {
       setStatus(els.status, `Something went wrong: ${esc(err.message)}`, 'err');
@@ -793,7 +817,9 @@ els.file.addEventListener('change', async () => {
   };
   img.onerror = () => setStatus(els.status, 'Could not open that image.', 'err');
   img.src = url;
-});
+}
+els.file.addEventListener('change', () => onPhotoChosen(els.file));
+$('photoInput').addEventListener('change', () => onPhotoChosen($('photoInput')));
 
 /* ------------------------------------------------------------------ */
 /* Results                                                             */

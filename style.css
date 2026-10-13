@@ -1030,3 +1030,8 @@ body.gated { overflow: hidden; }
 
 .dev-list { margin: 4px 0 8px; padding-left: 18px; font-size: .82rem; color: var(--muted); }
 .dev-list b { color: var(--text); }
+
+/* Take-a-photo button: highlighted when live scanning has been stuck for a while */
+.camera-wrap.stuck .photo-btn { color: var(--accent); background: rgba(255, 203, 5, .22); animation: photo-nudge 1.4s ease-in-out infinite; }
+@keyframes photo-nudge { 50% { transform: scale(1.12); } }
+@media (prefers-reduced-motion: reduce) { .camera-wrap.stuck .photo-btn { animation: none; } }

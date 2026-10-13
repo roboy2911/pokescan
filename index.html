@@ -45,7 +45,8 @@
           </div>
           <p>Point your camera at a card — it scans automatically.</p>
           <button id="startCamBtn" class="btn primary">Start camera</button>
-          <label class="btn ghost" for="fileInput">Upload a photo instead</label>
+          <label class="btn ghost" for="photoInput">Take a photo instead</label>
+          <label class="btn ghost" for="fileInput">Upload a photo</label>
         </div>
 
         <div class="cam-controls" id="camControls">
@@ -62,12 +63,17 @@
           <button id="soundBtn" class="icon-btn" aria-label="Beep when a card is found" aria-pressed="false">
             <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="wave" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="mute" d="M16 9l6 6M22 9l-6 6"/></svg>
           </button>
+          <label class="icon-btn photo-btn" for="photoInput" aria-label="Take a photo of the card" title="Take a photo">
+            <svg viewBox="0 0 24 24"><path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/></svg>
+          </label>
           <label class="icon-btn" for="fileInput" aria-label="Upload a photo">
             <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>
           </label>
         </div>
       </div>
       <input id="fileInput" type="file" accept="image/*" hidden>
+      <!-- Opens the phone's own camera (sharper, autofocus, flash) for a card live scanning can't find. -->
+      <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
 
       <!-- Shown when a scan locks in -->
       <div id="resultPanel" class="result-panel" hidden>
