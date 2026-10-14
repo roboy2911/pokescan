@@ -20,7 +20,10 @@ const NEGATED = /\b(no|never|without|zero|not|free\s+of)\b(\s+[\w-]+){1,3}/gi;
 const notNearMint = (it) => NOT_NM.test((it.title || '').replace(NEGATED, ' ')) || NOT_NM_CONDITION.test(it.condition || '');
 // Not a trading card at all (merchandise and video-game listings that happen to share the
 // name and a number: "Shiny 6IV Torchic", "12pcs Pikachu", "T-Shirt Size 12").
-const NOT_A_CARD = /\b(\d?iv|plush|figures?|figurines?|toys?|t-?shirts?|shirts?|hoodie|pencils?|key\s?(chain|ring)s?|legends?\s?z-?a|nintendo\s?switch|dlc|jigsaw|puzzle|mug|backpack|pcs)\b/i;
+const NOT_A_CARD = /\b(\d?iv|plush|figures?|figurines?|toys?|t-?shirts?|shirts?|hoodie|pencils?|key\s?(chain|ring)s?|legends?\s?z-?a|nintendo\s?switch|dlc|jigsaw|puzzle|mug|backpack|pcs|binder|album|portfolio|\d+-?pocket|playmat|deck\s?box|sleeves)\b/i;
+// A title pointing at the description ("read description", "see desc") nearly always means a
+// flaw the title doesn't name.
+const SEE_DESC = /\b(read|see|check)\s+(the\s+)?(desc(ription)?|details|notes)\b/i;
 // Pricier versions of the same card that a plain search also finds. A sale only counts for the
 // version searched for: no "1st Edition" in an unlimited search, no reverse holo in a holo one,
 // and no stamped / staff / prerelease / swirl / shadowless / error copies of a set card unless
@@ -43,6 +46,19 @@ function otherMechanic(title, nameWords) {
 
 export const OTHER_LANG = /\b(japanese|japan|jpn|chinese|korean|kor|thai|indonesian|german|french|italian|italiano|ita|spanish|portuguese)\b|\bjp\b/i;
 
+const quantile = (xs, q) => {
+  const s = [...xs].sort((a, b) => a - b);
+  const i = (s.length - 1) * q, lo = Math.floor(i);
+  return Math.round((s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo)) * 100) / 100;
+};
+// `sales` newest first. The latest 3 all at least 20% above / below the median of the rest.
+const trendOf = (sales) => {
+  const rest = median(sales.slice(3).map((s) => s.aud));
+  const last = sales.slice(0, 3).map((s) => s.aud);
+  if (last.every((p) => p >= rest * 1.2)) return { trend: 'up', recentAud: Math.round(median(last) * 100) / 100 };
+  if (last.every((p) => p <= rest / 1.2)) return { trend: 'down', recentAud: Math.round(median(last) * 100) / 100 };
+  return {};
+};
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
@@ -143,6 +159,11 @@ export function summarise(items, n, wantsOtherLang, q = '', mode = '', { min = M
     ...(sales.length < MIN_SALES && { few: true }),
     low: Math.min(...prices),
     high: Math.max(...prices),
+    // The middle half of the sales ("most sell between"), and whether the latest few are running
+    // above or below the rest (a price on the move). A single sale varies about ±25% from the
+    // median for the same card (tools/au-sample backtest), so the range matters as much.
+    ...(sales.length >= 4 && { q1: quantile(prices, 0.25), q3: quantile(prices, 0.75) }),
+    ...(sales.length >= 6 && trendOf(sales)),
     recent: sales.slice(0, 5),
   };
 }
@@ -158,6 +179,7 @@ export function matching(items, n, wantsOtherLang, q = '', mode = '', set = '') 
   const qWords = new RegExp(`\\b(${q.toLowerCase().split(/\s+/).filter((w) => /^[a-z]+$/.test(w)).join('|') || '$^'})\\b`, 'gi');
   // Two different card numbers in one title ("92/95 & 93/95", "3/6/7/16/17"): more than one card.
   const twoCards = (title) => new Set((title.match(/\b\d{1,3}\s?\/\s?\d{1,3}\b/g) || []).map((x) => x.replace(/\s|^0+/g, ''))).size > 1
+    || new Set((title.toLowerCase().match(/\b(svp?|swsh|sm|xy|bw|dp|hgss)\s?\d{1,3}\b/g) || []).map((x) => x.replace(/\s|(?<=[a-z])0+/g, ''))).size > 1
     || /\b\d{1,3}(\/\d{1,3}){2,}\b/.test(title);
   const isJunk = (title) => JUNK.test(title.replace(qWords, ' ')) || MULTI.test(title) || twoCards(title);
   // Without a card number (sealed product) every searched word must be in the title.
@@ -184,6 +206,6 @@ export function matching(items, n, wantsOtherLang, q = '', mode = '', set = '') 
   const nameHasMechanic = nameWords.some((w) => /^(gx|v|vmax|vstar|lv|x|break|prime|legend|ex)$/.test(w));
   return items
     .filter((it) => it.soldCurrency === 'AUD' && Number(it.soldPrice) > 0)
-    .filter((it) => !n || (!NOT_A_CARD.test(it.title) && !otherVersion(it.title) && (nameHasMechanic || !otherMechanic(it.title, nameWords))))
+    .filter((it) => !n || (!NOT_A_CARD.test(it.title) && !SEE_DESC.test(it.title) && !otherVersion(it.title) && (nameHasMechanic || !otherMechanic(it.title, nameWords))))
     .filter((it) => !isJunk(it.title) && !notNearMint(it) && (wantsOtherLang || !OTHER_LANG.test(it.title)) && hasNumber(it.title) && hasName(it.title) && hasSet(it.title) && hasWords(it.title) && inMode(it.title));
 }

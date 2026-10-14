@@ -1383,11 +1383,15 @@ function auSoldText(au, tcgText) {
     // wide: too few Australian sellers' sales, so every seller on eBay.com.au counted.
     const who = au.wide ? 'near-mint eBay Australia sale' : 'near-mint Australian eBay sale';
     const plural = au.n === 1 ? '' : 's';
-    const range = au.n > 1 ? ` (${formatAudPlain(au.low)}–${formatAudPlain(au.high)})` : '';
+    // Most sold between: the middle half of the sales when there are enough, else the full range.
+    const range = au.q1 != null && au.q3 != null ? ` — most sold ${formatAudPlain(au.q1)}–${formatAudPlain(au.q3)}`
+      : au.n > 1 ? ` (${formatAudPlain(au.low)}–${formatAudPlain(au.high)})` : '';
+    const move = au.trend === 'up' ? ` · ▲ latest sales higher (~${formatAudPlain(au.recentAud)})`
+      : au.trend === 'down' ? ` · ▼ latest sales lower (~${formatAudPlain(au.recentAud)})` : '';
     const what = au.few
       ? `Only ${au.n} ${who}${plural} in 90 days${au.n > 1 ? ', middle price' : ''}${range}`
       : `Median of ${au.n} ${who}s, last 90 days${range}`;
-    return `${what}${au.wide ? ', incl. overseas sellers' : ''}${tcg}`;
+    return `${what}${au.wide ? ', incl. overseas sellers' : ''}${move}${tcg}`;
   }
   const why = !au ? "Couldn't check Australian sales"
     : au.reason === 'few-sales' ? 'Not enough sales on eBay Australia to price it'
