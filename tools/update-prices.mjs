@@ -325,7 +325,9 @@ async function fromTcgcsv(cards, sealed, setsOut, releasesOut) {
       if (main) {
         for (const { sub, usd } of pricesById.get(main.prod.productId)) {
           const short = SUBTYPE[sub];
-          if (short && row[short] == null) row[short] = cents(usd); // pokemontcg.io wins if it has one
+          // TCGCSV wins: it's TCGplayer's own daily dump, while pokemontcg.io's copy can go days
+          // without updating (13–15 Oct 2026: 492 of 11,855 prices moved vs ~12,900 on TCGCSV).
+          if (short) row[short] = cents(usd);
         }
         row.p = main.prod.productId;
       }
