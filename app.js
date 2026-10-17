@@ -1490,6 +1490,7 @@ function openDetail(card, { entryKey = null } = {}) {
              </div>
            </div>
            <label class="toggle-row"><span>For trade / sale</span><input type="checkbox" id="tradeToggle"></label>
+           ${typeof folderSelectHtml === 'function' ? folderSelectHtml() : ''}
            <button class="btn ghost" id="detailRemove">Remove from collection</button>`
         : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
       ${wantBoxHtml()}
@@ -1525,6 +1526,7 @@ function openDetail(card, { entryKey = null } = {}) {
   $('qtyUp')?.addEventListener('click', () => changeQty(1));
   if (inCollection) showQty();
   wireTradeToggle(() => entryKey);
+  if (typeof wireFolderSelect === 'function') wireFolderSelect(() => entryKey);
   wireWant(card, () => variant);
   $('gradeOpen').addEventListener('click', () => openGrader(card)); // grade.js
 
@@ -1660,6 +1662,7 @@ function setEntryCondition(key, condition) {
   if (other) {
     other.qty += entry.qty;
     other.trade ||= entry.trade;
+    other.folder ||= entry.folder;
     list.splice(list.indexOf(entry), 1);
   } else {
     entry.key = newKey;
@@ -1734,6 +1737,7 @@ function setEntryVariant(key, variant) {
   if (other) {
     other.qty += entry.qty;
     other.trade ||= entry.trade;
+    other.folder ||= entry.folder;
     list.splice(list.indexOf(entry), 1);
   } else {
     Object.assign(entry, { key: newKey, variant });
@@ -1816,11 +1820,13 @@ function renderCollection() {
   renderSetFilter(list);
   renderValueBySet(list, rate);
   renderTradeBar(list, rate);
+  if (typeof renderFolders === 'function') renderFolders(list, rate); // folders.js
   const q = normName(els.collectionSearch.value.trim());
   const onlySet = els.collectionSet.value;
   renderCollectionChips(list);
   const shown = list
     .filter((e) => (onlySet === TRADE_FILTER ? e.trade : !onlySet || e.setId === onlySet))
+    .filter((e) => typeof inPickedFolder !== 'function' || inPickedFolder(e))
     .filter((e) => !q || normName(`${e.name} ${e.setName} ${e.number} ${variantLabel(e.variant)}`).includes(q))
     .filter((e) => Object.entries(collChips.on).every(([cat, v]) => COLL_CHIPS[cat].test(e, v)))
     .sort(SORTS[els.collectionSort.value] ?? SORTS.recent);
@@ -1832,6 +1838,10 @@ function renderCollection() {
     return;
   }
   if (!shown.length) {
+    if (typeof folderPick !== 'undefined' && folderPick && folderPick !== NO_FOLDER && !list.some((e) => e.folder === folderPick)) {
+      els.historyList.innerHTML = '<p class="empty">This folder is empty — tap “＋ Add cards”, or open a card and pick this folder.</p>';
+      return;
+    }
     els.historyList.innerHTML = `<p class="empty">No cards match${Object.keys(collChips.on).length ? ' these filters' : ' your search'}.</p>`;
     return;
   }
@@ -2253,9 +2263,11 @@ $('importFile').addEventListener('change', async () => {
       qty: Math.max(1, Math.floor(Number(e.qty) || 1)), addedAt: e.addedAt || e.scannedAt || '' };
     const have = list.find((x) => x.key === entry.key);
     if (e.trade) entry.trade = true;
+    if (typeof e.folder === 'string' && e.folder) entry.folder = e.folder.slice(0, 40);
     if (have) {
       have.qty = Math.max(have.qty, entry.qty);
       have.trade ||= entry.trade;
+      have.folder ||= entry.folder;
     } else {
       list.push(entry);
       added++;
@@ -2309,6 +2321,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
              </div>
            </div>
            <label class="toggle-row"><span>For trade / sale</span><input type="checkbox" id="tradeToggle"></label>
+           ${typeof folderSelectHtml === 'function' ? folderSelectHtml() : ''}
            <button class="btn ghost" id="detailRemove">Remove from collection</button>`
         : '<button class="btn primary" id="detailAdd">＋ Add to collection</button>'}
       ${wantBoxHtml()}
@@ -2341,6 +2354,7 @@ async function openSealedDetail(item, { entryKey = null } = {}) {
   $('qtyUp')?.addEventListener('click', () => changeQty(1));
   if (inCollection) showQty();
   wireTradeToggle(() => entryKey);
+  if (typeof wireFolderSelect === 'function') wireFolderSelect(() => entryKey);
   wireWant(item);
   els.detail.showModal();
 

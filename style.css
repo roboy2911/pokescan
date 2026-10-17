@@ -863,7 +863,7 @@ body.gated { overflow: hidden; }
 .push-actions { display: flex; gap: 16px; align-items: center; margin-top: 8px; }
 .push-actions .btn { width: auto; flex: 1; }
 .push-actions .link-btn { white-space: nowrap; }
-#view-collection.wants :is(#valueCard, #collectionTools, #tradeBar, #historyList, .small-note) { display: none !important; }
+#view-collection.wants :is(#valueCard, #collectionTools, #tradeBar, #folderRow, #folderBar, #historyList, .small-note) { display: none !important; }
 .want-row .want-note { font-size: .8rem; color: var(--muted); margin-top: 3px; }
 .want-row .want-note .ok { color: var(--ok); }
 .want-row.hit { outline: 2px solid var(--ok); outline-offset: -2px; }
@@ -1035,3 +1035,37 @@ body.gated { overflow: hidden; }
 .camera-wrap.stuck .photo-btn { color: var(--accent); background: rgba(255, 203, 5, .22); animation: photo-nudge 1.4s ease-in-out infinite; }
 @keyframes photo-nudge { 50% { transform: scale(1.12); } }
 @media (prefers-reduced-motion: reduce) { .camera-wrap.stuck .photo-btn { animation: none; } }
+
+/* Collection folders (folders.js) */
+.folder-row { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 12px; padding: 0 16px 2px; scrollbar-width: none; }
+.folder-row::-webkit-scrollbar { display: none; }
+.folder-row:empty { display: none; }
+.folder-chip {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 12px;
+  padding: 8px 12px; min-height: 48px; font: inherit; cursor: pointer; max-width: 70vw;
+}
+.folder-chip .fname { font-size: .85rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.folder-chip small { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.folder-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.folder-chip.active small { color: var(--accent-ink); opacity: .8; }
+.folder-chip.add { border-style: dashed; color: var(--muted); }
+.folder-bar {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin-bottom: 12px;
+}
+.folder-bar #folderTitle { grid-column: 1 / -1; font-weight: 700; overflow-wrap: anywhere; }
+.folder-bar #folderTitle small { font-weight: 500; color: var(--muted); }
+.folder-bar .btn { min-height: 40px; }
+.folder-select select {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 10px; font: inherit; font-size: 16px; max-width: 60%;
+}
+.folder-sheet .folder-search {
+  width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; font: inherit; font-size: 16px; margin: 8px 0;
+}
+.folder-picks { display: grid; gap: 6px; max-height: 55vh; overflow-y: auto; }
+.folder-pick { cursor: pointer; }
+.folder-pick input { width: 22px; height: 22px; flex: 0 0 auto; accent-color: var(--accent); }
+.folder-sheet .result-actions .btn { width: 100%; }

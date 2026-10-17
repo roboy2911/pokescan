@@ -230,6 +230,13 @@
         </div>
         <div class="filter-chips span2" id="collectionChips" role="group" aria-label="Filters"></div>
       </div>
+      <div class="folder-row" id="folderRow" role="group" aria-label="Folders"></div>
+      <div class="folder-bar" id="folderBar" hidden>
+        <span id="folderTitle"></span>
+        <button type="button" id="folderAdd" class="btn primary small">＋ Add cards</button>
+        <button type="button" id="folderRename" class="btn ghost small">Rename</button>
+        <button type="button" id="folderDelete" class="btn ghost small">Delete</button>
+      </div>
       <div class="trade-bar" id="tradeBar" hidden>
         <span id="tradeTotal"></span>
         <select id="tradePct" aria-label="List prices at">
@@ -284,6 +291,7 @@
   <script src="prices.js"></script>
   <script src="account.js"></script>
   <script src="app.js"></script>
+  <script src="folders.js"></script>
   <script src="wants.js"></script>
   <script src="show.js"></script>
   <script src="backups.js"></script>
