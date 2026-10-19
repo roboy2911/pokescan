@@ -397,7 +397,7 @@ if (Object.keys(cards).length < 10000) {
 }
 
 const today = new Date().toISOString().slice(0, 10).replace(/-/g, '/');
-const out = { built: new Date().toISOString(), tcgplayerUpdated: tcgUpdated || today, currency: 'USD', cards };
+const out = { built: new Date().toISOString(), tcgplayerUpdated: today, currency: 'USD', cards }; // TCGCSV wins, so prices are as of today (pokemontcg.io's own date can lag days)
 await writeFile(SNAPSHOT, JSON.stringify(out));
 console.log(`Wrote data/prices.json: ${Object.keys(cards).length} cards`);
 

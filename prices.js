@@ -282,7 +282,8 @@ async function getTcgPrices(ids) {
       out[id] = {
         prices: expandRow(row),
         url: row.p ? `https://www.tcgplayer.com/product/${row.p}` : `https://prices.pokemontcg.io/tcgplayer/${id}`,
-        updatedAt: snap.tcgplayerUpdated || '',
+        // The day the nightly update ran (TCGplayer's own daily data), in local time.
+        updatedAt: snap.built ? new Date(snap.built).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : (snap.tcgplayerUpdated || ''),
       };
     } else if (cache[id] && now - cache[id].at < PRICE_MAX_AGE) {
       out[id] = cache[id];
